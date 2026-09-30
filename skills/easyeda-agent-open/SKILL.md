@@ -2,7 +2,7 @@
 name: easyeda-agent-open
 description: 通过开放 MCP 读取、分析和修改嘉立创 EDA 专业版，支持局部原理图返工、规则回执、任务续接、原生 eda API、PCB 数据与图面查看。
 metadata:
-  version: "1.8.1-open.9.3"
+  version: "1.8.1-open.9.4"
 ---
 
 # 嘉立创 EDA Open
@@ -12,9 +12,9 @@ metadata:
 ## 读取与执行
 
 - `easyeda_health` 选择目标窗口，后续固定 `window`；用 `target.projectUuid/documentUuid` 校验身份。`easyeda_actions(exact:...)` 查询具体动作，API 缺口用 `easyeda_api` 查签名后通过 `easyeda_execute` 执行 async JavaScript。
-- 初次需要工程基线时用 `easyeda_snapshot(domain:"schematic",detail:true)`；局部返工传 `primitiveIds`，可加 `includeTexts:true`。`cacheOnly:true` 或 `easyeda_runtime(operation:"state")` 只读后台已有观察，零 EDA 读取。缓存的覆盖范围、陈旧标记和 requiresScopedReadback 必须一起看。当前宿主原生事件漏报手动移动/撤销，缓存标 external_unconfirmed，不作为新鲜坐标依据；返工按对象 ID 定向读取。程序仍在普通完整修改单元前后局部回读，暂停续接及 finish 还会对照此前局部观察，发现差异返回最新局部事实且不执行旧计划。网表导出仍为文档级，局部组件读取不等于局部网表编译。
+- 初次需要工程基线时用 `easyeda_snapshot(domain:"schematic",detail:true)`；局部返工传 `primitiveIds`，可加 `includeTexts:true`。只读位置/排版时加 `profile:"geometry"`，省去网表编译和器件库身份补全；检查连接用 `profile:"electrical"`，省去绘图几何；默认 `full` 保持完整读取。geometry 返回的未知网络不能用于电气验收。`cacheOnly:true` 或 `easyeda_runtime(operation:"state")` 只读后台已有观察，零 EDA 读取。缓存的覆盖范围、陈旧标记和 requiresScopedReadback 必须一起看。当前宿主原生事件漏报手动移动/撤销，缓存标 external_unconfirmed，不作为新鲜坐标依据；返工按对象 ID 定向读取。程序仍在普通完整修改单元前后局部回读，暂停续接及 finish 还会对照此前局部观察，发现差异返回最新局部事实且不执行旧计划。网表导出仍为文档级，局部组件读取不等于局部网表编译。
 - 将一个完整修改单元放进 `easyeda_batch`，传 `edit:{mode:"layout",primitiveIds:[受影响器件ID]}`；授权改连接用 `mode:"design",expectedPins:{"位号.脚号":"新网络"}`。后台推导范围可作补充，已知范围应明确提交。整页交付需 DRC 时加 `requiredChecks:["drc"]`。
-- 程序在整个单元前后核对身份、逐脚网络、受影响导线及出线，返回 `rules` 和 pass/fail/unknown；文字碰撞是候选 WARN，需实际图面确认。官方 `schematic.attribute.modify` 的纯显示修改会核对属性身份/电气值并省去网表编译。`complete:false` 只延后检查，不算通过。旧 `verifyPreservedSchematic:true` 是整页比较路径，与局部自动比较选一条，避免重复读取。
+- 程序在整个单元前后核对身份、逐脚网络、受影响导线及出线，返回 `rules` 和 pass/fail/unknown；文字碰撞是候选 WARN，需实际图面确认。官方 `schematic.attribute.modify` 的纯显示修改会核对属性身份/电气值并省去网表编译。`complete:false` 只延后检查，不算通过。`verifyPreservedSchematic:true` 仅在需要整页身份/连接保留比较时使用。与局部自动比较同时启用时，两者复用同一读取阶段的网表与引脚；修改前后分别实读，不跨修改或跨请求缓存。局部返工不要额外请求整页比较。
 - `schematic.wire.from_pin` 从实测引脚朝向生成非零正交引线，可 `dryRun` 看路径。平台原生网名/电源/地真实连接不强加短桩。任意 JS 保留开放；影响无法确认时回执为 unknown，先读实际结果再续做。
 - `easyeda_screenshot` 返回画布和图片回执；后台窗口可能不重绘，若画面与本次修改不一致，直接用 `schematic.export.image(format:"png",scope:"selection",primitiveIds:[本次全部范围])` 导出实际对象；该导出回执同样可供 visual_review，截图字段传导出的 requestId。宏观布局、文字与符号边框用图面判断，电气用真实逐脚数据。必要时局部放大，不在临时断线步骤反复检查或运行 DRC。
 
@@ -39,6 +39,6 @@ metadata:
 
 原理图自动检查是本版重点；PCB 保留已有结构化读取/写入，不能借原理图检查证明 PCB 完整验收。官方事件/BBox 为 Beta，文字缺测仍可由局部图面审阅，电气未知不能被视觉豁免。权限依当前任务和宿主账号/API，本包没有独立桌面控制服务。Docling 在资料解析上游，OPA 和其他流程框架本轮不引入。
 
-本版后台/MCP 为 1.8.1-open.9.3，兼容且原样沿用 Connector 1.8.1-open.9；已导入 open.9 时无需重新导入 .eext。
+本版后台、MCP、Skill、Connector 均为 1.8.1-open.9.4。此次包含 Connector 读取优化，需要导入新版 .eext，并将 MCP 与 Skill 切换到匹配包后重载。构建完成不代表当前宿主已经加载。
 
 后台由多个 MCP/Connector 共用，关闭或重载某个 MCP 不停止后台；只有明确 daemon stop/restart 才停止。启动日志在既有 runtime/daemon-stderr.log，启动错误不伪装连接成功。

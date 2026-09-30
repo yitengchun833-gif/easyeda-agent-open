@@ -53,7 +53,7 @@ PCB 全流程验收、所有宿主事件覆盖和相对人工速度尚未完成�
 5. 将包内 `skills/easyeda-agent-open` 文件夹放入 Codex 的 `~/.codex/skills/`。重启 Codex，让它加载 MCP 和 Skill；MCP 启动时会检查并启动匹配的本机后台。
 6. 保持目标工程打开；需要时点击 **EDA Agent Open → Reconnect**。请 Agent 先确认当前工程与页面，再描述绘图或修改目标。
 
-默认本机通信端口为 `60932`。已使用本项目后台/MCP **open.9.3** 的用户，本次只需重新导入新版 `.eext`；图标和介绍更新不要求重新注册或重新加载 MCP。
+默认本机通信端口为 `60932`。open.9.4 包含 Connector、MCP 与后台读取优化；升级时需导入匹配 `.eext`，切换 MCP 与 Skill 到完整包，正常停止旧后台后重载 Codex。
 旧后台版本升级应使用匹配的完整包；不同后台版本不会被启动器自动替换。
 
 可以这样开始：
@@ -74,7 +74,7 @@ PCB 全流程验收、所有宿主事件覆盖和相对人工速度尚未完成�
 
 ## 源码与开发
 
-当前后台、MCP、Skill 和新版 Connector 均标记为 `1.8.1-open.9.3`；本次 Connector 升级主要更新图标、说明与项目归属，执行协议保持兼容。
+当前后台、MCP、Skill 和 Connector 均标记为 `1.8.1-open.9.4`。新增按需快照、同次读取阶段复用与 HTTP 回执精简；后台保留完整审计和恢复证据。
 
 源码目录：`cmd/` 与 `internal/` 为 Go CLI/后台；`extension/` 为嘉立创扩展；`mcp/` 为 MCP 适配；`skills/` 为当前 Skill；`api-reference/` 为官方 API 参考。
 Windows 完整包附带 CLI、MCP 运行依赖、Connector、Skill 和源码；公开 Git 仓库不包含本地运行状态、私有工程或账号凭据。

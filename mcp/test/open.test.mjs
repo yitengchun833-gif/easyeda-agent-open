@@ -8,6 +8,7 @@ import { DOMAIN_NAMES, toMcpResult } from '../src/core.mjs';
 test('one HTTP request per batch, no replay on connection failure, errors stay errors', async () => {
   const requests = [];
   const server = createServer(async (req, res) => {
+    assert.equal(req.headers['x-easyeda-response'], 'public-v1');
     let body = ''; for await (const chunk of req) body += chunk;
     requests.push(JSON.parse(body));
     if (requests.at(-1).action === 'debug.exec_js') { req.socket.destroy(); return; }

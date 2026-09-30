@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createServer} from 'node:http';
 import {publicReceipt,runtimeRequest,snapshotSteps} from '../src/open.mjs';
+test('snapshot profiles read only requested facts without changing the full default',()=>{
+  const geometry=snapshotSteps('schematic',false,false,false,{primitiveIds:['r'],profile:'geometry',includeTexts:true})[1].payload;
+  assert.equal(geometry.includePinNets,false);assert.equal(geometry.includeDeviceIdentity,false);
+  assert.equal(geometry.includeBBox,true);assert.equal(geometry.includeWires,true);assert.equal(geometry.includeTexts,true);
+  const electrical=snapshotSteps('schematic',false,false,false,{profile:'electrical'})[1].payload;
+  assert.equal(electrical.includePinNets,true);assert.equal(electrical.includeBBox,false);assert.equal(electrical.includeWires,false);
+  assert.equal(snapshotSteps('schematic',false,true)[1].payload.includeDeviceIdentity,true);
+  assert.throws(()=>snapshotSteps('schematic',false,true,false,{profile:'typo'}),/Unknown/);
+});
 test('private net indexes/readbacks do not expand model context',()=>assert.deepEqual(publicReceipt({result:{_readback:[1],_baseline:{},_netIndex:{},_scene:{},rules:{status:'pass'},primitiveId:'r'}}),{result:{rules:{status:'pass'},primitiveId:'r'}}));
 test('custom component properties remain intact',()=>assert.deepEqual(publicReceipt({otherProperty:{_scene:'user value'}}),{otherProperty:{_scene:'user value'}}));
 test('scoped snapshots use component ids and do not request all page primitives',()=>{const read=snapshotSteps('schematic',false,true,false,{primitiveIds:['r'],includeTexts:true})[1];assert.deepEqual(read.payload.primitiveIds,['r']);assert.equal(read.payload.includePagePrimitives,undefined);assert.equal(read.payload.includeTexts,true)});

@@ -133,7 +133,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 
 	var req protocol.Request
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, actionRequestBodyLimit)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorResponse(req.ID, "BAD_REQUEST", "invalid action request body", err.Error()))
+		writeActionResponse(w, r, http.StatusBadRequest, errorResponse(req.ID, "BAD_REQUEST", "invalid action request body", err.Error()))
 		return
 	}
 
@@ -143,7 +143,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Action == "" {
-		writeJSON(w, http.StatusBadRequest, errorResponse(req.ID, "ACTION_REQUIRED", "action is required", "include an \"action\" field"))
+		writeActionResponse(w, r, http.StatusBadRequest, errorResponse(req.ID, "ACTION_REQUIRED", "action is required", "include an \"action\" field"))
 		return
 	}
 	if !knownActions[req.Action] {
@@ -153,7 +153,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		started := time.Now().UTC()
 		errResp := errorResponse(req.ID, "UNKNOWN_ACTION", fmt.Sprintf("unknown action: %s", req.Action), "run `easyeda actions` for the supported set")
 		s.audit.Append(fromResponse(started, &req, &errResp))
-		writeJSON(w, http.StatusBadRequest, errResp)
+		writeActionResponse(w, r, http.StatusBadRequest, errResp)
 		return
 	}
 
@@ -162,7 +162,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		started := time.Now().UTC()
 		resp := s.systemHealthResponse(req.ID)
 		s.audit.Append(fromResponse(started, &req, &resp))
-		writeJSON(w, http.StatusOK, resp)
+		writeActionResponse(w, r, http.StatusOK, resp)
 		return
 	}
 
@@ -175,14 +175,14 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 			started := time.Now().UTC()
 			errResp := errorResponse(req.ID, "AMBIGUOUS_PROJECT", fmt.Sprintf("multiple connected windows match project %q", req.Project), "pass --window to pick one (see `easyeda health`)")
 			s.audit.Append(fromResponse(started, &req, &errResp))
-			writeJSON(w, http.StatusConflict, errResp)
+			writeActionResponse(w, r, http.StatusConflict, errResp)
 			return
 		}
 		if !found {
 			started := time.Now().UTC()
 			errResp := errorResponse(req.ID, "NO_CONNECTOR", fmt.Sprintf("no connected window for project %q", req.Project), "open the project in EasyEDA (connector enabled), or run `easyeda health`")
 			s.audit.Append(fromResponse(started, &req, &errResp))
-			writeJSON(w, http.StatusServiceUnavailable, errResp)
+			writeActionResponse(w, r, http.StatusServiceUnavailable, errResp)
 			return
 		}
 		req.WindowID = id
@@ -215,7 +215,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		}
 		errResp := errorResponse(req.ID, code, message, detail)
 		s.audit.Append(fromResponse(started, &req, &errResp))
-		writeJSON(w, http.StatusServiceUnavailable, errResp)
+		writeActionResponse(w, r, http.StatusServiceUnavailable, errResp)
 		return
 	}
 
@@ -229,7 +229,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		if err := protocol.NativeNetLabelSupport(target.snapshot().EasyEDAVersion); err != nil {
 			resp := errorResponse(req.ID, "HOST_API_UNSUPPORTED", "native net_label is unavailable on this host", err.Error())
 			s.audit.Append(fromResponse(time.Now().UTC(), &req, &resp))
-			writeJSON(w, http.StatusUnprocessableEntity, resp)
+			writeActionResponse(w, r, http.StatusUnprocessableEntity, resp)
 			return
 		}
 	}
@@ -238,7 +238,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		if !acquired {
 			errResp := errorResponse(req.ID, "ACTION_BUSY", "a write/document transition is being verified on this window", "wait for its readback; do not interleave another write or document switch")
 			s.audit.Append(fromResponse(time.Now().UTC(), &req, &errResp))
-			writeJSON(w, http.StatusConflict, errResp)
+			writeActionResponse(w, r, http.StatusConflict, errResp)
 			return
 		}
 		defer release()
@@ -254,7 +254,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	if errResp := s.checkQueueBlocked(&req); errResp != nil {
 		started := time.Now().UTC()
 		s.audit.Append(fromResponse(started, &req, errResp))
-		writeJSON(w, http.StatusServiceUnavailable, *errResp)
+		writeActionResponse(w, r, http.StatusServiceUnavailable, *errResp)
 		return
 	}
 
@@ -268,7 +268,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 				fmt.Sprintf("%s is already running on this window", req.Action),
 				"wait for the in-flight check to settle; if it never does, EasyEDA is in the background — bring the window to the FOREGROUND and run once (do not retry in a loop)")
 			s.audit.Append(fromResponse(started, &req, &errResp))
-			writeJSON(w, http.StatusConflict, errResp)
+			writeActionResponse(w, r, http.StatusConflict, errResp)
 			return
 		}
 		defer release()
@@ -285,7 +285,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	if err := s.runtime.start(req, &currentContext); err != nil {
 		errResp := errorResponse(req.ID, "RUNTIME_STATE_CHANGED", "task evidence changed before dispatch", err.Error())
 		s.audit.Append(fromResponse(started, &req, &errResp))
-		writeJSON(w, http.StatusConflict, errResp)
+		writeActionResponse(w, r, http.StatusConflict, errResp)
 		return
 	}
 	// outcome feeds the rolling per-window health; whitelisted idempotent
@@ -330,7 +330,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		errResp := errorResponse(req.ID, "DISPATCH_FAILED", message, err.Error())
 		s.writeHealth.annotateDegraded(&req, &errResp)
 		s.audit.Append(fromResponse(started, &req, &errResp))
-		writeJSON(w, status, errResp)
+		writeActionResponse(w, r, status, errResp)
 		return
 	}
 	// The connector echoes id/version/ok/result/context/artifacts but does not
@@ -366,7 +366,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	if resp.OK {
 		s.maybeAutosave(&req)
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeActionResponse(w, r, http.StatusOK, resp)
 }
 
 // artifactDir picks where to persist artifacts. The CLI sends its own working

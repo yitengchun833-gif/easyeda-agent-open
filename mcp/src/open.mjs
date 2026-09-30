@@ -34,7 +34,7 @@ export async function callAction(action, input = {}, url = daemonURL) {
   input.signal?.addEventListener('abort', cancel, { once: true });
   try {
     const response = await fetch(`${url}/action`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST', headers: { 'content-type': 'application/json', 'X-Easyeda-Response': 'public-v1' },
       body: JSON.stringify({ id, type: 'request', version: 'v1', action, windowId: input.window,
         timeoutMs, clientId: `open-mcp:${process.pid}`, payload }),
       signal: AbortSignal.any([AbortSignal.timeout(timeoutMs + 2000), ...(input.signal ? [input.signal] : [])]),
@@ -71,7 +71,7 @@ export async function runtimeRequest(input = {}, url = daemonURL) {
   const endpoint = operation === 'state' ? `/runtime/state?${new URLSearchParams({window:input.window ?? '',primitiveIds:(input.primitiveIds ?? []).join(','),summary:input.includeObjects===true||input.primitiveIds?.length?'0':'1'})}` : '/runtime/control';
   try {
     const response = await fetch(`${url}${endpoint}`, { method:operation==='state'?'GET':'POST',
-      headers:{'content-type':'application/json','X-Easyeda-Control':'1'},
+      headers:{'content-type':'application/json','X-Easyeda-Control':'1','X-Easyeda-Response':'public-v1'},
       body:operation==='state'?undefined:JSON.stringify(input),
       signal:AbortSignal.any([AbortSignal.timeout(timeoutMs),...(input.signal?[input.signal]:[])]) });
     const chunks=[];let length=0;
@@ -113,8 +113,11 @@ export function imageResult(result) {
 }
 
 export function snapshotSteps(domain, routing = false, detail = false, allPages = false, options = {}) {
-  const names = domain === 'schematic' ? ['document.current', detail || options.primitiveIds ? 'schematic.components.list' : 'schematic.read']
+  const profile = options.profile ?? 'full';
+  if (!['full', 'geometry', 'electrical'].includes(profile)) throw new Error('Unknown snapshot profile');
+  const geometry = profile !== 'electrical' || options.includeTexts === true;
+  const names = domain === 'schematic' ? ['document.current', detail || options.primitiveIds || options.profile ? 'schematic.components.list' : 'schematic.read']
     : ['document.current', 'pcb.components.list', 'pcb.layers.list', 'pcb.nets.list',
       ...(routing ? ['pcb.line.list', 'pcb.via.list', 'pcb.pour.list'] : [])];
-  return names.map(action => ({ action, payload: action === 'schematic.read' ? { includeCheck: false, allPages } : action === 'schematic.components.list' ? { allPages, includePins: true, includeDeviceIdentity: true, includeBBox: true, includeWires: true, includeNetIndex:true,includeTexts:options.includeTexts===true, ...(options.primitiveIds?{primitiveIds:options.primitiveIds}:{includePagePrimitives:!allPages}) } : {} }));
+  return names.map(action => ({ action, payload: action === 'schematic.read' ? { includeCheck: false, allPages } : action === 'schematic.components.list' ? { allPages, includePins: true, includePinNets: profile !== 'geometry', includeDeviceIdentity: profile === 'full', includeBBox: geometry, includeWires: geometry, includeNetIndex:profile !== 'geometry',includeTexts:options.includeTexts===true, ...(options.primitiveIds?{primitiveIds:options.primitiveIds}:{includePagePrimitives:profile === 'full' && !allPages}) } : {} }));
 }

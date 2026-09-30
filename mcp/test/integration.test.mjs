@@ -32,6 +32,7 @@ test('stdio MCP initializes, lists tools, and invokes offline discovery', async 
     await client.connect(transport);
     const listed = await client.listTools();
     assert.equal(listed.tools.length, 21);
+    assert.deepEqual(listed.tools.find(tool=>tool.name==='easyeda_snapshot').inputSchema.properties.profile.enum, ['full','geometry','electrical']);
     assert.ok(listed.tools.some(tool=>tool.name==='easyeda_runtime'));
     assert.ok(listed.tools.some((tool) => tool.name === 'easyeda_pcb'));
     assert.ok(listed.tools.some((tool) => tool.name === 'easyeda_debug'));

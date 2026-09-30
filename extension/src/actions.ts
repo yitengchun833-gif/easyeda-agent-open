@@ -76,6 +76,31 @@ type SchComponent = NonNullable<Awaited<ReturnType<typeof eda.sch_PrimitiveCompo
 /** The schematic component pin primitive type, derived from the API. */
 type SchPin = NonNullable<Awaited<ReturnType<typeof eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId>>>[number];
 
+// Only used when two checkers read the same before/after phase. Not a persistent
+// cache: writes always get a different pass; identity/event changes discard it.
+function schematicReadPass() {
+	let key: string | undefined;
+	let netlist: Promise<NetlistPinNets> | undefined;
+	const pins = new Map<string, Promise<SchPin[] | undefined>>();
+	return {
+		async begin() {
+			const context = await readResponseContext();
+			const scene = sceneObservation();
+			const next = context.projectUuid && context.documentUuid && context.tabId
+				? JSON.stringify([context.projectUuid, context.documentUuid, context.tabId, scene.instance, scene.sequence]) : undefined;
+			if (!next || next !== key) { netlist = undefined; pins.clear(); }
+			key = next;
+		},
+		netlist: () => netlist ??= collectNetlistPinNets(),
+		pins(id: string) {
+			let value = pins.get(id);
+			if (!value) { value = eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(id); pins.set(id, value); }
+			return value;
+		},
+	};
+}
+type SchematicReadPass = ReturnType<typeof schematicReadPass>;
+
 /** The PCB component primitive type, derived from the API. */
 type PcbComponent = NonNullable<Awaited<ReturnType<typeof eda.pcb_PrimitiveComponent.getAll>>>[number];
 
@@ -1145,7 +1170,8 @@ export const schematicDesignatorsList: Handler = async () => {
 	}
 };
 
-export const schematicComponentsList: Handler = async (payload) => {
+export const schematicComponentsList = async (payload: Payload, _execution?: Execution, reads?: SchematicReadPass): Promise<ActionResult> => {
+	await reads?.begin();
 	const readSequence = sceneObservation().sequence;
 	const allPages = optionalBoolean(payload, 'allPages') === true;
 	const includePins = optionalBoolean(payload, 'includePins') === true;
@@ -1230,7 +1256,7 @@ export const schematicComponentsList: Handler = async (payload) => {
 	let pinNetsError: string | undefined;
 	if (includePins && includePinNets) {
 		try {
-			const collected = await collectNetlistPinNets();
+			const collected = await (reads ? reads.netlist() : collectNetlistPinNets());
 			pinNetsByDesignator = collected.byDesignator;
 			pinNetsAvailable = collected.available;
 			pinNetsError = collected.error;
@@ -1243,6 +1269,7 @@ export const schematicComponentsList: Handler = async (payload) => {
 		if (pinNetsByDesignator) {
 			try {
 				const everywhere = allPages ? components : await eda.sch_PrimitiveComponent.getAll(undefined, true);
+				if (!Array.isArray(everywhere)) throw new Error('Cross-page component identity inventory unavailable.');
 				const identByDesig = new Map<string, Set<string>>();
 				for (const c of everywhere ?? []) {
 					let type = '';
@@ -1262,7 +1289,13 @@ export const schematicComponentsList: Handler = async (payload) => {
 					if (idents.size > 1) ambiguousDesignators.add(d);
 				}
 			}
-			catch { /* best-effort — no ambiguity info degrades to prior behavior */ }
+			catch (error) {
+				// Without collision coverage a designator-keyed net can belong to a
+				// different page. Do not turn a failed identity read into known nets.
+				pinNetsByDesignator = null;
+				pinNetsAvailable = false;
+				pinNetsError = describeThrown(error);
+			}
 		}
 	}
 
@@ -1324,9 +1357,8 @@ export const schematicComponentsList: Handler = async (payload) => {
 		}
 		if (includePins) {
 			try {
-				const pins = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(
-					component.getState_PrimitiveId(),
-				);
+				const pins = await (reads ? reads.pins(component.getState_PrimitiveId())
+					: eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(component.getState_PrimitiveId()));
 				if (!Array.isArray(pins)) throw new Error('Pin API did not return an array.');
 				const designator = String(component.getState_Designator?.() ?? '');
 				const ambiguous = ambiguousDesignators.has(designator);
@@ -4872,7 +4904,8 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
 // the #1 collectNetlistPinNets logic), nets (net → connected pins + degree +
 // global flag), floating pins, and the geometric design check (schematicCheck;
 // pass includeCheck:false to skip it for a faster read).
-const schematicRead: Handler = async (payload) => {
+const schematicRead = async (payload: Payload, _execution?: Execution, reads?: SchematicReadPass): Promise<ActionResult> => {
+	await reads?.begin();
 	const allPages = optionalBoolean(payload, 'allPages') === true;
 	const includeCheck = optionalBoolean(payload, 'includeCheck') !== false; // default true
 
@@ -4886,7 +4919,7 @@ const schematicRead: Handler = async (payload) => {
 	}
 
 	// JSON-authoritative pin→net per designator (same source as schematic.check).
-	const { byDesignator: pinNets, available: netlistAvailable, error: netlistError } = await collectNetlistPinNets(allPages);
+	const { byDesignator: pinNets, available: netlistAvailable, error: netlistError } = await (reads ? reads.netlist() : collectNetlistPinNets(allPages));
 
 	const netToPins = new Map<string, Array<string>>();
 	const floating: Array<string> = [];
@@ -4898,7 +4931,7 @@ const schematicRead: Handler = async (payload) => {
 		const pins: Array<Record<string, unknown>> = [];
         let pinsError: string | undefined;
 		try {
-			const pinPrims = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(c.getState_PrimitiveId());
+			const pinPrims = await (reads ? reads.pins(c.getState_PrimitiveId()) : eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(c.getState_PrimitiveId()));
             if (!Array.isArray(pinPrims)) throw new Error('Pin inventory unavailable');
 			for (const p of pinPrims ?? []) {
 				const number = String(p.getState_PinNumber?.() ?? '');
@@ -14541,7 +14574,7 @@ export function comparePreservedSchematic(before: Record<string, unknown>, after
 		: { status: 'pass', checkedParts: expected.size, coverage: 'active-page part identity and pin nets' };
 }
 
-const debugBatch: Handler = async (payload, execution) => {
+const debugBatch = async (payload: Payload, execution?: Execution, reads?: {before: SchematicReadPass; after: SchematicReadPass}): Promise<ActionResult> => {
 	const steps = payload.steps;
 	if (!Array.isArray(steps) || steps.length === 0 || steps.length > 500) {
 		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'steps must contain 1–500 actions.');
@@ -14564,7 +14597,7 @@ const debugBatch: Handler = async (payload, execution) => {
 		if (!beforeContext.projectUuid || !beforeContext.documentUuid) {
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Cannot verify preserved schematic: project/document identity is unavailable; no batch steps executed.');
 		}
-		const baseline = (await schematicRead({ includeCheck: false })).result as Record<string, unknown>;
+		const baseline = (await schematicRead({ includeCheck: false }, undefined, reads?.before)).result as Record<string, unknown>;
 		if (baseline.partial === true || !Array.isArray(baseline.components)) {
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Cannot verify preserved schematic: baseline pins or netlist are unavailable; no batch steps executed.');
 		}
@@ -14607,7 +14640,7 @@ const debugBatch: Handler = async (payload, execution) => {
 				verification = { status: 'fail', reason: 'target document changed during the batch' };
 			}
 			else {
-				const afterSchematic = (await schematicRead({ includeCheck: false })).result as Record<string, unknown>;
+				const afterSchematic = (await schematicRead({ includeCheck: false }, undefined, reads?.after)).result as Record<string, unknown>;
 				verification = comparePreservedSchematic(beforeSchematic!, afterSchematic);
 			}
 		}
@@ -14854,6 +14887,9 @@ export async function runAction(
 	const scope = [...new Set([...(Array.isArray(_scope)?_scope:[]),...(Array.isArray(edit.primitiveIds)?edit.primitiveIds:[])])];
 	const autoCheck = attachContext && _mutation === true && args.dryRun !== true;
 	const displayOnly = _displayOnly === true && displayOnlyAction(action,args);
+	// Two disjoint read phases. Never retain these facts across a write or request.
+	const reads = autoCheck && action === 'debug.batch' && args.verifyPreservedSchematic === true
+		? {before: schematicReadPass(), after: schematicReadPass()} : undefined;
 	let beforeFacts: Record<string, unknown> | undefined;
 	let beforeTarget: Awaited<ReturnType<typeof readResponseContext>> | undefined;
 	let checkError: string | undefined;
@@ -14871,11 +14907,11 @@ export async function runAction(
 		try {
 			beforeTarget = await readResponseContext();
 			if (beforeTarget.documentType === 'schematic') beforeFacts = _resumeBaseline && typeof _resumeBaseline === 'object'
-				? _resumeBaseline as Record<string, unknown> : currentFacts ?? (await schematicComponentsList({primitiveIds:scope,includePins:true,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:true})).result as Record<string, unknown>;
+				? _resumeBaseline as Record<string, unknown> : currentFacts ?? (await schematicComponentsList({primitiveIds:scope,includePins:!displayOnly,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:!displayOnly}, undefined, reads?.before)).result as Record<string, unknown>;
 		} catch (error) { checkError = describeThrown(error); }
 	}
 	const observationBefore = sceneObservation();
-	const result = await handler(args, execution);
+	const result = action === 'debug.batch' ? await debugBatch(args, execution, reads) : await handler(args, execution);
 	if (autoCheck && (beforeTarget?.documentType === 'schematic' || action.startsWith('schematic.') || action === 'debug.batch' || action === 'debug.exec_js')) {
 		let checks: RuleResult[] = [];
 		if (beforeFacts) {
@@ -14883,7 +14919,7 @@ export async function runAction(
 			try {
 				const afterTarget = await readResponseContext();
 				if (!afterTarget.projectUuid || !afterTarget.documentUuid || afterTarget.projectUuid !== beforeTarget?.projectUuid || afterTarget.documentUuid !== beforeTarget?.documentUuid) throw new Error('Target changed or is unavailable during the modification unit.');
-				const afterFacts = (await schematicComponentsList({primitiveIds:scope,includePins:true,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:true,includeBBox:true,includeTexts:true})).result as Record<string, unknown>;
+				const afterFacts = (await schematicComponentsList({primitiveIds:scope,includePins:true,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:true,includeBBox:true,includeTexts:true}, undefined, reads?.after)).result as Record<string, unknown>;
 				const mode = edit.mode === 'design' ? 'design' : 'layout';
 				const wireIds:string[]=[];
 				const collectWires=(name:string,p:Record<string,unknown>,r:Record<string,unknown>|undefined)=>{

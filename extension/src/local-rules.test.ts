@@ -66,16 +66,16 @@ test('automatic action wrapper uses native attribute readback and performs zero 
 	const globals=globalThis as any,old=globals.eda,oldTypes=globals.EDMT_EditorDocumentType;
 	t.after(()=>{globals.eda=old;globals.EDMT_EditorDocumentType=oldTypes;});
 	globals.EDMT_EditorDocumentType={SCHEMATIC_PAGE:1};
-	let x=20,attributeReads=0,componentReads=0,netlistReads=0;
+	let x=20,attributeReads=0,componentReads=0,netlistReads=0,pinReads=0,wireReads=0;
 	const state:Record<string,unknown>={PrimitiveId:'r',ComponentType:'part',UniqueId:'uid',Designator:'R1',Component:{uuid:'instance'},Footprint:{uuid:'fp'},SupplierId:'C1'};
 	const part=new Proxy({}, {get:(_,key)=>()=>state[String(key).replace('getState_','')]??''});
 	const attr=()=>({getState_PrimitiveId:()=> 'a',getState_ParentPrimitiveId:()=> 'r',getState_Key:()=> 'Name',getState_Value:()=> 'GND',getState_X:()=>x,getState_Y:()=>20,getState_KeyVisible:()=>false,getState_ValueVisible:()=>true});
 	globals.eda={
 		dmt_Project:{getCurrentProjectInfo:async()=>({uuid:'project'})},
 		dmt_SelectControl:{getCurrentDocumentInfo:async()=>({uuid:'page',documentType:1})},
-		sch_PrimitiveComponent:{get:async()=>{componentReads++;return [part]},getAll:async()=>{throw new Error('unexpected page inventory')},getAllPinsByPrimitiveId:async()=>[]},
+		sch_PrimitiveComponent:{get:async()=>{componentReads++;return [part]},getAll:async()=>{throw new Error('unexpected page inventory')},getAllPinsByPrimitiveId:async()=>{pinReads++;return []}},
 		sch_PrimitiveAttribute:{get:async()=>{attributeReads++;return attr()},getAll:async()=>[attr(),{...attr(),getState_PrimitiveId:()=> 'metadata',getState_KeyVisible:()=>null,getState_ValueVisible:()=>null}],modify:async(_id:string,props:any)=>{x=props.x;return {getState_PrimitiveId:()=> 'a',getState_X:()=> -999}}},
-		sch_PrimitiveWire:{getAll:async()=>[]},
+		sch_PrimitiveWire:{getAll:async()=>{wireReads++;return []}},
 		sch_Primitive:{getPrimitivesBBox:async(ids:string[])=>({minX:0,minY:0,maxX:ids[0]==='metadata'?0:10,maxY:ids[0]==='metadata'?0:10})},
 		sch_ManufactureData:{getNetlistFile:async()=>{netlistReads++;throw new Error('unexpected netlist')}}
 	};
@@ -85,6 +85,8 @@ test('automatic action wrapper uses native attribute readback and performs zero 
 	assert.equal(attributeReads,2,'read actual native state before and after, not modify return');
 	assert.equal(componentReads,2);
 	assert.equal(netlistReads,0);
+	assert.equal(pinReads,1,'display-only baseline needs identity, final visual neighborhood still reads pins');
+	assert.equal(wireReads,1,'no before-write wire inventory for a display-only change');
 	assert.equal(result.result.rules.status,'pass');
 	assert.equal(result.result.rules.items.find((r:any)=>r.id==='pin_nets').coverage,'not_applicable');
 	assert.equal(result.result._readback[0].result.texts[0].x,25);

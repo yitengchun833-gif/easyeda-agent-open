@@ -1,6 +1,6 @@
 {
   "name": "easyeda-agent-open",
-  "version": "1.8.1-open.9.3",
+  "version": "1.8.1-open.9.4",
   "description": "Open EasyEDA Pro control: typed actions, native JavaScript, PCB pad-to-net reports, batched edits, canvas images and official API discovery.",
   "author": {
     "name": "yitengchun833-gif; based on zhoushoujianwork/easyeda-agent"

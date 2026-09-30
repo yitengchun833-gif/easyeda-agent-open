@@ -12,7 +12,7 @@ async function health() {
   try {
     const response = await fetch(`${daemonURL}/health`, { signal: AbortSignal.timeout(1000) });
     const data = await response.json();
-    if (!response.ok || data.service !== 'easyeda-agent' || data.version !== 'v1.8.1-open.9.3') throw new Error(`Port is occupied by daemon ${data.version ?? 'unknown'}; expected v1.8.1-open.9.3. No process was replaced.`);
+    if (!response.ok || data.service !== 'easyeda-agent' || data.version !== 'v1.8.1-open.9.4') throw new Error(`Port is occupied by daemon ${data.version ?? 'unknown'}; expected v1.8.1-open.9.4. No process was replaced.`);
     return true;
   } catch (error) {
     if (error.cause?.code === 'ECONNREFUSED') return false;

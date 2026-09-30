@@ -26,7 +26,7 @@ const actions = catalogExecution.result.filter((action) => DOMAIN_NAMES.includes
 const byName = new Map(actions.map((action) => [action.name, action]));
 
 const server = new Server(
-  { name: 'easyeda-agent-open', version: '1.8.1-open.9.3' },
+  { name: 'easyeda-agent-open', version: '1.8.1-open.9.4' },
   {
     capabilities: { tools: {} },
     instructions: 'Control EasyEDA Pro using typed actions or arbitrary eda.* JavaScript. No phase approvals or typed-only policy. Use window from health; optional target UUIDs are checked immediately before execution. Batch independent operations to reduce round trips. Errors and unknown results are not success; inspect before retrying writes.',
@@ -166,7 +166,7 @@ const tools = [
   {
     name: 'easyeda_snapshot',
     description: 'Collect schematic semantic data or PCB components/layers/nets in one request; optionally include PCB routing primitives. Does not infer correctness or run mandatory checks.',
-    inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs, domain: { type: 'string', enum: ['schematic', 'pcb'] }, cacheOnly:{type:'boolean'}, primitiveIds:{type:'array',items:{type:'string'},maxItems:500}, includeTexts:{type:'boolean'}, routing: { type: 'boolean' }, detail: { type: 'boolean', description: 'Schematic: include attributes, pins, bounding boxes, wires and active-page primitives using the rich reader.' }, allPages: { type: 'boolean' } }, required: ['domain'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs, domain: { type: 'string', enum: ['schematic', 'pcb'] }, cacheOnly:{type:'boolean'}, primitiveIds:{type:'array',items:{type:'string'},maxItems:500}, includeTexts:{type:'boolean'}, profile:{type:'string',enum:['full','geometry','electrical'],description:'Schematic only: geometry omits netlist and device hydration; electrical omits drawing geometry. Default full. Geometry cannot prove electrical correctness.'}, routing: { type: 'boolean' }, detail: { type: 'boolean', description: 'Schematic: include attributes, pins, bounding boxes, wires and active-page primitives using the rich reader.' }, allPages: { type: 'boolean' } }, required: ['domain'], additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
   {
