@@ -1,0 +1,96 @@
+{
+  "id": "block.opto_acc_ign_detect",
+  "desc": "车载 ACC/点火检测前端(PTC+TVS+限流+光耦隔离+RC 硬化): 12-24V 点火线安全进 MCU GPIO,低有效;strapping 脚可用",
+  "category": "sensing",
+  "author": "@zhoushoujianwork",
+  "contributors": [],
+  "added": "v0.11.0",
+  "updated": "v0.11.0",
+  "source": "datasheet:LTV-817 (Liteon — 光耦 CTR 特性/IF 工作点) + motobox IGNITION_DETECT_INPUT_DESIGN(项目级隔离硬化设计文档: PTC/TVS/RC 要求) ; 限流值经车机V2 二轮复核推导(22k 在 12V 下 IF 仅 0.49mA,无 CTR 分档不保拉低;10k/0805 兼顾 12V 1.08mA 与 24V 52mW)后在 车机V2-fable P4 整板落网",
+  "validated": "车机V2-fable 2026-07-09 by @zhoushoujianwork: 整板 place→autoconnect→sch check(0 桥接)→bridge-check 收敛→sch drc(0 fatal/0 error),spec↔sch read 逐网对账 0 差异。诚实: 随整板 netport 落网验证,非孤立块单放;未实板 bring-up(光耦 CTR 温度裕度待实测)。",
+  "parts": {
+    "F_ACC": {
+      "part": "fuse.ptc_1206_500ma",
+      "qty": 1,
+      "note": "ACC 线自恢复保险(线束短路/搭铁保护)。"
+    },
+    "D_ACC": {
+      "part": "diode.smbj33a_smb",
+      "qty": 1,
+      "note": "ACC 线浪涌 TVS(点火线毛刺/负载突降): K→信号, A→GND。"
+    },
+    "R_LIM": {
+      "part": "res.10k_0805",
+      "qty": 1,
+      "note": "光耦 LED 限流: 12V 时 IF≈1.08mA(无 CTR 分档件也保得住拉低), 24V 时 52mW 在 0805 额定内。⚠不要用 22k——12V 下只有 0.49mA,输出可能拉不到 VIL(评审二轮实证);也不要 0402 小封装——24V 下超额定。"
+    },
+    "U_OPT": {
+      "part": "opto.ltv817s_smd4",
+      "qty": 1,
+      "note": "光耦隔离(车身电气域↔MCU 域)。符号脚为数字(sch read 实测): 1=阳极A, 2=阴极K, 3=发射极E, 4=集电极C(PC817 标准脚序)。"
+    },
+    "R_PU": {
+      "part": "res.10k_0402",
+      "qty": 1,
+      "note": "集电极上拉到 MCU 域 3.3V。"
+    },
+    "R_S": {
+      "part": "res.470r_0402",
+      "qty": 1,
+      "note": "GPIO 串阻(与 C_F 组成输出 RC,τ≈47µs 毛刺滤除;strapping 脚要求)。"
+    },
+    "C_F": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "GPIO 端滤波电容(贴 MCU 脚)。"
+    }
+  },
+  "internal_nets": [
+    ["PORT:IGN_12V", "F_ACC.1"],
+    ["F_ACC.2", "R_LIM.1", "D_ACC.C"],
+    ["R_LIM.2", "U_OPT.1"],
+    ["U_OPT.4", "R_PU.1", "R_S.1"],
+    ["R_PU.2", "PORT:VPULL"],
+    ["R_S.2", "C_F.1", "PORT:IGN_DETECT"],
+    ["U_OPT.2", "U_OPT.3", "D_ACC.A", "C_F.2", "PORT:GND"]
+  ],
+  "ports": {
+    "IGN_12V": {
+      "dir": "in",
+      "at": "F_ACC.1",
+      "desc": "车辆 ACC/点火线(12-24V,经线束端子进板;配 block.vehicle_input_tps54360_5v 的 IGN_12V 透传口)",
+      "default_net": "IGN_12V"
+    },
+    "IGN_DETECT": {
+      "dir": "out",
+      "at": "R_S.2",
+      "desc": "MCU GPIO,低有效(ACC 通→光耦导通→拉低)。RC 硬化后可安全用在 strapping 脚(如 ESP32-S3 IO3——但该板永不烧 STRAP_JTAG_SEL eFuse);RTC 脚上可做 ext1 ANY_LOW 深睡唤醒(点火即醒)",
+      "default_net": "IGN_DETECT"
+    },
+    "VPULL": {
+      "dir": "in",
+      "at": "R_PU.2",
+      "desc": "输出上拉电源(MCU 域 3.3V)",
+      "default_net": "+3V3"
+    },
+    "GND": {
+      "dir": "bidir",
+      "at": "U_OPT.3",
+      "desc": "地。注意本块光耦两侧共地(隔离的是电压域与瞬态,不是地隔离);需要真地隔离时输入侧回线单独走",
+      "default_net": "GND"
+    }
+  },
+  "schematic_notes": [
+    "低有效语义: ACC 通电→LED 亮→晶体管导通→IGN_DETECT 拉低;固件按 level==0 判『点火开』。",
+    "限流值是本块的核心工程点: 必须同时满足 12V 最小 IF(CTR 无分档件的拉低裕度)与 24V 功耗(封装额定)。10k/0805 是两约束的交集;改值前先算两端。",
+    "输出 RC(R_S+C_F)不可省: ① 点火线毛刺滤除;② IGN_DETECT 常落在 strapping 脚,复位窗口内的电平抖动会改启动模式。",
+    "PTC+TVS 保护的是『点火线』而非主电源输入——主输入的保险/TVS 在电源入口块,两者不互相替代。",
+    "U_OPT 符号脚为数字 1-4,映射见 part note(1=A/2=K/3=E/4=C);块内网表已按此写死,复用时零改号。"
+  ],
+  "pcb_layout": [
+    { "rule": "cap-adjacency", "target": "C_F", "constraint": "滤波电容贴 MCU GPIO 脚(不是贴光耦)", "value": "<=3mm", "severity": "must" },
+    { "rule": "domain-separation", "target": "F_ACC/D_ACC/R_LIM/U_OPT 输入侧", "constraint": "车身电气域器件靠端子聚集,与 MCU 域隔开;光耦跨在两域边界", "value": ">=3mm 域间距", "severity": "should" },
+    { "rule": "trace-clearance", "target": "IGN_12V 走线", "constraint": "24V 线与低压信号保持间距", "value": ">=0.5mm", "severity": "must" }
+  ],
+  "bom_note": "7 件: PTC+TVS+10k0805+光耦+上拉+串阻+滤波电容。车载/摩托设备的 ACC 检测标准前端;输出直接喂 MCU(可深睡唤醒)。"
+}

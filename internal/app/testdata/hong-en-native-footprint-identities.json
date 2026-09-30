@@ -1,0 +1,44 @@
+[
+  {
+    "footprintUuid": "31e887476b49ae34",
+    "metadataLines": [
+      "{\"type\":\"DOCHEAD\"}||{\"docType\":\"FOOTPRINT\",\"uuid\":\"31e887476b49ae34\"}|",
+      "{\"type\":\"META\"}||{\"title\":\"WIRELM-SMD_ESP32-S3-WROOM-1U\",\"source\":\"66e2cc0f8deb4eadb03b0d57d0844669|0819f05c4eef4c71ace90d822a990e87\"}|"
+    ]
+  },
+  {
+    "footprintUuid": "a99d5799f5993404",
+    "metadataLines": [
+      "{\"type\":\"DOCHEAD\"}||{\"docType\":\"FOOTPRINT\",\"uuid\":\"a99d5799f5993404\"}|",
+      "{\"type\":\"META\"}||{\"title\":\"CONN-SMD_6P-P1.25_HANBO_WAFER-125W-6A\",\"source\":\"603d7582b3e443d3a1216eba088f6037|0819f05c4eef4c71ace90d822a990e87\"}|"
+    ]
+  },
+  {
+    "footprintUuid": "abe23dba1def1246",
+    "metadataLines": [
+      "{\"type\":\"DOCHEAD\"}||{\"docType\":\"FOOTPRINT\",\"uuid\":\"abe23dba1def1246\"}|",
+      "{\"type\":\"META\"}||{\"title\":\"SOT-223-3_L6.5-W3.4-P2.30-LS7.0-BR\",\"source\":\"20c29e37a9b84b4197418483096f9c05|0819f05c4eef4c71ace90d822a990e87\"}|"
+    ]
+  },
+  {
+    "footprintUuid": "7c075d0795252a7b",
+    "metadataLines": [
+      "{\"type\":\"DOCHEAD\"}||{\"docType\":\"FOOTPRINT\",\"uuid\":\"7c075d0795252a7b\"}|",
+      "{\"type\":\"META\"}||{\"title\":\"C0402\",\"source\":\"14a08379d3874582bdd84020bde81eba|0819f05c4eef4c71ace90d822a990e87\"}|"
+    ]
+  },
+  {
+    "footprintUuid": "6f7ca9a9603aeb19",
+    "metadataLines": [
+      "{\"type\":\"DOCHEAD\"}||{\"docType\":\"FOOTPRINT\",\"uuid\":\"6f7ca9a9603aeb19\"}|",
+      "{\"type\":\"META\"}||{\"title\":\"C0805\",\"source\":\"ccb32feceadc4298b406326a506ce8e7|0819f05c4eef4c71ace90d822a990e87\"}|"
+    ]
+  },
+  {
+    "footprintUuid": "d7d457afcd84d923",
+    "metadataLines": [
+      "{\"type\":\"DOCHEAD\"}||{\"docType\":\"FOOTPRINT\",\"uuid\":\"d7d457afcd84d923\"}|",
+      "{\"type\":\"META\"}||{\"title\":\"R0402\",\"source\":\"df9dfd54cabd403f88cae9927dcd418d|0819f05c4eef4c71ace90d822a990e87\"}|"
+    ]
+  }
+]

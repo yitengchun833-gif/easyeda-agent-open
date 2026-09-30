@@ -1,0 +1,71 @@
+{
+  "name": "easyeda-agent-open",
+  "version": "1.8.1-open.9.3",
+  "upstream": {
+    "url": "https://github.com/zhoushoujianwork/easyeda-agent",
+    "commit": "65694c3896fa08b640100e819108c30f0e495fb7",
+    "manifestVersion": "1.8.1",
+    "license": "MIT with Apache-2.0 beautify modules"
+  },
+  "components": [
+    {
+      "repository": "easyeda/easyeda-api-skill",
+      "commit": "122fb27efa1f2b73664844cacfd329a526d0ab86",
+      "use": "bundled reference documentation; no second bridge",
+      "license": "MIT declared in SKILL.md"
+    },
+    {
+      "repository": "easyeda/eext-run-api-gateway",
+      "commit": "e55348027d1008a3d448b8b228fbca7b82dc8381",
+      "use": "architecture reference; existing agent raw execution reused",
+      "license": "Apache-2.0"
+    },
+    {
+      "repository": "Nambers/easyeda-pro-mcp",
+      "commit": "5222fc162702b9446199c8403e973b8e776ae1ae",
+      "use": "inline image and API lookup design reference; independently implemented",
+      "license": "Apache-2.0"
+    },
+    {
+      "repository": "hyl64/jlcmcp",
+      "commit": "5e53ddaa07e1763de6c1b17a82aafa2cb1476d4b",
+      "use": "PCB pad-to-net report reference; implemented with exact EasyEDA pad numbers; heuristic correctness reports excluded",
+      "license": "MIT"
+    },
+    {
+      "repository": "cheewee2000/easyeda-mcp",
+      "commit": "094ae4383413dbea0c718692e029cc8e933dd89b",
+      "use": "reference only; no implementation copied",
+      "license": "not found"
+    },
+    {
+      "repository": "salitronic/eda-agent",
+      "commit": "c44641193958e87e1249fe298ccf346ba790caf1",
+      "use": "event console, receipt categories and bundled snapshot design reference; Go stdlib implementation, no Python runtime or implementation copied",
+      "license": "Apache-2.0"
+    }
+  ],
+  "optionalExternal": [
+    "Docling",
+    "OPA",
+    "Conftest",
+    "PhaseOps",
+    "kaji",
+    "codex-workflows",
+    "PWF",
+    "Jev/TypeSafe",
+    "AnySearch",
+    "Agent Reach",
+    "Firecrawl",
+    "Crawl4AI",
+    "Playwright"
+  ],
+  "build": {
+    "go": "1.26.3 windows/amd64",
+    "node": "24.16.0",
+    "proApiTypes": "0.4.25",
+    "sdkDeclarationsSha256": "33366e9e7bf8abc0b7405de87b888059ac7123d0b4fdde816b46a0c980e753b7"
+  },
+  "liveEdaValidation": false,
+  "connectorVersion": "1.8.1-open.9.3"
+}

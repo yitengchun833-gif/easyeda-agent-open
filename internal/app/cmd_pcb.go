@@ -1,0 +1,4988 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/zhoushoujianwork/easyeda-agent/internal/blocks"
+	"github.com/zhoushoujianwork/easyeda-agent/internal/pcb/svgimport"
+	"github.com/zhoushoujianwork/easyeda-agent/internal/spec"
+)
+
+// runExternalRouter keeps the command-template interface while selecting the
+// native shell on each platform.  Using sh on Windows strips backslashes from
+// DSN/SES paths and makes Freerouting fail before it can read the input.
+func runExternalRouter(ctx context.Context, command string, stderr io.Writer) error {
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd.exe", "/C", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+	}
+	cmd.Stdout = stderr
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
+
+func checkPcbStackupResponse(data []byte) error {
+	var response struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Verified bool `json:"verified"`
+			Partial  bool `json:"partial"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return fmt.Errorf("decode PCB stackup readback: %w", err)
+	}
+	if !response.OK || !response.Result.Verified || response.Result.Partial {
+		return fmt.Errorf("PCB stackup was not fully applied; inspect written and actual layer fields before retrying")
+	}
+	return nil
+}
+
+// rectViaFencePoints returns a perimeter-only via set for a protected rectangle.
+// Every corner appears exactly once.  Each edge is split into ceil(length/pitch)
+// equal intervals, so the requested pitch is a maximum spacing rather than a
+// step that can leave one oversized tail gap.  Positive margin expands outward;
+// callers can therefore pass the crystal/RF keepout envelope directly.
+func rectViaFencePoints(x0, y0, x1, y1, pitch, margin float64) ([][2]float64, error) {
+	if !allFinite(x0, y0, x1, y1, pitch, margin) {
+		return nil, fmt.Errorf("rect, pitch, and margin must be finite numbers")
+	}
+	if pitch <= 0 {
+		return nil, fmt.Errorf("pitch must be > 0")
+	}
+	if margin < 0 {
+		return nil, fmt.Errorf("margin must be >= 0")
+	}
+	if x1 < x0 {
+		x0, x1 = x1, x0
+	}
+	if y1 < y0 {
+		y0, y1 = y1, y0
+	}
+	x0 -= margin
+	y0 -= margin
+	x1 += margin
+	y1 += margin
+	if x1-x0 <= 1e-6 || y1-y0 <= 1e-6 {
+		return nil, fmt.Errorf("rect must have non-zero width and height")
+	}
+
+	points := make([][2]float64, 0)
+	addEdge := func(ax, ay, bx, by float64) {
+		length := math.Hypot(bx-ax, by-ay)
+		intervals := int(math.Ceil(length / pitch))
+		if intervals < 1 {
+			intervals = 1
+		}
+		// Exclude the end: it is the next edge's start, which keeps corners unique.
+		for i := 0; i < intervals; i++ {
+			t := float64(i) / float64(intervals)
+			points = append(points, [2]float64{
+				ax + (bx-ax)*t,
+				ay + (by-ay)*t,
+			})
+		}
+	}
+	addEdge(x0, y0, x1, y0)
+	addEdge(x1, y0, x1, y1)
+	addEdge(x1, y1, x0, y1)
+	addEdge(x0, y1, x0, y0)
+	const maxViaFencePoints = 4096
+	if len(points) > maxViaFencePoints {
+		return nil, fmt.Errorf("via fence needs %d points (limit %d); increase --pitch or reduce the rectangle", len(points), maxViaFencePoints)
+	}
+	return points, nil
+}
+
+type viaFencePreflight struct {
+	Create   [][2]float64 `json:"create"`
+	Existing [][2]float64 `json:"existing"`
+	Problems []string     `json:"problems,omitempty"`
+}
+
+// pcbCopperArea is materialized copper with exact compound-polygon geometry.
+// Pour boundaries and no-pours regions are deliberately excluded: neither is
+// copper.  A same-net area may bond to a route/via; a different-net area is an
+// obstacle on its copper layer (and on every layer for a through via).
+type pcbCopperArea struct {
+	ID       string
+	Kind     string
+	Net      string
+	Layer    int
+	Contours [][][2]float64
+}
+
+func preflightViaFence(points [][2]float64, net string, hole, diameter, clearance, edgeClearance float64, outline *boardOutline, pads []pcbPadP, tracks []pcbTrack, arcs []pcbArc, vias []pcbViaP, areas []pcbCopperArea) viaFencePreflight {
+	var out viaFencePreflight
+	// An imprecise pad envelope cannot prove a via is clear.  Reject the whole
+	// batch rather than falling back to the old nominal 12 mil estimate.
+	for _, pad := range pads {
+		if pad.ShapeOK {
+			continue
+		}
+		reason := strings.TrimSpace(pad.ShapeIssue)
+		if reason == "" {
+			reason = "exact pad geometry is unavailable"
+		}
+		out.Problems = append(out.Problems, fmt.Sprintf("pad %s.%s geometry is unknown/unsupported: %s", pad.Designator, pad.Number, reason))
+		return out
+	}
+	radius := diameter / 2
+	for _, p := range points {
+		if outline == nil || !outline.containsPoint(p[0], p[1]) || viaFenceOutlineDistance(outline, p[0], p[1]) < radius+edgeClearance-netPathGeomEps {
+			out.Problems = append(out.Problems, fmt.Sprintf("(%.3f,%.3f) violates board-edge clearance", p[0], p[1]))
+			continue
+		}
+		blocked := ""
+		for _, pad := range pads {
+			// Fence vias are never via-in-pad, including same-net pads.
+			padDistance, geometryErr := pcbExactPadSegmentGap(pad, p, p)
+			if geometryErr != nil {
+				blocked = geometryErr.Error()
+				break
+			}
+
+			if padDistance < radius+clearance-netPathGeomEps {
+				blocked = fmt.Sprintf("pad %s.%s", pad.Designator, pad.Number)
+				break
+			}
+		}
+		if blocked == "" {
+			for _, t := range tracks {
+				if t.Net != net && segPtDist(p[0], p[1], t.X1, t.Y1, t.X2, t.Y2) < radius+t.Width/2+clearance-netPathGeomEps {
+					blocked = fmt.Sprintf("other-net track %s (%s)", t.ID, t.Net)
+					break
+				}
+			}
+		}
+		if blocked == "" {
+			for _, a := range arcs {
+				if a.Net == net {
+					continue
+				}
+				curve, _, err := flattenNetPathArc(a)
+				if err != nil {
+					blocked = fmt.Sprintf("arc %s geometry is unknown", a.ID)
+					break
+				}
+				for i := 0; i+1 < len(curve); i++ {
+					if segPtDist(p[0], p[1], curve[i].x, curve[i].y, curve[i+1].x, curve[i+1].y) < radius+a.Width/2+clearance-netPathGeomEps {
+						blocked = fmt.Sprintf("other-net arc %s (%s)", a.ID, a.Net)
+						break
+					}
+				}
+				if blocked != "" {
+					break
+				}
+			}
+		}
+		existing := false
+		if blocked == "" {
+			for _, v := range vias {
+				d := math.Hypot(p[0]-v.X, p[1]-v.Y)
+				if v.Net == net && d <= netPathGeomEps {
+					if math.Abs(v.Hole-hole) > netPathGeomEps || math.Abs(v.Dia-diameter) > netPathGeomEps {
+						blocked = fmt.Sprintf("same-net via %s has %.3f/%.3fmil hole/diameter, want %.3f/%.3fmil", v.ID, v.Hole, v.Dia, hole, diameter)
+					} else {
+						existing = true
+					}
+					break
+				}
+				if d < radius+v.Dia/2+clearance-netPathGeomEps {
+					blocked = fmt.Sprintf("via %s (%s)", v.ID, v.Net)
+					break
+				}
+			}
+		}
+		if blocked == "" {
+			for _, area := range areas {
+				if area.Net == net {
+					continue
+				}
+				if copperAreaPointDistance(area, p) < radius+clearance-netPathGeomEps {
+					blocked = fmt.Sprintf("other-net %s %s (%s) on layer %d", area.Kind, area.ID, area.Net, area.Layer)
+					break
+				}
+			}
+		}
+		if blocked != "" {
+			out.Problems = append(out.Problems, fmt.Sprintf("(%.3f,%.3f) conflicts with %s", p[0], p[1], blocked))
+		} else if existing {
+			out.Existing = append(out.Existing, p)
+		} else {
+			out.Create = append(out.Create, p)
+		}
+	}
+	return out
+}
+
+func copperAreaPointDistance(area pcbCopperArea, point [2]float64) float64 {
+	if compoundWinding(area.Contours, point) != 0 {
+		return 0
+	}
+	best := math.Inf(1)
+	for _, contour := range area.Contours {
+		for i, a := range contour {
+			b := contour[(i+1)%len(contour)]
+			best = math.Min(best, segPtDist(point[0], point[1], a[0], a[1], b[0], b[1]))
+		}
+	}
+	return best
+}
+
+func parseCopperAreaObstacles(fillsRaw, pouredRaw []any) ([]pcbCopperArea, error) {
+	var out []pcbCopperArea
+	for i, raw := range fillsRaw {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("static fills[%d] is not an object", i)
+		}
+		layerN, ok := asFloatOK(m["layer"])
+		if !ok || layerN != math.Trunc(layerN) {
+			return nil, fmt.Errorf("static fill %d layer is unknown", i)
+		}
+		layer := int(layerN)
+		if !netPathCopperLayer(layer) {
+			continue
+		}
+		id := strings.TrimSpace(asString(m["primitiveId"]))
+		if id == "" {
+			return nil, fmt.Errorf("static fill %d primitiveId is unknown", i)
+		}
+		if m["geometryAvailable"] != true {
+			return nil, fmt.Errorf("static fill %s geometry is unknown", id)
+		}
+		contours, err := polygonSourceContours(m["source"])
+		if err != nil {
+			return nil, fmt.Errorf("static fill %s geometry is unknown: %w", id, err)
+		}
+		out = append(out, pcbCopperArea{ID: id, Kind: "static fill", Net: asString(m["net"]), Layer: layer, Contours: contours})
+	}
+	for i, raw := range pouredRaw {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("materialized poured[%d] is not an object", i)
+		}
+		id := strings.TrimSpace(asString(m["primitiveId"]))
+		if id == "" {
+			return nil, fmt.Errorf("materialized poured[%d] primitiveId is unknown", i)
+		}
+		layerN, ok := asFloatOK(m["layer"])
+		if !ok || layerN != math.Trunc(layerN) || !netPathCopperLayer(int(layerN)) {
+			return nil, fmt.Errorf("materialized poured %s layer is unknown/unsupported", id)
+		}
+		fills, ok := m["fills"].([]any)
+		if !ok {
+			return nil, fmt.Errorf("materialized poured %s fills are unknown", id)
+		}
+		net := strings.TrimSpace(asString(m["net"]))
+		if net == "" {
+			return nil, fmt.Errorf("materialized poured %s net is unknown", id)
+		}
+		for j, rawFill := range fills {
+			fill, ok := rawFill.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("materialized poured %s fill[%d] is not an object", id, j)
+			}
+			fillID := strings.TrimSpace(asString(fill["id"]))
+			if fillID == "" {
+				fillID = fmt.Sprintf("%s:%d", id, j)
+			}
+			contours, err := polygonSourceContours(fill["source"])
+			if err != nil {
+				return nil, fmt.Errorf("materialized poured %s fill %s geometry is unknown: %w", id, fillID, err)
+			}
+			out = append(out, pcbCopperArea{ID: fillID, Kind: "poured copper", Net: net, Layer: int(layerN), Contours: contours})
+		}
+	}
+	return out, nil
+}
+
+func parseViaFenceRouting(result map[string]any) ([]pcbTrack, []pcbArc, error) {
+	tracks, arcs, err := parseNetPathLines(result)
+	if err != nil {
+		return nil, nil, fmt.Errorf("complete line/arc geometry is required: %w", err)
+	}
+	return tracks, arcs, nil
+}
+
+func viaFenceOutlineDistance(outline *boardOutline, x, y float64) float64 {
+	if outline == nil {
+		return math.Inf(-1)
+	}
+	if len(outline.Points) < 3 {
+		return math.Min(math.Min(x-outline.BBox.MinX, outline.BBox.MaxX-x), math.Min(y-outline.BBox.MinY, outline.BBox.MaxY-y))
+	}
+	best := math.Inf(1)
+	for i, p := range outline.Points {
+		q := outline.Points[(i+1)%len(outline.Points)]
+		best = math.Min(best, segPtDist(x, y, p[0], p[1], q[0], q[1]))
+	}
+	return best
+}
+
+// pcbClearScopes is the canonical set of `pcb clear --only` values, mirrored in
+// the connector's PCB_CLEAR_SCOPES.
+var pcbClearScopes = map[string]bool{
+	"components": true,
+	"routing":    true,
+	"copper":     true,
+	"regions":    true,
+	"silk":       true,
+}
+
+// parsePcbDrcRulesSetSpec accepts both hand-authored rule specs and the JSON
+// emitted by `easyeda pcb drc-rules`.  CLI output is a full action envelope
+// (`{ok,result:{rules:{name,config}}}`), so requiring users or examples to
+// manually strip two wrapper levels breaks the intended export/edit/import
+// loop.  The connector performs the final {name,config} → bare config
+// normalization because that shape differs across EasyEDA host versions.
+func parsePcbDrcRulesSetSpec(data []byte) (map[string]any, error) {
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	root, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("top-level JSON must be an object")
+	}
+
+	if resultValue, hasResult := root["result"]; hasResult {
+		result, ok := resultValue.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("result must be an object")
+		}
+		rules, ok := result["rules"]
+		if !ok {
+			rules, ok = result["ruleConfiguration"] // pcb config get export
+		}
+		if !ok {
+			return nil, fmt.Errorf("action envelope result requires rules")
+		}
+		spec := map[string]any{"ruleConfiguration": rules}
+		if netRules, present := result["netRules"]; present {
+			spec["netRules"] = netRules
+		}
+		return spec, nil
+	}
+
+	if _, explicit := root["ruleConfiguration"]; explicit {
+		return root, nil
+	}
+	if rules, legacy := root["rules"]; legacy {
+		spec := make(map[string]any, len(root))
+		for key, value := range root {
+			spec[key] = value
+		}
+		spec["ruleConfiguration"] = rules
+		delete(spec, "rules")
+		return spec, nil
+	}
+	// A top-level {name,config} export or a bare host configuration is itself
+	// the complete opaque ruleConfiguration.
+	return map[string]any{"ruleConfiguration": root}, nil
+}
+
+// buildPcbClearPayload turns the `pcb clear` flags into the pcb.page.clear action
+// payload. `only` is validated against pcbClearScopes so a typo fails locally,
+// before hitting the daemon. Pure + unit-tested (see cmd_pcb_clear_test.go).
+func buildPcbClearPayload(only string, dryRun, noPreserveOutline, includeLocked bool) (map[string]any, error) {
+	payload := map[string]any{
+		"dryRun":          dryRun,
+		"preserveOutline": !noPreserveOutline,
+		"includeLocked":   includeLocked,
+	}
+	if strings.TrimSpace(only) == "" {
+		return payload, nil
+	}
+	var scopes []string
+	seen := map[string]bool{}
+	for _, s := range strings.Split(only, ",") {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		if !pcbClearScopes[s] {
+			return nil, fmt.Errorf("invalid --only scope %q (valid: components,routing,copper,regions,silk)", s)
+		}
+		if !seen[s] {
+			seen[s] = true
+			scopes = append(scopes, s)
+		}
+	}
+	if len(scopes) > 0 {
+		payload["only"] = scopes
+	}
+	return payload, nil
+}
+
+// newPcbCmd returns the "pcb" subcommand group with all PCB actions.
+// --window is a persistent flag on the group so every subcommand inherits it.
+//
+// Switching the active document to a PCB is done with the generic `easyeda doc
+// switch <name|uuid>` (or `pcb docs` to list boards first) — there is no
+// pcb-specific open. PCB design rules live in the easyeda-agent skill references
+// skills.
+func newPcbCmd(cfg *appConfig, stdout, stderr io.Writer) *cobra.Command {
+	var window string
+
+	pcb := &cobra.Command{
+		Use:   "pcb",
+		Short: "PCB operations",
+	}
+	pcb.PersistentFlags().StringVar(&window, "window", "", "EasyEDA window ID")
+	pcb.AddCommand(newPcbConfigCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbNetPathCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbRouteCmd(stdout, stderr))
+	pcb.AddCommand(newPcbLayoutCmd(stdout, stderr))
+
+	// ── drc ───────────────────────────────────────────────────────────────
+	// pcb.drc.check — the PCB counterpart to `sch drc`. Routing is automatic:
+	// pcb.* actions target the project's PCB window (domain→documentType), so
+	// `pcb drc` and `sch drc` never cross-fire.
+	{
+		var strict, flatJSON bool
+		var timeoutSec int
+		c := &cobra.Command{
+			Use:   "drc",
+			Short: "Run PCB DRC and return normalized violations",
+			Long: `Run PCB DRC on the active PCB and return normalized {passed, violations}.
+
+This is the PCB counterpart to ` + "`easyeda sch drc`" + ` (schematic DRC). The two are
+distinct subcommands and route to different documents automatically — pcb.* targets
+the project's PCB window, schematic.* targets the schematic window — so they never
+cross-fire. The PCB must be the active/foreground document.
+
+--json flattens the SDK's nested violation tree into one row per violation
+{rule, objType, ruleName, net, x, y, layer, objs, message} with x/y converted to
+REAL mil (the raw leaves store mil/10). --timeout bounds the wait; a background /
+occluded EasyEDA window never finishes DRC's canvas recompute, so on timeout bring
+the window to the FOREGROUND and run once — do NOT retry in a loop (each retry
+piles another recompute onto the webview and makes it worse).`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb drc
+  easyeda pcb drc --strict
+  easyeda pcb drc --json                  # flat rows, coordinates in mil
+  easyeda pcb drc --json --timeout 120    # allow a heavy board 2 minutes`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				var payload map[string]any
+				if strict {
+					payload = map[string]any{"strict": true}
+				}
+				timeout := time.Duration(timeoutSec) * time.Second
+				if !flatJSON {
+					err := dispatchTimed(cfg, "pcb.drc.check", window, payload, timeout, stdout, stderr)
+					return drcTimeoutHint(err, stderr)
+				}
+				res, err := requestActionTimed(cfg, "pcb.drc.check", window, payload, timeout)
+				if err != nil {
+					return drcTimeoutHint(err, stderr)
+				}
+				report := flattenDrcResult(res.Result)
+				out, err := json.MarshalIndent(report, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(stdout, string(out))
+				return nil
+			},
+		}
+		c.Flags().BoolVar(&strict, "strict", false, "treat warnings as errors")
+		c.Flags().BoolVar(&flatJSON, "json", false, "flat one-row-per-violation JSON, coordinates in mil")
+		c.Flags().IntVar(&timeoutSec, "timeout", 60, "seconds to wait for the DRC round-trip")
+		pcb.AddCommand(c)
+	}
+
+	// ── docs ──────────────────────────────────────────────────────────────
+	// pcb.documents.list
+	pcb.AddCommand(&cobra.Command{
+		Use:   "docs",
+		Short: "List PCB documents in the current project (uuid + name)",
+		Args:  cobra.NoArgs,
+		Example: `  easyeda pcb docs
+  easyeda doc switch <uuid>   # then switch to one`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.documents.list", window, nil, stdout, stderr)
+		},
+	})
+
+	// ── new-board ─────────────────────────────────────────────────────────
+	// board.new_pcb — create a NEW board (板) with a fresh PCB page from a schematic.
+	{
+		var schematic, name string
+		var force bool
+		c := &cobra.Command{
+			Use:   "new-board",
+			Short: "Create a NEW board (板) with a fresh empty PCB page, bound to an UNBOUND schematic",
+			Long: `Create a brand-new board (板) that CONTAINS a fresh, empty PCB page, bound to a
+schematic — the CLI equivalent of the UI's 新建PCB / 原理图转PCB. You get a clean
+board to lay out from scratch, still driven by the schematic netlist (switch to it,
+then 'easyeda pcb import-changes').
+
+IMPORTANT: a schematic can belong to only ONE board in EasyEDA Pro. If the target
+schematic is ALREADY bound to a board, this command refuses (it would otherwise MOVE
+the schematic into the new board and leave the old board with just its PCB). To lay
+out another PCB for an already-bound schematic, work inside its existing board. Pass
+--force only if you deliberately want to move the schematic into the new board.
+
+Under the hood it runs the required 2-step SDK sequence (createBoard shell →
+createPcb into that board — a one-shot createPcb is a silent no-op), with rollback
+if the PCB can't be created. --schematic defaults to the CURRENT board's schematic,
+so in a single-design project you can just run 'easyeda pcb new-board'.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb new-board
+  easyeda pcb new-board --name ESP32-rev2
+  easyeda pcb new-board --schematic de2bc6678317009f --name Proto
+  easyeda pcb new-board --schematic de2bc6678317009f --force   # move an already-bound schematic`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if schematic != "" {
+					payload["schematicUuid"] = schematic
+				}
+				if name != "" {
+					payload["name"] = name
+				}
+				if force {
+					payload["force"] = true
+				}
+				return dispatch(cfg, "board.new_pcb", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&schematic, "schematic", "", "schematic UUID to bind (default = current board's schematic)")
+		c.Flags().StringVar(&name, "name", "", "name for the new board (default = auto, e.g. Board1_1)")
+		c.Flags().BoolVar(&force, "force", false, "move the schematic into the new board even if it is already bound to another board")
+		pcb.AddCommand(c)
+	}
+
+	// ── list ──────────────────────────────────────────────────────────────
+	// pcb.components.list
+	{
+		var layer string
+		var includeBBox, includePads bool
+		c := &cobra.Command{
+			Use:   "list",
+			Short: "List placed components/footprints on the active PCB",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb list
+  easyeda pcb list --include-bbox
+  easyeda pcb list --layer TOP --include-pads`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if layer != "" {
+					payload["layer"] = layer
+				}
+				if includeBBox {
+					payload["includeBBox"] = true
+				}
+				if includePads {
+					payload["includePads"] = true
+				}
+				if includeBBox {
+					// Read-side of `pcb modify --center` (#105): annotate each
+					// bbox'd component with center:{x,y} (bbox geometric center)
+					// CLI-side, so planners consume center coordinates directly
+					// instead of mistaking the anchor x/y for the body center.
+					respBody, err := postAction(cfg, "pcb.components.list", window, payload, defaultActionTimeout)
+					if err != nil {
+						return err
+					}
+					out := injectBBoxCenters(respBody)
+					_, _ = stdout.Write(out)
+					if len(out) > 0 && out[len(out)-1] != '\n' {
+						fmt.Fprintln(stdout)
+					}
+					var parsed struct {
+						OK bool `json:"ok"`
+					}
+					if json.Unmarshal(respBody, &parsed) != nil || !parsed.OK {
+						return errActionFailed
+					}
+					return nil
+				}
+				if len(payload) == 0 {
+					return dispatch(cfg, "pcb.components.list", window, nil, stdout, stderr)
+				}
+				return dispatch(cfg, "pcb.components.list", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&layer, "layer", "", "filter by layer (e.g. TOP, BOTTOM)")
+		c.Flags().BoolVar(&includeBBox, "include-bbox", false, "attach each component's rendered extent {minX,minY,maxX,maxY} + center {x,y} (bbox geometric center, CLI-computed)")
+		c.Flags().BoolVar(&includePads, "include-pads", false, "attach each component's pads (net-by-name surface)")
+		pcb.AddCommand(c)
+	}
+
+	// ── layers ────────────────────────────────────────────────────────────
+	// pcb.layers.list
+	pcb.AddCommand(&cobra.Command{
+		Use:   "layers",
+		Short: "List layers of the active PCB (+ current layer, copper count)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.layers.list", window, nil, stdout, stderr)
+		},
+	})
+
+	// pcb.layers.set_current — switch the active/edit layer.
+	{
+		var layer string
+		c := &cobra.Command{
+			Use:   "layer-set",
+			Short: "Switch the active/edit PCB layer (id|name|top|bottom|inner1)",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb layer-set --layer bottom --project ceshi
+  easyeda pcb layer-set --layer Inner1`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if layer == "" {
+					return fmt.Errorf("--layer is required (id|name|top|bottom|inner1)")
+				}
+				return dispatch(cfg, "pcb.layers.set_current", window,
+					map[string]any{"layer": layer}, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&layer, "layer", "", "layer id|name|top|bottom|inner1")
+		pcb.AddCommand(c)
+	}
+
+	// pcb.layers.visibility — show/hide/focus layers for visual QA.
+	{
+		var preset string
+		var show, hide []string
+		var exclusive bool
+		c := &cobra.Command{
+			Use:   "layer-visibility",
+			Short: "Show/hide/focus PCB layers (preset or explicit show/hide)",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb layer-visibility --preset bottom-only --project ceshi
+  easyeda pcb layer-visibility --show bottom --show 4 --exclusive
+  easyeda pcb layer-visibility --hide top`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if preset != "" {
+					payload["preset"] = preset
+				}
+				if len(show) > 0 {
+					payload["show"] = show
+				}
+				if len(hide) > 0 {
+					payload["hide"] = hide
+				}
+				if exclusive {
+					payload["exclusive"] = true
+				}
+				if len(payload) == 0 {
+					return fmt.Errorf("nothing to do — use --preset, or --show/--hide (ids from `easyeda pcb layers`)")
+				}
+				return dispatch(cfg, "pcb.layers.visibility", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&preset, "preset", "", "focus preset: top-only|bottom-only|copper-only|silk-only")
+		c.Flags().StringSliceVar(&show, "show", nil, "layer spec to show (repeatable; id|name|top|bottom)")
+		c.Flags().StringSliceVar(&hide, "hide", nil, "layer spec to hide (repeatable; id|name|top|bottom)")
+		c.Flags().BoolVar(&exclusive, "exclusive", false, "when showing, hide every other layer")
+		pcb.AddCommand(c)
+	}
+
+	// pcb.view.side — switch to top/bottom side for snapshots / QA.
+	{
+		var side string
+		c := &cobra.Command{
+			Use:   "view-side",
+			Short: "Switch the PCB view to the top or bottom side (for snapshots)",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb view-side --side bottom --project ceshi
+  easyeda pcb snapshot   # then capture the bottom-focused view`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if side == "" {
+					return fmt.Errorf("--side is required (top|bottom)")
+				}
+				return dispatch(cfg, "pcb.view.side", window,
+					map[string]any{"side": side}, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&side, "side", "", "top|bottom")
+		pcb.AddCommand(c)
+	}
+
+	// pcb.view.filter.get — read the canvas filter state. The official SDK does
+	// not expose a setter, so this command intentionally has no hide/show flags.
+	pcb.AddCommand(&cobra.Command{
+		Use:   "view-filter",
+		Short: "Read PCB canvas filter state (component-attribute write is unsupported)",
+		Long: `Read the active PCB canvas filter configuration without changing the design or view.
+
+The current official EasyEDA SDK exposes only getCurrentFilterConfiguration; it
+does not expose a setter for the UI's "component attributes" visibility category.
+The raw configuration is returned as evidence. Do not use attribute visibility
+edits as a workaround because those change persistent design data.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.view.filter.get", window, nil, stdout, stderr)
+		},
+	})
+
+	// ── nets ──────────────────────────────────────────────────────────────
+	// pcb.nets.list
+	pcb.AddCommand(&cobra.Command{
+		Use:   "nets",
+		Short: "List nets on the active PCB (name, length, color)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.nets.list", window, nil, stdout, stderr)
+		},
+	})
+
+	// ── board-info ────────────────────────────────────────────────────────
+	// pcb.board.info
+	pcb.AddCommand(&cobra.Command{
+		Use:   "board-info",
+		Short: "Read the current Board (schematic↔PCB linkage) + PCB info",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.board.info", window, nil, stdout, stderr)
+		},
+	})
+
+	// ── import-changes ────────────────────────────────────────────────────
+	// pcb.import_changes — the schematic→PCB bridge (components arrive here).
+	{
+		var schematicUUID string
+		var noEnsureBoard, noRecompute, noSyncAttrs, noSyncDesignators bool
+		c := &cobra.Command{
+			Use:   "import-changes",
+			Short: "Sync the schematic netlist/components into the active PCB",
+			Long: `Sync the schematic netlist/components into the active PCB (从原理图导入变更).
+
+This is the primary way components arrive on the board. It ensures a Board links the
+schematic and PCB first, then recomputes ratlines.
+
+The platform's import copies the top-level identity fields but leaves the
+otherProperty VALUES empty on the PCB side (Value/Voltage Rating/Tolerance/
+Datasheet/… all "") — blanking the 器件标准化 panel's columns. After a
+successful import this command therefore auto-runs the attrs sync
+(schematic pages → PCB, empty-value keys only); disable with --no-sync-attrs
+or re-run standalone via ` + "`easyeda pcb sync-attrs`" + `.
+
+After the attrs sync this command ALSO runs the designator repair
+(` + "`easyeda pcb sync-designators`" + `, matched by uniqueId — the one id both
+documents share). The import itself lands real designators; the repair is a
+rear-guard for boards damaged by the old attrs-backfill Designator-key bug
+(166/166 wiped to U?/C? on a real board) and for any future whole-otherProperty
+write that resets them. Disable with --no-sync-designators.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb import-changes
+  easyeda pcb import-changes --schematic <uuid>`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if schematicUUID != "" {
+					payload["schematicUuid"] = schematicUUID
+				}
+				if noEnsureBoard {
+					payload["ensureBoard"] = false
+				}
+				if noRecompute {
+					payload["recomputeRatline"] = false
+				}
+				res, err := dispatchCapture(cfg, "pcb.import_changes", window, payload, stdout)
+				if err != nil {
+					return err
+				}
+				imported, _ := res.Result["imported"].(bool)
+				confirmState, _ := res.Result["confirm"].(string)
+				// #124 语义陷阱：importChanges 的 promise 会在「确认导入信息」弹框
+				// **刚打开时**就 resolve true——imported=true 不等于器件已落地。只有
+				// confirm=applied（连接器确认点击了「应用修改」且弹框已关闭）才说明
+				// 落地了；其余状态下跑后续同步读到的是导入前的板面，会静默空跑一遍
+				// 然后在用户手动点击后原样复现问题。
+				landed := imported && confirmState == "applied"
+				if imported && !landed {
+					fmt.Fprintf(stderr, "⚠ import resolved but the apply was NOT confirmed (confirm=%s) — expected 应用修改 / Apply Changes; stop and inspect the dialog/readback, then fix the typed import handler before retrying\n", confirmState)
+				}
+				// attrs 在前、位号在后：attrs_backfill 的 Designator 键泄漏 bug 已在
+				// 连接器根治，但位号回填殿后仍是第二道防线——任何整包 otherProperty
+				// 写入若再毁位号，殿后的回填都能当场修回。
+				if landed && !noSyncAttrs {
+					if err := syncSchAttrsToPcb(cfg, window, false, stderr); err != nil {
+						fmt.Fprintf(stderr, "⚠ attrs sync after import failed (import itself succeeded): %v — retry with `easyeda pcb sync-attrs`\n", err)
+					}
+				}
+				if landed && !noSyncDesignators {
+					if rep, err := runSyncDesignators(cfg, window, false, stderr); err != nil {
+						fmt.Fprintf(stderr, "⚠ designator sync after import failed (import itself succeeded): %v — retry with `easyeda pcb sync-designators`\n", err)
+					} else if rep.Repaired > 0 || len(rep.Unmatched) > 0 || len(rep.SchUnannotated) > 0 || len(rep.Failed) > 0 {
+						fmt.Fprintf(stderr, "designators: %s\n", rep.Summary)
+						for _, f := range rep.Failed {
+							fmt.Fprintf(stderr, "  ❌ %s\n", f)
+						}
+					}
+				}
+				return nil
+			},
+		}
+		c.Flags().StringVar(&schematicUUID, "schematic", "", "source schematic UUID (default: the linked one)")
+		c.Flags().BoolVar(&noEnsureBoard, "no-ensure-board", false, "do not auto-create a Board link if missing")
+		c.Flags().BoolVar(&noRecompute, "no-recompute-ratline", false, "skip ratline recomputation")
+		c.Flags().BoolVar(&noSyncAttrs, "no-sync-attrs", false, "skip the automatic schematic→PCB attribute backfill after import")
+		c.Flags().BoolVar(&noSyncDesignators, "no-sync-designators", false,
+			"skip the automatic designator repair after import (the platform leaves every\ndesignator as a U?/C? placeholder; see `easyeda pcb sync-designators`)")
+		pcb.AddCommand(c)
+	}
+
+	// ── sync-attrs ────────────────────────────────────────────────────────
+	// pcb.component.attrs_backfill orchestration: read every schematic page's
+	// component attributes (page-active reads — lazy-load law), then fill the
+	// EMPTY otherProperty values the platform's import leaves on the PCB side.
+	{
+		var overwrite bool
+		c := &cobra.Command{
+			Use:   "sync-attrs",
+			Short: "Backfill PCB components' empty attribute values from the schematic (器件标准化字段)",
+			Args:  cobra.NoArgs,
+			Long: `Backfill PCB components' EMPTY otherProperty values from their DEVICE-LIBRARY
+records, resolved by each part's LCSC C-number.
+
+The platform's sch→PCB import creates the attribute keys on the PCB instance
+but leaves the VALUES empty (Value/Voltage Rating/Tolerance/Datasheet/…),
+blanking the 器件标准化 panel's columns and the PCB-side BOM. The schematic is
+NOT a usable source either — its instance values are empty after save/reload
+too — so the device-library record (getByLcscIds via the instance's C-number,
+kept real by the #157 backfill) is the stable carrier. By default only keys
+whose PCB value is empty are filled (hand-edited PCB values win); --overwrite
+forces the library values. Parts without a C-number are skipped and reported.`,
+			Example: `  easyeda pcb sync-attrs
+  easyeda pcb sync-attrs --overwrite`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return syncSchAttrsToPcb(cfg, window, overwrite, stdout)
+			},
+		}
+		c.Flags().BoolVar(&overwrite, "overwrite", false, "overwrite non-empty PCB values with the schematic's (default: fill empty only)")
+		pcb.AddCommand(c)
+	}
+
+	// ── add-component ─────────────────────────────────────────────────────
+	// pcb.add_component — the WORKING way to add ONE part to an existing PCB
+	// (import-changes no-ops for API-added parts, #20): place footprint + link +
+	// assign pad nets + ratline.
+	{
+		var libraryUUID, deviceUUID, designator, uniqueID, netsJSON string
+		var x, y, rotation float64
+		var layer int
+		c := &cobra.Command{
+			Use:   "add-component",
+			Short: "Place + connect ONE footprint on the PCB (the working alternative to import-changes)",
+			Long: `Add a single part to an EXISTING PCB and wire it — the working path, since
+'import-changes' is a no-op for parts added to the schematic via the API (#20).
+
+It places the footprint (--library + --uuid, a device), links it to its schematic
+twin (--designator + --unique-id), assigns each pad's net from --nets
+(a JSON padNumber→net map), and recomputes ratlines.
+
+Get --nets and --unique-id from 'sch read' (the netlist is only readable while the
+schematic is active, so you pass them). Workflow:
+  1. place + wire the part in the schematic (sch place / connect)
+  2. easyeda sch read   → note the part's pin nets + uniqueId
+  3. easyeda pcb add-component --library … --uuid … --x … --y … \
+       --designator U2 --unique-id gge9 --nets '{"5":"3V3","3":"GND"}'`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb add-component --library <lib> --uuid <dev> --x 3500 --y -1900 \
+      --designator U2 --unique-id gge9 --nets '{"5":"3V3","3":"GND"}'`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if libraryUUID == "" || deviceUUID == "" {
+					return fmt.Errorf("--library and --uuid are required (a device {libraryUuid, uuid})")
+				}
+				payload := map[string]any{"libraryUuid": libraryUUID, "uuid": deviceUUID, "x": x, "y": y}
+				if cmd.Flags().Changed("layer") {
+					payload["layer"] = layer
+				}
+				if cmd.Flags().Changed("rotation") {
+					payload["rotation"] = rotation
+				}
+				if designator != "" {
+					payload["designator"] = designator
+				}
+				if uniqueID != "" {
+					payload["uniqueId"] = uniqueID
+				}
+				if netsJSON != "" {
+					var nets map[string]any
+					if err := json.Unmarshal([]byte(netsJSON), &nets); err != nil {
+						return fmt.Errorf("invalid --nets json (expected object padNumber→net): %w", err)
+					}
+					payload["nets"] = nets
+				}
+				return dispatch(cfg, "pcb.add_component", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&libraryUUID, "library", "", "device libraryUuid (required)")
+		c.Flags().StringVar(&deviceUUID, "uuid", "", "device uuid (required)")
+		c.Flags().Float64Var(&x, "x", 0, "x (mil)")
+		c.Flags().Float64Var(&y, "y", 0, "y (mil)")
+		c.Flags().IntVar(&layer, "layer", 1, "copper layer id (TOP=1, BOTTOM=2)")
+		c.Flags().Float64Var(&rotation, "rotation", 0, "rotation (deg)")
+		c.Flags().StringVar(&designator, "designator", "", "designator to set (match the schematic twin, e.g. U2)")
+		c.Flags().StringVar(&uniqueID, "unique-id", "", "schematic twin's uniqueId (sch↔PCB link key; from 'sch read')")
+		c.Flags().StringVar(&netsJSON, "nets", "", `JSON map padNumber→net, e.g. '{"5":"3V3","3":"GND"}' (from 'sch read')`)
+		pcb.AddCommand(c)
+	}
+
+	// ── modify ────────────────────────────────────────────────────────────
+	// pcb.component.modify
+	{
+		var id, patchJSON, patchFile string
+		var center bool
+		var centerX, centerY float64
+		c := &cobra.Command{
+			Use:   "modify",
+			Short: "Lay out a PCB component: move/rotate/flip layer/lock/designator",
+			Long: `Patch one placed component. The patch's x/y are the component ANCHOR (footprint
+origin) — usually NOT the bbox center, and the offset rotates with the part.
+
+--center flips the write to CENTER semantics: --x/--y are the DESIRED BBOX
+CENTER; the CLI reads the live rendered bbox (rotation already baked in),
+converts to anchor coordinates, and dispatches the anchor patch. Exact by
+construction — moving never changes the anchor-to-center offset. Because
+ROTATING does change it, --center refuses a patch that also sets rotation:
+rotate first ('--patch {"rotation":…}'), then --center in a second call.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb modify --id <pid> --patch '{"x":1000,"y":2000}'   # x/y = ANCHOR
+  easyeda pcb modify --id <pid> --patch '{"rotation":90,"layer":"BOTTOM"}'
+  easyeda pcb modify --id <id> --patch-file patch.json    # PowerShell-safe UTF-8 JSON
+  easyeda pcb modify --id <pid> --patch '{"locked":false}'      # verified via readback (#174); batches → 'pcb lock'
+  easyeda pcb modify --id <pid> --center --x 1500 --y 2200      # x/y = desired bbox CENTER`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if id == "" {
+					return fmt.Errorf("--id is required")
+				}
+				patchSource, err := readModifyPatchSource(cmd, patchJSON, patchFile)
+				if err != nil {
+					return err
+				}
+				if patchSource == "" && !center {
+					return fmt.Errorf("--patch or --patch-file is required (or --center --x --y)")
+				}
+				patch := map[string]any{}
+				if patchSource != "" {
+					if err := json.Unmarshal([]byte(patchSource), &patch); err != nil {
+						return fmt.Errorf("invalid --patch json (expected object): %w", err)
+					}
+				}
+				if center {
+					if !cmd.Flags().Changed("x") || !cmd.Flags().Changed("y") {
+						return fmt.Errorf("--center requires --x and --y (desired bbox center, mil)")
+					}
+					if _, ok := patch["x"]; ok {
+						return fmt.Errorf("--center conflicts with \"x\" in --patch (pick anchor OR center semantics)")
+					}
+					if _, ok := patch["y"]; ok {
+						return fmt.Errorf("--center conflicts with \"y\" in --patch (pick anchor OR center semantics)")
+					}
+					if _, ok := patch["rotation"]; ok {
+						return fmt.Errorf("--center and a rotation change are mutually exclusive (rotating changes the anchor-to-bbox-center offset the conversion reads) — rotate first with --patch '{\"rotation\":…}', then run --center in a second call")
+					}
+					ax, ay, err := resolveAnchorForCenter(cfg, window, id, centerX, centerY)
+					if err != nil {
+						return err
+					}
+					patch["x"], patch["y"] = ax, ay
+				}
+				return dispatch(cfg, "pcb.component.modify", window,
+					map[string]any{"primitiveId": id, "patch": patch}, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&id, "id", "", "component primitiveId (required)")
+		c.Flags().StringVar(&patchJSON, "patch", "", "JSON patch object, e.g. '{\"x\":1000,\"y\":2000}' (x/y = anchor)")
+		c.Flags().StringVar(&patchFile, "patch-file", "", "UTF-8 JSON patch file (BOM supported; mutually exclusive with --patch)")
+		c.MarkFlagsMutuallyExclusive("patch", "patch-file")
+		c.Flags().BoolVar(&center, "center", false, "interpret --x/--y as the desired BBOX CENTER (converted to anchor via the live bbox)")
+		c.Flags().Float64Var(&centerX, "x", 0, "desired bbox-center x (mil; with --center)")
+		c.Flags().Float64Var(&centerY, "y", 0, "desired bbox-center y (mil; with --center)")
+		pcb.AddCommand(c)
+	}
+
+	// ── lock ──────────────────────────────────────────────────────────────
+	// pcb.component.lock (#174) — batch component lock/unlock with a verified
+	// write path. `pcb modify --patch '{"locked":…}'` used to fake-succeed
+	// (the platform ignored the unknown key); this action writes via
+	// setState_PrimitiveLock + done() and re-reads before claiming success.
+	{
+		var idsRaw string
+		var all, unlock bool
+		c := &cobra.Command{
+			Use:   "lock",
+			Short: "Lock/unlock PCB components (batch, readback-verified)",
+			Long: `Set the primitiveLock flag on placed components. Unlike the old
+'pcb modify --patch {"locked":…}' path — which the platform could silently
+drop while still reporting success (#174) — this writes through the dedicated
+lock setter and verifies every component against a fresh readback: the result
+lists applied / alreadyInState / notApplied / missing ids, and a write that
+did not stick can never report ok.
+
+Scope EXACTLY ONE of:
+  --ids   lock/unlock these component primitiveIds (from 'easyeda pcb list')
+  --all   every component on the active PCB (idempotent — components already
+          in the desired state are counted, not re-written)
+
+For copper routing (tracks/vias/fills) use 'pcb track-lock' instead.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb lock --ids id1,id2            # lock two components
+  easyeda pcb lock --all --unlock           # release every component on the board
+  easyeda pcb lock --ids id1 --unlock       # unlock one`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if (idsRaw == "") == !all {
+					return fmt.Errorf("pass EXACTLY ONE of --ids or --all")
+				}
+				var ids []string
+				if all {
+					res, err := requestAction(cfg, "pcb.components.list", window, nil)
+					if err != nil {
+						return fmt.Errorf("--all needs the live component list but the read failed: %w", err)
+					}
+					for _, c := range parseApComps(res.Result) {
+						if c.id != "" {
+							ids = append(ids, c.id)
+						}
+					}
+					if len(ids) == 0 {
+						return fmt.Errorf("the active PCB has no components to %s", map[bool]string{true: "unlock", false: "lock"}[unlock])
+					}
+				} else {
+					var err error
+					ids, err = parseIDList(idsRaw)
+					if err != nil {
+						return err
+					}
+				}
+				return dispatch(cfg, "pcb.component.lock", window,
+					map[string]any{"primitiveIds": ids, "locked": !unlock}, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&idsRaw, "ids", "", "component primitiveIds — CSV: id1,id2")
+		c.Flags().BoolVar(&all, "all", false, "target every component on the active PCB")
+		c.Flags().BoolVar(&unlock, "unlock", false, "clear the lock instead of setting it")
+		pcb.AddCommand(c)
+	}
+
+	// ── delete ────────────────────────────────────────────────────────────
+	// pcb.component.delete
+	{
+		var idsRaw string
+		c := &cobra.Command{
+			Use:   "delete",
+			Short: "Delete PCB component primitives by id",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb delete --ids id1,id2
+  easyeda pcb delete --ids id1,id2          # CSV works too`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if idsRaw == "" {
+					return fmt.Errorf("--ids is required")
+				}
+				ids, err := parseIDList(idsRaw)
+				if err != nil {
+					return err
+				}
+				return dispatch(cfg, "pcb.component.delete", window,
+					map[string]any{"primitiveIds": ids}, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&idsRaw, "ids", "", "primitive IDs to delete — CSV: id1,id2 (required)")
+		pcb.AddCommand(c)
+	}
+
+	// ── clear ─────────────────────────────────────────────────────────────
+	// pcb.page.clear — one-shot board reset, the PCB counterpart of `sch clear`.
+	// `pcb delete` only removes components; this also clears routing/pours/regions/
+	// silk so the board is truly reset. Keeps locked primitives + the board outline.
+	{
+		var only string
+		var dryRun, noPreserveOutline, includeLocked, noVerify bool
+		c := &cobra.Command{
+			Use:   "clear",
+			Short: "One-shot PCB reset: components + routing + copper + regions + silk (keeps locked primitives & the board outline)",
+			Long: `Reset the active PCB's content in one shot. By default the clear runs a
+VERIFY pass (#121): clear → save → doc reload → clear again → final dry-run
+count. Some primitives are only materialized by the engine on save/reload, so
+no enumeration inside a single handler call can see them — the in-call loop
+(#112) fixed enumeration staleness, but real boards still surfaced 3 leftover
+tracks AFTER a reload. The verify pass is exactly the "run it again after a
+reload" the manual workaround was; --no-verify restores the single-pass
+behavior (faster, but re-check with '--dry-run' after a reload yourself).`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb clear                        # reset + reload + verify (usually 2 passes to a provable 0)
+  easyeda pcb clear --no-verify            # single pass, no save/reload (legacy behavior)
+  easyeda pcb clear --dry-run              # report what would be deleted, delete nothing
+  easyeda pcb clear --only components      # delete only components
+  easyeda pcb clear --only routing,copper  # delete only routing + pours/fills
+  easyeda pcb clear --no-preserve-outline  # also delete the board outline (layer 11)
+  easyeda pcb clear --include-locked       # also delete locked primitives (danger)`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload, err := buildPcbClearPayload(only, dryRun, noPreserveOutline, includeLocked)
+				if err != nil {
+					return err
+				}
+				if dryRun || noVerify {
+					return dispatch(cfg, "pcb.page.clear", window, payload, stdout, stderr)
+				}
+				return runPcbClearVerified(cfg, window, payload, only, noPreserveOutline, includeLocked, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&only, "only", "", "comma-separated subset to clear: components,routing,copper,regions,silk (omit = all)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "report counts without deleting anything")
+		c.Flags().BoolVar(&noPreserveOutline, "no-preserve-outline", false, "also delete the board outline (layer 11); by default it is kept")
+		c.Flags().BoolVar(&includeLocked, "include-locked", false, "also delete locked primitives; by default they are kept")
+		c.Flags().BoolVar(&noVerify, "no-verify", false, "skip the save→reload→re-clear verify pass (#121) — faster, but reload-materialized primitives may survive")
+		pcb.AddCommand(c)
+	}
+
+	// ── align / distribute / grid-snap / move / arrange ───────────────────
+	// All operate on the current selection unless --ids is given.
+	addLayoutOp := func(use, short, action, flagName, flagDesc string, withValue bool) {
+		var idsJSON, val string
+		c := &cobra.Command{
+			Use:   use,
+			Short: short,
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if withValue {
+					if val == "" {
+						return fmt.Errorf("--%s is required", flagName)
+					}
+					payload[flagName] = val
+				}
+				if idsJSON != "" {
+					ids, err := parseIDList(idsJSON)
+					if err != nil {
+						return err
+					}
+					payload["primitiveIds"] = ids
+				}
+				return dispatch(cfg, action, window, payload, stdout, stderr)
+			},
+		}
+		if withValue {
+			c.Flags().StringVar(&val, flagName, "", flagDesc)
+		}
+		c.Flags().StringVar(&idsJSON, "ids", "", "primitive IDs — CSV: id1,id2 (omit = current selection)")
+		pcb.AddCommand(c)
+	}
+	addLayoutOp("align", "Align components by edge/center (left|right|top|bottom|centerX|centerY)",
+		"pcb.align", "mode", "alignment mode: left|right|top|bottom|centerX|centerY (required)", true)
+	addLayoutOp("distribute", "Evenly space component centers along an axis (x|y)",
+		"pcb.distribute", "axis", "distribution axis: x|y (required)", true)
+
+	// grid-snap (numeric grid), move (dx/dy), arrange (mode + tuning) need their
+	// own flag shapes, so they are written out rather than via addLayoutOp.
+	{
+		var idsJSON string
+		var grid float64
+		c := &cobra.Command{
+			Use:   "grid-snap",
+			Short: "Snap component anchors to a grid (PCB data units, mil-scale)",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb grid-snap --grid 100
+  easyeda pcb grid-snap --grid 100 --ids id1,id2`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if !cmd.Flags().Changed("grid") {
+					return fmt.Errorf("--grid is required")
+				}
+				payload := map[string]any{"grid": grid}
+				if idsJSON != "" {
+					ids, err := parseIDList(idsJSON)
+					if err != nil {
+						return err
+					}
+					payload["primitiveIds"] = ids
+				}
+				return dispatch(cfg, "pcb.grid_snap", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&grid, "grid", 0, "grid step in PCB data units (required)")
+		c.Flags().StringVar(&idsJSON, "ids", "", "primitive IDs — CSV: id1,id2 (omit = current selection)")
+		pcb.AddCommand(c)
+	}
+	{
+		var idsJSON string
+		var dx, dy float64
+		c := &cobra.Command{
+			Use:   "move",
+			Short: "Translate components by a relative (dx, dy) offset",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb move --dx 100 --dy 0
+  easyeda pcb move --dx 100 --dy 50 --ids id1`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if !cmd.Flags().Changed("dx") && !cmd.Flags().Changed("dy") {
+					return fmt.Errorf("at least one of --dx / --dy is required")
+				}
+				payload := map[string]any{"dx": dx, "dy": dy}
+				if idsJSON != "" {
+					ids, err := parseIDList(idsJSON)
+					if err != nil {
+						return err
+					}
+					payload["primitiveIds"] = ids
+				}
+				return dispatch(cfg, "pcb.components.move", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&dx, "dx", 0, "X offset")
+		c.Flags().Float64Var(&dy, "dy", 0, "Y offset")
+		c.Flags().StringVar(&idsJSON, "ids", "", "primitive IDs — CSV: id1,id2 (omit = current selection)")
+		pcb.AddCommand(c)
+	}
+	{
+		var idsJSON, mode string
+		var pitch, gutter float64
+		var cols int
+		c := &cobra.Command{
+			Use:   "arrange",
+			Short: "Coarse auto-layout SEED: cluster by shared nets, or pack a grid",
+			Long: `Coarse auto-layout SEED (mechanical first pass only).
+
+mode=cluster groups by shared local nets; mode=grid packs a flat grid. Each cluster
+is grid-packed into a tidy block with gutters; locked components are skipped. Apply
+the placement priorities in pcb-layout-conventions.md (easyeda-agent) afterward.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb arrange
+  easyeda pcb arrange --mode grid --cols 8 --pitch 200`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if mode != "" {
+					payload["mode"] = mode
+				}
+				if cmd.Flags().Changed("pitch") {
+					payload["pitch"] = pitch
+				}
+				if cmd.Flags().Changed("gutter") {
+					payload["gutter"] = gutter
+				}
+				if cmd.Flags().Changed("cols") {
+					payload["cols"] = cols
+				}
+				if idsJSON != "" {
+					ids, err := parseIDList(idsJSON)
+					if err != nil {
+						return err
+					}
+					payload["primitiveIds"] = ids
+				}
+				return dispatch(cfg, "pcb.components.arrange", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&mode, "mode", "", "cluster (default) | grid")
+		c.Flags().Float64Var(&pitch, "pitch", 0, "component pitch within a block")
+		c.Flags().Float64Var(&gutter, "gutter", 0, "gutter between blocks")
+		c.Flags().IntVar(&cols, "cols", 0, "columns for grid mode")
+		c.Flags().StringVar(&idsJSON, "ids", "", "primitive IDs — CSV: id1,id2 (omit = current selection)")
+		pcb.AddCommand(c)
+	}
+
+	// ── outline-get / outline-set / outline-clear (板框) ───────────────────
+	pcb.AddCommand(&cobra.Command{
+		Use:   "outline-get",
+		Short: "Read the board outline, including true center-line dimensions and rendered bbox",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.outline.get", window, nil, stdout, stderr)
+		},
+	})
+	{
+		var pointsJSON string
+		var lineWidth float64
+		var noReplace bool
+		c := &cobra.Command{
+			Use:   "outline-set",
+			Short: "Set the board outline from a closed polygon of points (mil, y-up)",
+			Long: `Set the board outline from a closed polygon of points (mil, y-up).
+
+Replaces any existing outline by default. The agent generates the points for the
+desired shape (rectangle/rounded-rect/circle/instrument) — see the easyeda-agent skill;
+curves are approximated by line segments. Reports whether all components fall inside.`,
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb outline-set --points '[[0,0],[2000,0],[2000,1500],[0,1500]]'`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if pointsJSON == "" {
+					return fmt.Errorf("--points is required")
+				}
+				var points any
+				if err := json.Unmarshal([]byte(pointsJSON), &points); err != nil {
+					return fmt.Errorf("invalid --points json (expected array): %w", err)
+				}
+				payload := map[string]any{"points": points}
+				if noReplace {
+					payload["replace"] = false
+				}
+				if cmd.Flags().Changed("line-width") {
+					payload["lineWidth"] = lineWidth
+				}
+				return dispatch(cfg, "pcb.outline.set", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&pointsJSON, "points", "", `JSON array of [x,y] points in mil (required), e.g. '[[0,0],[2000,0],[2000,1500],[0,1500]]'`)
+		c.Flags().Float64Var(&lineWidth, "line-width", 0, "outline line width")
+		c.Flags().BoolVar(&noReplace, "no-replace", false, "append instead of replacing the existing outline")
+		pcb.AddCommand(c)
+	}
+	pcb.AddCommand(&cobra.Command{
+		Use:   "outline-clear",
+		Short: "Remove the current board outline (BOARD_OUTLINE layer)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.outline.clear", window, nil, stdout, stderr)
+		},
+	})
+
+	// ── origin get/set (画布显示原点) ──────────────────────────────────────
+	// These wrap pcb_Document.getCanvasOrigin/setCanvasOrigin. The offsets only
+	// change coordinates shown in the editor; data coordinates and geometry stay put.
+	{
+		origin := &cobra.Command{
+			Use:   "origin",
+			Short: "Read or set the PCB canvas/display origin (does not move geometry)",
+			Long: `Read or set the PCB canvas origin offset from the PCB data origin.
+
+Offsets use PCB data units (mil). This changes the coordinates displayed by the
+editor only; every primitive keeps the same API/data coordinates and geometry.`,
+		}
+		origin.AddCommand(&cobra.Command{
+			Use:   "get",
+			Short: "Read the canvas-origin X/Y offsets in mil",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return dispatch(cfg, "pcb.origin.get", window, nil, stdout, stderr)
+			},
+		})
+		var offsetX, offsetY float64
+		set := &cobra.Command{
+			Use:   "set",
+			Short: "Set and read back canvas-origin X/Y offsets in mil",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb origin set --x 0 --y 0
+  easyeda pcb origin set --x 118.11 --y 118.11  # 3mm, display origin only`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return dispatch(cfg, "pcb.origin.set", window, map[string]any{
+					"offsetX": offsetX,
+					"offsetY": offsetY,
+				}, stdout, stderr)
+			},
+		}
+		set.Flags().Float64Var(&offsetX, "x", 0, "canvas-origin X offset from the data origin (mil; required)")
+		set.Flags().Float64Var(&offsetY, "y", 0, "canvas-origin Y offset from the data origin (mil; required)")
+		_ = set.MarkFlagRequired("x")
+		_ = set.MarkFlagRequired("y")
+		origin.AddCommand(set)
+		pcb.AddCommand(origin)
+	}
+
+	// ── report / drc-rules (read-only PCB analysis) ────────────────────────
+	// pcb.report (per-net length + net-class/diff-pair/equal-length views),
+	// pcb.drc.rules (the design-rule config without running a check).
+	pcb.AddCommand(&cobra.Command{
+		Use:   "report",
+		Short: "Read-only design report: per-net length, net-class totals, diff-pair skew, equal-length spread",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.report", window, nil, stdout, stderr)
+		},
+	})
+	pcb.AddCommand(&cobra.Command{
+		Use:   "drc-rules",
+		Short: "Read the active PCB's DRC rule configuration without running a check",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.drc.rules", window, nil, stdout, stderr)
+		},
+	})
+	// net-classes — print the role→width ladder (规范线宽) that route-short and
+	// `pcb check width-under-spec` use. Seeded from the board's LIVE rules (signal =
+	// live default; power roles step up per §7.8), so it reflects the actual board.
+	{
+		var asJSON bool
+		c := &cobra.Command{
+			Use:   "net-classes",
+			Short: "Print the net-class → spec track-width ladder (signal/power-branch/power-trunk/high-current/gnd)",
+			Args:  cobra.NoArgs,
+			Long: `Show the role→width ladder the daemon uses for规范线宽 (spec track widths):
+route-short picks each net's width by role, and "pcb check" flags power tracks
+thinner than their role's width. Roles are classified by net name/voltage
+(pcb_netclass.go). (A block's per-net track_width_mil is declared in the block
+data but NOT consumed yet — phase-2; today the name/voltage heuristic decides.)
+
+Widths are seeded from the board's LIVE DRC rules (signal = the live default,
+power roles step up per pcb-layout-conventions.md §7.8), clamped ≥ the fab's
+legal minimum. Power-rung widths are METRIC-round per pcb-design-rules.md §1.2
+(0.05mm grid): branch 0.25mm (9.84mil) / trunk 0.4mm (15.75mil) /
+high-current 0.5mm (19.69mil) — not mil fragments like 10/15/20.`,
+			Example: `  easyeda pcb net-classes            # human table
+  easyeda pcb net-classes --json     # {role: {mil, mm}}`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				rules := fetchPcbRules(cfg, window)
+				table := netClassWidthTable(rules)
+				notes := map[string]string{
+					roleSignal:      "logic/analog signal (live default)",
+					rolePowerBranch: "regulated rail <5V (3V3/1V8/VCC/VDD)",
+					rolePowerTrunk:  "main rail 5–9V (+5V-class)",
+					roleHighCurrent: "connector-in/battery/bus (VBUS/VIN/VBAT, ≥9V)",
+					roleGnd:         "ground — prefer pour/plane over a track",
+				}
+				if asJSON {
+					out := map[string]any{"source": rules.source, "classes": map[string]any{}}
+					for _, role := range netClassRolesByWidth {
+						out["classes"].(map[string]any)[role] = map[string]any{
+							"mil":  round2(table[role]),
+							"mm":   round2(table[role] / mmToMil),
+							"note": notes[role],
+						}
+					}
+					enc := json.NewEncoder(stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(out)
+				}
+				fmt.Fprintf(stdout, "net-class spec widths (rules: %s)\n", rules.source)
+				fmt.Fprintf(stdout, "  %-14s %6s  %6s   %s\n", "ROLE", "mil", "mm", "note")
+				for _, role := range netClassRolesByWidth {
+					fmt.Fprintf(stdout, "  %-14s %6.4g  %6.3g   %s\n", role, table[role], table[role]/mmToMil, notes[role])
+				}
+				return nil
+			},
+		}
+		c.Flags().BoolVar(&asJSON, "json", false, "emit the ladder as JSON")
+		pcb.AddCommand(c)
+	}
+	// net-class — real EasyEDA net-class CRUD. Keep the singular command distinct
+	// from `net-classes`, which is a calculated width guide and does not mutate EDA.
+	{
+		group := &cobra.Command{
+			Use:   "net-class",
+			Short: "Inspect and create persisted EasyEDA PCB net classes",
+		}
+		group.AddCommand(&cobra.Command{
+			Use:   "list",
+			Short: "List real net classes and net-rule assignments from the active PCB",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return dispatch(cfg, "pcb.net_class.list", window, nil, stdout, stderr)
+			},
+		})
+		{
+			var name string
+			var nets []string
+			c := &cobra.Command{
+				Use:     "create",
+				Short:   "Create a real net class from explicit existing PCB nets",
+				Args:    cobra.NoArgs,
+				Example: `  easyeda pcb net-class create --name PWR_Class --net +5V --net +3V3 --net GND`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					if strings.TrimSpace(name) == "" || len(nets) == 0 {
+						return fmt.Errorf("--name and at least one --net are required")
+					}
+					return dispatch(cfg, "pcb.net_class.create", window,
+						map[string]any{"name": name, "nets": nets}, stdout, stderr)
+				},
+			}
+			c.Flags().StringVar(&name, "name", "", "net-class name (required)")
+			c.Flags().StringSliceVar(&nets, "net", nil, "existing net name; repeat or comma-separate (required)")
+			group.AddCommand(c)
+		}
+		pcb.AddCommand(group)
+	}
+	// drc-rules-set — the write side of drc-rules. v1 exposes exactly one knob:
+	// the pour/plane copper clearance (Plane.*.lineClearance), raise-only. This
+	// is the solidified fix for the fresh-PCB pour-reflow divergence (a newly
+	// created PCB reflows ~3% under the configured clearance AND skips thermal
+	// spokes while a sibling PCB in the same project honors the same rules —
+	// suspected platform issue). Raising the pour clearance above the DRC
+	// minimum restores margin so even a discounted reflow stays legal, and
+	// writing the config (which turns the immutable system preset into a
+	// custom copy) also restores thermal-spoke generation.
+	{
+		var pourClearance float64
+		var fromPath string
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "drc-rules-set",
+			Short: "Set full PCB rules from JSON, or raise only the pour clearance",
+			Args:  cobra.NoArgs,
+			Long: `Raise the copper-pour / inner-plane clearance (Plane lineClearance) of the
+active PCB's CURRENT rule configuration to at least --pour-clearance mil.
+
+Raise-only: values already at or above the target are left untouched, so a
+board configured stricter than the target is never loosened. When the current
+configuration is an immutable system preset (JLCPCB Capability …), writing
+turns it into a per-board 自定义配置 copy — expected and required (system
+presets cannot be modified). Run "pcb pour-rebuild" afterwards so existing
+pours reflow under the new clearance.`,
+			Example: `  easyeda pcb drc-rules-set --pour-clearance 12   # 10→12mil margin, then:
+  easyeda pcb pour-rebuild`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if fromPath != "" {
+					if cmd.Flags().Changed("pour-clearance") {
+						return fmt.Errorf("--from and --pour-clearance are mutually exclusive")
+					}
+					data, err := os.ReadFile(fromPath)
+					if err != nil {
+						return fmt.Errorf("read --from: %w", err)
+					}
+					spec, err := parsePcbDrcRulesSetSpec(data)
+					if err != nil {
+						return fmt.Errorf("parse --from: %w", err)
+					}
+					spec["dryRun"] = dryRun
+					return dispatch(cfg, "pcb.drc.rules.set", window, spec, stdout, stderr)
+				}
+				if dryRun {
+					return fmt.Errorf("--dry-run applies only with --from")
+				}
+				if !cmd.Flags().Changed("pour-clearance") {
+					return fmt.Errorf("provide --from <rules.json> or --pour-clearance <mil>")
+				}
+				if pourClearance < 4 || pourClearance > 100 {
+					return fmt.Errorf("--pour-clearance %.4g mil is out of the sane range [4, 100]", pourClearance)
+				}
+				return dispatchTimed(cfg, "debug.exec_js", window,
+					map[string]any{"code": pourClearanceRaiseJS(pourClearance)},
+					40*time.Second, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&pourClearance, "pour-clearance", 0, "minimum pour/plane copper clearance in mil (raise-only; required)")
+		c.Flags().StringVar(&fromPath, "from", "", "complete rules JSON: drc-rules output, {name,config}, bare config, or ruleConfiguration/netRules spec")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "show current/requested JSON without writing (with --from)")
+		pcb.AddCommand(c)
+	}
+
+	// ── track / via (copper routing) ───────────────────────────────────────
+	// pcb.line.create / pcb.via.create — real routing primitives. Bind to a net
+	// by NAME (pull from `pcb nets`); layer ids from `pcb layers`. No PCB autosave
+	// yet, so save explicitly after routing.
+	{
+		var net string
+		var layer int
+		var x1, y1, x2, y2, width float64
+		c := &cobra.Command{
+			Use:   "track",
+			Short: "Create a copper track (导线) on a layer between two points (mil, y-up)",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb track --x1 1000 --y1 1000 --x2 1500 --y2 1000 --net GND
+  easyeda pcb track --x1 0 --y1 0 --x2 500 --y2 0 --layer 2 --width 10`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				for _, f := range []string{"x1", "y1", "x2", "y2"} {
+					if !cmd.Flags().Changed(f) {
+						return fmt.Errorf("--x1 --y1 --x2 --y2 are all required")
+					}
+				}
+				payload := map[string]any{"startX": x1, "startY": y1, "endX": x2, "endY": y2}
+				if net != "" {
+					payload["net"] = net
+				}
+				if cmd.Flags().Changed("layer") {
+					payload["layer"] = layer
+				}
+				if cmd.Flags().Changed("width") {
+					payload["lineWidth"] = width
+				}
+				return dispatch(cfg, "pcb.line.create", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&x1, "x1", 0, "start X (mil, required)")
+		c.Flags().Float64Var(&y1, "y1", 0, "start Y (mil, required)")
+		c.Flags().Float64Var(&x2, "x2", 0, "end X (mil, required)")
+		c.Flags().Float64Var(&y2, "y2", 0, "end Y (mil, required)")
+		c.Flags().IntVar(&layer, "layer", 1, "copper layer id: TOP=1, BOTTOM=2; inner ids via 'easyeda pcb layers'")
+		c.Flags().Float64Var(&width, "width", 0, "track width (mil; default 6)")
+		c.Flags().StringVar(&net, "net", "", "net name to bind the track to")
+		pcb.AddCommand(c)
+	}
+	{
+		var net string
+		var x, y, hole, diameter float64
+		c := &cobra.Command{
+			Use:   "via",
+			Short: "Place a via (过孔) at (x,y) with hole + outer diameter (mil, y-up)",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb via --x 1200 --y 1000 --net GND
+  easyeda pcb via --x 1200 --y 1000 --hole 12 --diameter 24 --net GND`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if !cmd.Flags().Changed("x") || !cmd.Flags().Changed("y") {
+					return fmt.Errorf("--x and --y are required")
+				}
+				payload := map[string]any{"x": x, "y": y}
+				if net != "" {
+					payload["net"] = net
+				}
+				if cmd.Flags().Changed("hole") {
+					payload["holeDiameter"] = hole
+				}
+				if cmd.Flags().Changed("diameter") {
+					payload["diameter"] = diameter
+				}
+				return dispatch(cfg, "pcb.via.create", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&x, "x", 0, "via center X (mil, required)")
+		c.Flags().Float64Var(&y, "y", 0, "via center Y (mil, required)")
+		c.Flags().Float64Var(&hole, "hole", 0, "hole (drill) diameter (mil; default 12)")
+		c.Flags().Float64Var(&diameter, "diameter", 0, "outer pad diameter (mil; default 24)")
+		c.Flags().StringVar(&net, "net", "", "net name to bind the via to")
+		pcb.AddCommand(c)
+	}
+
+	// ── save ───────────────────────────────────────────────────────────────
+	// pcb.save — PCB counterpart to `sch save`. PCB edits are in-memory until
+	// saved; the daemon also autosaves (debounced) after PCB mutations.
+	pcb.AddCommand(&cobra.Command{
+		Use:   "save",
+		Short: "Save the active PCB document to disk",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatch(cfg, "pcb.save", window, nil, stdout, stderr)
+		},
+	})
+
+	// ── track-list / via-list (read what's routed) ─────────────────────────
+	{
+		var net string
+		var layer int
+		c := &cobra.Command{
+			Use:     "track-list",
+			Short:   "List copper tracks (导线), optionally by net/layer",
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb track-list --net GND`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if net != "" {
+					payload["net"] = net
+				}
+				if cmd.Flags().Changed("layer") {
+					payload["layer"] = layer
+				}
+				return dispatch(cfg, "pcb.line.list", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "", "filter by net name")
+		c.Flags().IntVar(&layer, "layer", 0, "filter by copper layer id (TOP=1, BOTTOM=2)")
+		pcb.AddCommand(c)
+	}
+	{
+		var net string
+		c := &cobra.Command{
+			Use:     "via-list",
+			Short:   "List vias (过孔), optionally by net",
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb via-list --net GND`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if net != "" {
+					payload["net"] = net
+				}
+				return dispatch(cfg, "pcb.via.list", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "", "filter by net name")
+		pcb.AddCommand(c)
+	}
+
+	// ── rip-up / clear-routing ─────────────────────────────────────────────
+	{
+		var nets []string
+		c := &cobra.Command{
+			Use:   "rip-up",
+			Short: "Rip up routing (delete tracks+vias); --net to scope, omit = all. Outline/locked are safe",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb rip-up --net GND
+  easyeda pcb rip-up --net GND --net +3V3
+  easyeda pcb rip-up            # rip up ALL routing (board outline + locked survive)`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if len(nets) > 0 {
+					payload["net"] = nets
+				}
+				return dispatch(cfg, "pcb.route.rip_up", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringSliceVar(&nets, "net", nil, "net(s) to rip up; repeat or comma-separate; omit = all")
+		pcb.AddCommand(c)
+	}
+	{
+		var typ string
+		c := &cobra.Command{
+			Use:     "clear-routing",
+			Short:   "Native clearRouting (@alpha — may be unavailable; prefer rip-up)",
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb clear-routing --type all`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if typ != "" {
+					payload["type"] = typ
+				}
+				return dispatch(cfg, "pcb.clear_routing", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&typ, "type", "all", "all | net | connection")
+		pcb.AddCommand(c)
+	}
+
+	// ── via-delete / track-delete (surgical, by primitiveId) ───────────────
+	// pcb.route.delete — rip-up's precise sibling: one bad via no longer costs
+	// re-routing the whole net. The `kind` guard makes each subcommand refuse
+	// ids of the other kind (paste protection); removed[] echoes full
+	// before-state so the audit log can recreate what was deleted.
+	for _, spec := range []struct{ use, kind, short, example string }{
+		{
+			use: "via-delete", kind: "via",
+			short: "Delete specific vias by primitiveId (rip-up is net-scoped; this is surgical)",
+			example: `  easyeda pcb via-delete --ids 184fd1d7742ac942
+  easyeda pcb via-delete --ids id1,id2      # ids from 'pcb via-list' or 'pcb drc --json' objs`,
+		},
+		{
+			use: "track-delete", kind: "track",
+			short: "Delete specific copper tracks by primitiveId (rip-up is net-scoped; this is surgical)",
+			example: `  easyeda pcb track-delete --ids 666de996beeb75f4
+  easyeda pcb track-delete --ids id1,id2    # ids from 'pcb track-list' or 'pcb drc --json' objs`,
+		},
+	} {
+		var idsRaw string
+		c := &cobra.Command{
+			Use:     spec.use,
+			Short:   spec.short,
+			Args:    cobra.NoArgs,
+			Example: spec.example,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if idsRaw == "" {
+					return fmt.Errorf("--ids is required (pull fresh ids from 'pcb %s-list', they churn after edits)", spec.kind)
+				}
+				ids, err := parseIDList(idsRaw)
+				if err != nil {
+					return err
+				}
+				payload := map[string]any{"primitiveIds": ids, "kind": spec.kind}
+				return dispatch(cfg, "pcb.route.delete", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&idsRaw, "ids", "", "primitiveId(s) to delete — CSV: id1,id2")
+		pcb.AddCommand(c)
+	}
+
+	// ── via-bond (bond netless embedded vias to their pad's net) ───────────
+	// #118 follow-up: EPAD thermal vias land netless and CANNOT be deleted
+	// (#120) — bonding them to the pad's net is the only repair, and it must be
+	// re-run after every doc reload (the platform re-materializes them netless;
+	// live-verified). exec_js-backed → works on every deployed connector.
+	{
+		var only string
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "via-bond",
+			Short: "Assign netless footprint-embedded vias (EPAD thermal vias) the net of the pad they sit in",
+			Long: `Scan every NETLESS via whose center sits inside a net-carrying pad's copper
+rect and assign it that pad's net (raw eda.pcb_PrimitiveVia.modify — no
+connector re-import needed). The canonical case: QFN EPAD thermal vias, which
+land net:"" however the part was placed, giving one same-footprint "SMD Pad to
+Via" DRC error each and never bonding the EPAD to the GND plane.
+
+⚠️ PLATFORM LIMIT (live-verified, #118): the assignment does NOT survive a doc
+reload — embedded vias re-materialize netless every time. Re-run via-bond after
+any reload, before DRC / power-planes. 'pcb check' flags the condition as
+netless-via-in-pad so you know when it is needed.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb via-bond --dry-run          # show which vias would get which net
+  easyeda pcb via-bond                    # bond them (idempotent — safe to re-run)
+  easyeda pcb via-bond --component U1     # only U1's pads`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runPcbViaBond(cfg, window, only, dryRun, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&only, "component", "", "limit to one component's pads (designator)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan without modifying anything")
+		pcb.AddCommand(c)
+	}
+
+	// ── track-lock (lock/unlock routed copper) ─────────────────────────────
+	// The foundation of the P7.0 critical-net-first flow: route power + diff/
+	// length nets ourselves, LOCK them, THEN hand the rest to the human's native
+	// auto-route (which — like pour-rebuild — leaves locked copper alone).
+	// Graduated from the debug.exec_js hatch to the typed `pcb.track.lock`
+	// action (#127, connector 0.15.2 — the exec_js→typed→Cobra dev loop):
+	// tracks + arcs (beautify corners, which the JS version missed) + vias +
+	// net-bound fills. Pours (覆铜, meant to reflow) are never touched; the
+	// board outline (net="") is skipped by the --all net filter.
+	{
+		var nets, ids []string
+		var all, unlock, noFills bool
+		c := &cobra.Command{
+			Use:   "track-lock",
+			Short: "Lock/unlock routed copper (tracks/vias/fills) so the native router + pour-rebuild leave it alone",
+			Long: `Set the primitiveLock flag on routed copper so a subsequent native
+auto-route or pour-rebuild does NOT rip or reflow it — the foundation of the
+P7.0 "critical-net-first" flow (route power + diff/length nets yourself, LOCK
+them, then hand the rest to the human's native auto-route).
+
+Scope EXACTLY ONE of:
+  --net   lock every track/via/fill on these nets (repeat or comma-separate)
+  --ids   lock these primitiveIds (from 'pcb track-list' / 'pcb via-list')
+  --all   lock every routed copper primitive that carries a net
+
+--unlock clears the lock instead of setting it. Net-bound fills (the large power
+blocks) are included by default; --no-fills locks only tracks + vias. Pours
+(覆铜, meant to reflow) are never touched.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb track-lock --net 5V --net USB_DP --net USB_DM   # lock power + USB diff after routing them
+  easyeda pcb track-lock --all                                 # lock all routed copper
+  easyeda pcb track-lock --net GND --unlock                    # release`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				modes := 0
+				if len(nets) > 0 {
+					modes++
+				}
+				if len(ids) > 0 {
+					modes++
+				}
+				if all {
+					modes++
+				}
+				if modes != 1 {
+					return fmt.Errorf("pass EXACTLY ONE of --net, --ids, or --all")
+				}
+				payload := map[string]any{"locked": !unlock, "includeFills": !noFills}
+				if len(nets) > 0 {
+					payload["net"] = nets
+				}
+				if len(ids) > 0 {
+					payload["primitiveIds"] = ids
+				}
+				if all {
+					payload["all"] = true
+				}
+				return dispatch(cfg, "pcb.track.lock", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringSliceVar(&nets, "net", nil, "lock copper on these net(s); repeat or comma-separate")
+		c.Flags().StringSliceVar(&ids, "ids", nil, "lock these primitiveId(s); repeat or comma-separate")
+		c.Flags().BoolVar(&all, "all", false, "lock every routed copper primitive that carries a net")
+		c.Flags().BoolVar(&unlock, "unlock", false, "clear the lock instead of setting it")
+		c.Flags().BoolVar(&noFills, "no-fills", false, "skip net-bound fills (lock only tracks + vias)")
+		pcb.AddCommand(c)
+	}
+
+	// ── via-hop (composite layer hop) ──────────────────────────────────────
+	// pcb.route.via_hop — one command for "cross on the other layer": stub →
+	// via → hop track → via → stub. Optional (off by default) bond fills over
+	// each via. Bond fills used to be load-bearing under pro-api-sdk#31, but
+	// that was our misdiagnosis — track↔via DOES register as connected (verified
+	// live 2026-07-07), so the fills are now an opt-in extra, not a requirement.
+	{
+		var net string
+		var layer, hopLayer int
+		var fromX, fromY, toX, toY, width, hole, viaDia, stub, bondSize float64
+		var bondFill bool
+		c := &cobra.Command{
+			Use:   "via-hop",
+			Short: "Route a layer hop: stub→via→hop-track→via→stub (optional bond fills)",
+			Long: `Route one net across the other layer and back in a single command:
+entry stub → via → hop-layer track → via → exit stub.
+
+track↔via registers as connected on its own (pro-api-sdk#31 was our
+misdiagnosis; the old "floating" symptom was stale pour connectivity, cured by
+'pcb pour-rebuild'), so no bond fill is needed for connectivity. Pass
+--bond-fill only if you want extra thermal/current copper over the vias. Vias
+sit --stub mil inside the endpoints so they stay OFF pads (via-on-pad ≠
+connected). Everything created is rolled back if any step fails. Verify with
+'pcb drc'.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb via-hop --net U0TXD --from-x 1000 --from-y 500 --to-x 1400 --to-y 500
+  easyeda pcb via-hop --net +5V --from-x 900 --from-y 200 --to-x 1200 --to-y 400 --hop-layer 2 --width 10`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if net == "" {
+					return fmt.Errorf("--net is required (the hop must bind to a net)")
+				}
+				for _, f := range []string{"from-x", "from-y", "to-x", "to-y"} {
+					if !cmd.Flags().Changed(f) {
+						return fmt.Errorf("--from-x --from-y --to-x --to-y are all required")
+					}
+				}
+				payload := map[string]any{"net": net, "fromX": fromX, "fromY": fromY, "toX": toX, "toY": toY}
+				if cmd.Flags().Changed("layer") {
+					payload["layer"] = layer
+				}
+				if cmd.Flags().Changed("hop-layer") {
+					payload["hopLayer"] = hopLayer
+				}
+				if cmd.Flags().Changed("width") {
+					payload["lineWidth"] = width
+				}
+				if cmd.Flags().Changed("hole") {
+					payload["holeDiameter"] = hole
+				}
+				if cmd.Flags().Changed("via-diameter") {
+					payload["viaDiameter"] = viaDia
+				}
+				if cmd.Flags().Changed("stub") {
+					payload["stub"] = stub
+				}
+				if cmd.Flags().Changed("bond-size") {
+					payload["bondSize"] = bondSize
+				}
+				payload["bondFill"] = bondFill
+				return dispatch(cfg, "pcb.route.via_hop", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "", "net name to bind everything to (required)")
+		c.Flags().Float64Var(&fromX, "from-x", 0, "hop start X (mil, required)")
+		c.Flags().Float64Var(&fromY, "from-y", 0, "hop start Y (mil, required)")
+		c.Flags().Float64Var(&toX, "to-x", 0, "hop end X (mil, required)")
+		c.Flags().Float64Var(&toY, "to-y", 0, "hop end Y (mil, required)")
+		c.Flags().IntVar(&layer, "layer", 1, "entry/exit copper layer (TOP=1)")
+		c.Flags().IntVar(&hopLayer, "hop-layer", 2, "layer the hop track crosses on (BOTTOM=2)")
+		c.Flags().Float64Var(&width, "width", 0, "track width (mil; default 6)")
+		c.Flags().Float64Var(&hole, "hole", 0, "via hole diameter (mil; default 12)")
+		c.Flags().Float64Var(&viaDia, "via-diameter", 0, "via outer diameter (mil; default 24)")
+		c.Flags().Float64Var(&stub, "stub", 0, "via setback from each endpoint (mil; default 20 — keeps vias off pads)")
+		c.Flags().Float64Var(&bondSize, "bond-size", 0, "bond fill square side (mil; default 20)")
+		c.Flags().BoolVar(&bondFill, "bond-fill", false, "add net-bound bond fills over each via (optional extra copper; NOT needed for connectivity)")
+		pcb.AddCommand(c)
+	}
+
+	// ── pour (铺铜) ────────────────────────────────────────────────────────
+	{
+		var pointsJSON, net, fill, name string
+		var layer, priority int
+		var width float64
+		c := &cobra.Command{
+			Use:   "pour",
+			Short: "Create a copper pour (铺铜) from a closed polygon, bound to a net (usually GND)",
+			Long: `Create a copper pour (铺铜) from a closed polygon of [x,y] points (mil, y-up).
+
+Builds the polygon internally and verifies fresh boundary parameters before
+rebuilding copper. verified describes the boundary; poured is the separate
+rebuild result. A mismatch or unreadable boundary exits nonzero and retains the
+created ID for inspection. Size it to the board outline; bind to GND for a ground
+plane. fill = solid (default) | grid | grid45.`,
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb pour --points '[[0,0],[2000,0],[2000,1500],[0,1500]]' --net GND --layer 2`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if pointsJSON == "" {
+					return fmt.Errorf("--points is required")
+				}
+				// A pour MUST bind to a net. Omitting --net used to create netless
+				// dead copper (net:"") that pour-fit --replace can't clear (it only
+				// matches same-net pours) — the #34 confusion. Fail fast instead.
+				if strings.TrimSpace(net) == "" {
+					return fmt.Errorf("--net is required (a copper pour must bind to a net, e.g. --net GND); " +
+						"a netless pour is dead copper — see `pcb pour-clean --netless` to remove existing ones")
+				}
+				var points any
+				if err := json.Unmarshal([]byte(pointsJSON), &points); err != nil {
+					return fmt.Errorf("invalid --points json (expected array): %w", err)
+				}
+				payload := map[string]any{"points": points, "net": net}
+				if cmd.Flags().Changed("layer") {
+					payload["layer"] = layer
+				}
+				if fill != "" {
+					payload["fill"] = fill
+				}
+				if name != "" {
+					payload["name"] = name
+				}
+				if cmd.Flags().Changed("priority") {
+					payload["priority"] = priority
+				}
+				if cmd.Flags().Changed("width") {
+					payload["lineWidth"] = width
+				}
+				return dispatch(cfg, "pcb.pour.create", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&pointsJSON, "points", "", `JSON array of [x,y] points in mil (required)`)
+		c.Flags().StringVar(&net, "net", "", "net to bind the pour to (e.g. GND)")
+		c.Flags().IntVar(&layer, "layer", 1, "copper layer id (TOP=1, BOTTOM=2; inner via 'easyeda pcb layers')")
+		c.Flags().StringVar(&fill, "fill", "", "fill style: solid (default) | grid | grid45")
+		c.Flags().StringVar(&name, "name", "", "pour name")
+		c.Flags().IntVar(&priority, "priority", 0, "pour priority (higher wins overlaps)")
+		c.Flags().Float64Var(&width, "width", 0, "pour border/track width (mil)")
+		pcb.AddCommand(c)
+	}
+	{
+		var net string
+		c := &cobra.Command{
+			Use:     "pour-list",
+			Short:   "List copper pours (铺铜), optionally by net",
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb pour-list`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if net != "" {
+					payload["net"] = net
+				}
+				return dispatch(cfg, "pcb.pour.list", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "", "filter by net name")
+		pcb.AddCommand(c)
+	}
+	{
+		var net string
+		c := &cobra.Command{
+			Use:   "poured-list",
+			Short: "List materialized copper after pour rebuild (exact polygon sources)",
+			Long: `Read the actual copper islands produced by the pour engine. This differs
+from pour-list, which only returns editable pour boundaries. Each result retains
+the complex polygon source, including holes and arc commands. A successful empty
+array proves there is no materialized poured object; unavailable geometry fails
+instead of being reported as empty.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb pour-rebuild --net GND
+  easyeda pcb poured-list --net GND`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if net != "" {
+					payload["net"] = net
+				}
+				return dispatch(cfg, "pcb.poured.list", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "", "filter by pour net name")
+		pcb.AddCommand(c)
+	}
+	{
+		var idsRaw string
+		c := &cobra.Command{
+			Use:   "pour-delete",
+			Short: "Delete copper pour regions by primitiveId",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb pour-delete --ids id1,id2
+  easyeda pcb pour-delete --ids id1,id2     # CSV works too`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if idsRaw == "" {
+					return fmt.Errorf("--ids is required")
+				}
+				ids, err := parseIDList(idsRaw)
+				if err != nil {
+					return err
+				}
+				return dispatch(cfg, "pcb.pour.delete", window,
+					map[string]any{"primitiveIds": ids}, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&idsRaw, "ids", "", "pour primitiveIds to delete — CSV: id1,id2 (required)")
+		pcb.AddCommand(c)
+	}
+	{
+		var net string
+		c := &cobra.Command{
+			Use:     "pour-rebuild",
+			Short:   "Re-pour (recompute) all pours after layout/routing changes",
+			Args:    cobra.NoArgs,
+			Example: `  easyeda pcb pour-rebuild`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if net != "" {
+					payload["net"] = net
+				}
+				return dispatch(cfg, "pcb.pour.rebuild", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "", "filter by net name")
+		pcb.AddCommand(c)
+	}
+
+	// ── beautify ──────────────────────────────────────────────────────────
+	// Routing-aesthetics post-process: round sharp track corners into arcs.
+	// Absorbed from the open-source Easy_EDA_PCB_Beautify extension (m-RNA,
+	// Apache-2.0). Deletes+recreates tracks, so it self-guards with a DRC
+	// binary-search repair + pour rebuild; --dry-run previews without mutating.
+	{
+		var nets []string
+		var layer int
+		var radiusRatio float64
+		var drcRetry int
+		var selected, forceArc, mergeU, dryRun bool
+		var noProtect, noDRC, noPour bool
+		c := &cobra.Command{
+			Use:   "beautify",
+			Short: "Round sharp track corners into arcs (走线美化) on the active PCB",
+			Long: `Beautify already-routed copper by filleting sharp corners into arcs — the
+routing-aesthetics post-process (absorbed from Easy_EDA_PCB_Beautify, m-RNA,
+Apache-2.0). Chains connected same-net/same-layer segments into polylines,
+rounds each interior corner (radius = max(width) * --radius-ratio), deletes the
+originals and creates the trimmed lines + arcs.
+
+Because it deletes+recreates tracks it self-guards: a DRC binary-search shrinks
+or straightens any corner that violates clearance, then it rebuilds copper pours
+(same-net bonding goes stale otherwise). Diff-pair / equal-length nets get
+concentric-arc protection when the build exposes that API, else they stay
+straight. Copper layers only — never touches silkscreen/outline.
+
+Run --dry-run first to preview the plan (paths / arcs) WITHOUT mutating — safe on
+any board, including one you don't want to change. Save at a good checkpoint after
+a real run. The PCB must be the active/foreground tab.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb beautify --dry-run                 # preview on the whole board
+  easyeda pcb beautify --project ceshi           # round every corner, DRC-guard, re-pour
+  easyeda pcb beautify --selected                # only the tracks selected in EasyEDA
+  easyeda pcb beautify --net GND --radius-ratio 2
+  easyeda pcb beautify --net USB_DP --net USB_DM # beautify several nets (repeat --net)`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{
+					"cornerRadiusRatio":       radiusRatio,
+					"forceArc":                forceArc,
+					"mergeTransitionSegments": mergeU,
+					"protect":                 !noProtect,
+					"drc":                     !noDRC,
+					"drcRetryCount":           drcRetry,
+					"rebuildPour":             !noPour,
+					"dryRun":                  dryRun,
+				}
+				if selected {
+					payload["scope"] = "selected"
+				} else {
+					payload["scope"] = "all"
+				}
+				if len(nets) > 0 {
+					payload["nets"] = nets
+				}
+				if cmd.Flags().Changed("layer") {
+					payload["layer"] = layer
+				}
+				return dispatch(cfg, "pcb.beautify", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().BoolVar(&selected, "selected", false, "only beautify tracks currently selected in EasyEDA (default: whole board)")
+		c.Flags().StringArrayVar(&nets, "net", nil, "filter to a net; repeatable (--net A --net B) to beautify several")
+		c.Flags().IntVar(&layer, "layer", 0, "filter to one copper layer id (TOP=1, BOTTOM=2, inner=15..44)")
+		c.Flags().Float64Var(&radiusRatio, "radius-ratio", 3.0, "corner radius = max(track width) * this ratio")
+		c.Flags().BoolVar(&forceArc, "force-arc", false, "still round corners on segments too short for the ideal radius (truncated arc)")
+		c.Flags().BoolVar(&mergeU, "merge-u", false, "merge tight U-bends into a single large arc")
+		c.Flags().BoolVar(&noProtect, "no-protect", false, "disable diff-pair/equal-length concentric-arc protection")
+		c.Flags().BoolVar(&noDRC, "no-drc", false, "skip the DRC binary-search repair pass")
+		c.Flags().IntVar(&drcRetry, "drc-retry", 4, "DRC binary-search depth for violating corners")
+		c.Flags().BoolVar(&noPour, "no-pour-rebuild", false, "skip rebuilding copper pours after beautify")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "compute the plan (paths/arcs) WITHOUT mutating the board")
+		pcb.AddCommand(c)
+	}
+
+	// ── pour-fit ──────────────────────────────────────────────────────────
+	// Auto-size a copper pour to the board: read the outline, inset it by a
+	// margin so copper never touches the edge (the Board-Outline-to-Copper
+	// clearance), then pour. Pure daemon orchestration over outline.get + pour.*.
+	{
+		var net, fill string
+		var layer int
+		var inset float64
+		var replace, dryRun bool
+		c := &cobra.Command{
+			Use:   "pour-fit",
+			Short: "Auto-size a GND/power pour to the board outline, inset from the edge",
+			Long: `Pour a net-bound plane sized to the board, inset from the edge by --inset (mil)
+so copper keeps clearance to the board outline (fixes Board-Outline-to-Copper).
+Reads the board outline (pcb.outline.get) and insets its bbox — v1 pours a
+RECTANGLE within the bbox (an odd-shaped outline still gets a rectangular plane;
+draw a custom polygon with 'pcb pour' for those). By default (--replace) it first
+clears existing pours on the same net so you don't stack them.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb pour-fit --project ceshi --net GND --layer 1
+  easyeda pcb pour-fit --net GND --layer 1 --inset 25 --dry-run`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				// Inset defaults to the board's copper-to-edge rule (JLCPCB fab floor
+				// ~8mil; ceshi live ~10mil) instead of a fixed 20 — the real
+				// Board-Outline-to-Copper clearance. --inset still overrides. (#32)
+				if !cmd.Flags().Changed("inset") {
+					inset = fetchPcbRules(cfg, window).copperToEdgeMil
+				}
+				if strings.TrimSpace(net) == "" {
+					return fmt.Errorf("--net must not be empty (a pour must bind to a net; a netless pour is dead copper)")
+				}
+				// 1. Board outline bbox.
+				ores, err := requestAction(cfg, "pcb.outline.get", window, nil)
+				if err != nil {
+					return err
+				}
+				bb, ok := ores.Result["bbox"].(map[string]any)
+				if !ok || bb == nil {
+					return fmt.Errorf("no board outline found — set one first with `pcb outline-set`")
+				}
+				minX, maxX := asFloat(bb["minX"]), asFloat(bb["maxX"])
+				minY, maxY := asFloat(bb["minY"]), asFloat(bb["maxY"])
+				if maxX-minX <= 2*inset || maxY-minY <= 2*inset {
+					return fmt.Errorf("inset %.0f too large for board %0.f×%0.f mil", inset, maxX-minX, maxY-minY)
+				}
+				x0, y0, x1, y1 := minX+inset, minY+inset, maxX-inset, maxY-inset
+				points := [][]float64{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
+
+				// 2. Optionally clear existing pours on this net (avoid stacking).
+				cleared := 0
+				if replace && !dryRun {
+					if lr, err := requestAction(cfg, "pcb.pour.list", window, nil); err == nil {
+						var ids []any
+						pours, _ := lr.Result["pours"].([]any)
+						for _, pi := range pours {
+							if pm, ok := pi.(map[string]any); ok && asString(pm["net"]) == net {
+								if id := asString(pm["primitiveId"]); id != "" {
+									ids = append(ids, id)
+								}
+							}
+						}
+						if len(ids) > 0 {
+							if _, err := requestAction(cfg, "pcb.pour.delete", window, map[string]any{"primitiveIds": ids}); err == nil {
+								cleared = len(ids)
+							}
+						}
+					}
+				}
+
+				// 3. Pour (unless dry-run).
+				payload := map[string]any{"points": points, "net": net, "layer": layer}
+				if fill != "" {
+					payload["fill"] = fill
+				}
+				if dryRun {
+					out := map[string]any{"dryRun": true, "net": net, "layer": layer, "inset": inset, "points": points, "wouldClear": cleared}
+					enc := json.NewEncoder(stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(out)
+				}
+				res, err := requestAction(cfg, "pcb.pour.create", window, payload)
+				if err != nil {
+					out := map[string]any{"ok": false, "partial": true, "net": net, "layer": layer, "cleared": cleared, "points": points, "error": err.Error()}
+					if res != nil {
+						out["result"] = res.Result
+					}
+					if encodeErr := json.NewEncoder(stdout).Encode(out); encodeErr != nil {
+						return encodeErr
+					}
+					return err
+				}
+				out := map[string]any{"ok": true, "net": net, "layer": layer, "inset": inset, "cleared": cleared, "points": points, "result": res.Result}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().StringVar(&net, "net", "GND", "net to bind the pour to")
+		c.Flags().IntVar(&layer, "layer", 1, "copper layer id (TOP=1, BOTTOM=2)")
+		c.Flags().Float64Var(&inset, "inset", 20, "inset from the board outline (mil; default = board's copper-to-edge rule ~8–10)")
+		c.Flags().StringVar(&fill, "fill", "", "fill style: solid (default) | grid | grid45")
+		c.Flags().BoolVar(&replace, "replace", true, "clear existing pours on this net first (avoid stacking)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the computed pour polygon without drawing")
+		pcb.AddCommand(c)
+	}
+
+	// ── pour-clean ────────────────────────────────────────────────────────────
+	// Remove NETLESS copper pours (net:"" dead copper — issue #34). pour-fit
+	// --replace can't clear these (it only matches same-net pours), so they
+	// silently accumulate and confuse the board. This targets them explicitly.
+	{
+		var netless, dryRun bool
+		c := &cobra.Command{
+			Use:   "pour-clean",
+			Short: "Remove netless copper pours (net:\"\" dead copper — see `pcb check` netless-pour)",
+			Long: `Delete copper pours that are bound to NO net (net:"") — dead copper that
+occupies board area but connects nothing (issue #34). These arise from a
+'pcb pour' without --net; 'pour-fit --replace' can't clear them because it only
+matches same-net pours. --dry-run lists what would be deleted without deleting.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb pour-clean --netless
+  easyeda pcb pour-clean --netless --dry-run`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				if !netless {
+					return fmt.Errorf("pass --netless to select which pours to clean (only netless is supported today)")
+				}
+				lr, err := requestAction(cfg, "pcb.pour.list", window, nil)
+				if err != nil {
+					return err
+				}
+				pours, _ := lr.Result["pours"].([]any)
+				var ids []any
+				var victims []map[string]any
+				for _, pi := range pours {
+					pm, ok := pi.(map[string]any)
+					if !ok {
+						continue
+					}
+					if strings.TrimSpace(asString(pm["net"])) != "" {
+						continue
+					}
+					if id := asString(pm["primitiveId"]); id != "" {
+						ids = append(ids, id)
+						victims = append(victims, map[string]any{"primitiveId": id, "layer": pm["layer"]})
+					}
+				}
+				out := map[string]any{"netless": len(victims), "pours": victims}
+				if dryRun {
+					out["dryRun"] = true
+				} else if len(ids) > 0 {
+					if _, err := requestAction(cfg, "pcb.pour.delete", window, map[string]any{"primitiveIds": ids}); err != nil {
+						return err
+					}
+					out["deleted"] = len(ids)
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().BoolVar(&netless, "netless", false, "remove pours bound to no net (net:\"\")")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "list what would be deleted without deleting")
+		pcb.AddCommand(c)
+	}
+
+	// ── outline-fit ─────────────────────────────────────────────────────────
+	// Tighten the board outline to the placed-component cloud. Fixes the common
+	// "outline far bigger than the parts" (low utilization) — run AFTER auto-place,
+	// BEFORE pour. Pure daemon orchestration over components.list(bbox)+outline-set.
+	{
+		var margin float64
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "outline-fit",
+			Short: "Resize the board outline to hug the placed parts + a margin (fix low utilization)",
+			Long: `Compute the union bbox of all placed components, add --margin on every side, and
+replace the board outline with that rectangle. Run AFTER 'pcb auto-place' and
+BEFORE pour/route so copper stays inside a tight frame. Reports the utilization
+before/after. ⚠️ Changing the outline after routing/pouring can strand copper —
+fit early. --dry-run previews the computed frame.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb outline-fit --project ceshi --margin 100
+  easyeda pcb outline-fit --dry-run`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				res, err := requestAction(cfg, "pcb.components.list", window, map[string]any{"includeBBox": true})
+				if err != nil {
+					return err
+				}
+				comps := parseApComps(res.Result)
+				minX, minY := math.Inf(1), math.Inf(1)
+				maxX, maxY := math.Inf(-1), math.Inf(-1)
+				n := 0
+				for _, c := range comps {
+					if !c.hasBBox {
+						continue
+					}
+					minX, minY = math.Min(minX, c.minX), math.Min(minY, c.minY)
+					maxX, maxY = math.Max(maxX, c.maxX), math.Max(maxY, c.maxY)
+					n++
+				}
+				if n == 0 {
+					return fmt.Errorf("no components with a bbox on the PCB (run `pcb import-changes` + `pcb auto-place` first)")
+				}
+				x0, y0, x1, y1 := minX-margin, minY-margin, maxX+margin, maxY+margin
+				points := [][]float64{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
+				partArea := (maxX - minX) * (maxY - minY)
+				newArea := (x1 - x0) * (y1 - y0)
+
+				// Utilization vs the CURRENT outline (advisory).
+				var oldUtil float64
+				if og, err := requestAction(cfg, "pcb.outline.get", window, nil); err == nil {
+					if bb, ok := og.Result["bbox"].(map[string]any); ok {
+						ow := asFloat(bb["maxX"]) - asFloat(bb["minX"])
+						oh := asFloat(bb["maxY"]) - asFloat(bb["minY"])
+						if ow > 0 && oh > 0 {
+							oldUtil = partArea / (ow * oh)
+						}
+					}
+				}
+				summary := map[string]any{
+					"parts":          n,
+					"partExtent":     map[string]float64{"w": round2(maxX - minX), "h": round2(maxY - minY)},
+					"newOutline":     map[string]float64{"w": round2(x1 - x0), "h": round2(y1 - y0)},
+					"utilBefore":     round2(oldUtil * 100),
+					"utilAfterParts": round2(partArea / newArea * 100),
+					"margin":         margin,
+				}
+				if dryRun {
+					enc := json.NewEncoder(stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(map[string]any{"dryRun": true, "summary": summary, "points": points})
+				}
+				sr, err := requestAction(cfg, "pcb.outline.set", window, map[string]any{"points": points})
+				if err != nil {
+					return err
+				}
+				out := map[string]any{"ok": true, "summary": summary, "result": sr.Result}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().Float64Var(&margin, "margin", 100, "margin from the part cloud to the board edge (mil)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the computed outline without changing it")
+		pcb.AddCommand(c)
+	}
+
+	// ── via-stitch ──────────────────────────────────────────────────────────
+	// Place a pitch-spaced grid of net vias inside a rectangle — thermal vias
+	// under a power-IC pad, or GND stitching that ties the top & bottom planes.
+	// Pure daemon orchestration over pcb.via.create.
+	{
+		var net, rectCSV string
+		var pitch, hole, diameter, margin float64
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "via-stitch",
+			Short: "Place a grid of net vias in a rectangle (thermal vias / GND stitching)",
+			Long: `Fill a rectangle with a pitch-spaced grid of vias on a net — thermal vias under a
+power-IC center pad (connect it down to the GND plane), or GND stitching that ties
+top & bottom pours together. --rect is "x0,y0,x1,y1" (mil, y-up); vias are inset by
+--margin from the rect edges. Run 'pcb pour-rebuild' afterwards so the planes reflow
+onto the new vias.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb via-stitch --net GND --rect "2300,-1750,2500,-1550" --pitch 40
+  easyeda pcb via-stitch --net GND --rect "0,-2600,3100,-400" --pitch 200 --dry-run`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				var x0, y0, x1, y1 float64
+				if n, err := fmt.Sscanf(rectCSV, "%g,%g,%g,%g", &x0, &y0, &x1, &y1); err != nil || n != 4 {
+					return fmt.Errorf("--rect must be \"x0,y0,x1,y1\" (mil), got %q", rectCSV)
+				}
+				if x1 < x0 {
+					x0, x1 = x1, x0
+				}
+				if y1 < y0 {
+					y0, y1 = y1, y0
+				}
+				if pitch <= 0 {
+					return fmt.Errorf("--pitch must be > 0")
+				}
+				// Grid points, inset by margin, centered in the rect.
+				var pts [][2]float64
+				lx, hx := x0+margin, x1-margin
+				ly, hy := y0+margin, y1-margin
+				for y := ly; y <= hy+1e-6; y += pitch {
+					for x := lx; x <= hx+1e-6; x += pitch {
+						pts = append(pts, [2]float64{x, y})
+					}
+				}
+				if len(pts) == 0 {
+					return fmt.Errorf("rect too small for --margin %.0f / --pitch %.0f (no via fits)", margin, pitch)
+				}
+				if dryRun {
+					enc := json.NewEncoder(stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(map[string]any{"dryRun": true, "net": net, "count": len(pts), "pitch": pitch, "points": pts})
+				}
+				// Via sizes default to the board's live rule (JLCPCB fab: 2L 0.4/0.8mm,
+				// 4L 0.3/0.6mm); --hole/--diameter override. (#32)
+				vsRules := fetchPcbRules(cfg, window)
+				vHole, vDia := hole, diameter
+				if vHole == 0 {
+					vHole = vsRules.viaDrillMil
+				}
+				if vDia == 0 {
+					vDia = vsRules.viaDiameterMil
+				}
+				placed, failed := 0, 0
+				for _, p := range pts {
+					payload := map[string]any{"x": p[0], "y": p[1], "net": net}
+					if vHole > 0 {
+						payload["holeDiameter"] = vHole
+					}
+					if vDia > 0 {
+						payload["diameter"] = vDia
+					}
+					if _, err := requestAction(cfg, "pcb.via.create", window, payload); err != nil {
+						failed++
+						continue
+					}
+					placed++
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(map[string]any{"ok": true, "net": net, "placed": placed, "failed": failed, "pitch": pitch})
+			},
+		}
+		c.Flags().StringVar(&net, "net", "GND", "net to bind the vias to")
+		c.Flags().StringVar(&rectCSV, "rect", "", `rectangle "x0,y0,x1,y1" in mil (required)`)
+		c.Flags().Float64Var(&pitch, "pitch", 40, "via center spacing (mil)")
+		c.Flags().Float64Var(&margin, "margin", 0, "inset vias from the rect edges (mil)")
+		c.Flags().Float64Var(&hole, "hole", 0, "via hole diameter (mil; 0 = connector default 12)")
+		c.Flags().Float64Var(&diameter, "diameter", 0, "via outer diameter (mil; 0 = connector default 24)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the via grid without placing")
+		_ = c.MarkFlagRequired("rect")
+		pcb.AddCommand(c)
+	}
+
+	// ── via-fence ───────────────────────────────────────────────────────────
+	// Place perimeter-only GND/RF stitching around a protected rectangle.  It
+	// deliberately does not share via-stitch's filled-grid semantics: crystal
+	// and antenna keepouts need the interior to remain free of vias/copper.
+	{
+		var net, rectCSV string
+		var pitch, hole, diameter, margin float64
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "via-fence",
+			Short: "Place a perimeter-only via fence around a rectangle",
+			Long: `Place net-bound vias only on the perimeter of a rectangle.  This is for
+crystal/RF guard boundaries whose protected interior must remain free of vias;
+use via-stitch when a full rectangular grid is intended.
+
+--rect is the protected envelope "x0,y0,x1,y1" in mil.  Positive --margin
+expands the fence outward.  --pitch is the maximum edge spacing: every edge is
+redistributed into equal intervals and each corner is emitted exactly once.
+Run a dry-run first, keep the resulting points outside no-pours regions, then
+read back the vias and run pcb pour-rebuild plus the official DRC.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb via-fence --net GND --rect "1500,700,2000,1200" --pitch 80 --margin 30 --dry-run
+  easyeda pcb via-fence --net GND --rect "1500,700,2000,1200" --pitch 80 --margin 30`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run must stay pure computation.
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				if strings.TrimSpace(net) == "" {
+					return fmt.Errorf("--net must not be empty")
+				}
+				var x0, y0, x1, y1 float64
+				if n, err := fmt.Sscanf(rectCSV, "%g,%g,%g,%g", &x0, &y0, &x1, &y1); err != nil || n != 4 {
+					return fmt.Errorf("--rect must be \"x0,y0,x1,y1\" (mil), got %q", rectCSV)
+				}
+				points, err := rectViaFencePoints(x0, y0, x1, y1, pitch, margin)
+				if err != nil {
+					return err
+				}
+				if x1 < x0 {
+					x0, x1 = x1, x0
+				}
+				if y1 < y0 {
+					y0, y1 = y1, y0
+				}
+				effectiveRect := [4]float64{x0 - margin, y0 - margin, x1 + margin, y1 + margin}
+				vfRules := fetchPcbRules(cfg, window)
+				vHole, vDia := hole, diameter
+				if vHole == 0 {
+					vHole = vfRules.viaDrillMil
+				}
+				if vDia == 0 {
+					vDia = vfRules.viaDiameterMil
+				}
+				if !allFinite(vHole, vDia) || vHole <= 0 || vDia <= vHole {
+					return fmt.Errorf("via dimensions must be finite and diameter (%.3fmil) must exceed hole (%.3fmil)", vDia, vHole)
+				}
+				pads, err := fetchPcbPads(cfg, window)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight pads: %w", err)
+				}
+				lineRes, err := requestAction(cfg, "pcb.line.list", window, nil)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight routing: %w", err)
+				}
+				if lineRes == nil {
+					return fmt.Errorf("via-fence preflight routing is unavailable")
+				}
+				tracks, arcs, err := parseViaFenceRouting(lineRes.Result)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight routing: %w", err)
+				}
+				vias, err := fetchPcbVias(cfg, window)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight vias: %w", err)
+				}
+				fillRes, err := requestAction(cfg, "pcb.fill.list", window, nil)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight static fills: %w", err)
+				}
+				if fillRes == nil {
+					return fmt.Errorf("via-fence preflight static fills are unavailable")
+				}
+				fillsRaw, ok := fillRes.Result["fills"].([]any)
+				if !ok {
+					return fmt.Errorf("via-fence preflight static fills: result.fills is unavailable")
+				}
+				pouredRes, err := requestAction(cfg, "pcb.poured.list", window, nil)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight materialized copper: %w", err)
+				}
+				if pouredRes == nil {
+					return fmt.Errorf("via-fence preflight materialized copper is unavailable")
+				}
+				pouredRaw, ok := pouredRes.Result["poured"].([]any)
+				if !ok || pouredRes.Result["available"] != true {
+					return fmt.Errorf("via-fence preflight materialized copper is unavailable")
+				}
+				areas, err := parseCopperAreaObstacles(fillsRaw, pouredRaw)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight area copper: %w", err)
+				}
+				outlineRes, err := requestAction(cfg, "pcb.outline.get", window, nil)
+				if err != nil {
+					return fmt.Errorf("via-fence preflight board outline is unavailable: %w", err)
+				}
+				if outlineRes == nil {
+					return fmt.Errorf("via-fence preflight board outline is unavailable")
+				}
+				outline := parseBoardOutline(outlineRes.Result)
+				if outline == nil {
+					return fmt.Errorf("via-fence preflight board outline has no usable geometry")
+				}
+				preflight := preflightViaFence(points, net, vHole, vDia, vfRules.clearanceMil, vfRules.copperToEdgeMil, outline, pads, tracks, arcs, vias, areas)
+				if len(preflight.Problems) > 0 {
+					return fmt.Errorf("via-fence preflight rejected %d/%d point(s): %s", len(preflight.Problems), len(points), strings.Join(preflight.Problems, "; "))
+				}
+				if dryRun {
+					enc := json.NewEncoder(stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(map[string]any{
+						"dryRun":        true,
+						"shape":         "perimeter",
+						"net":           net,
+						"count":         len(points),
+						"create":        len(preflight.Create),
+						"existing":      len(preflight.Existing),
+						"maxPitchMil":   pitch,
+						"marginMil":     margin,
+						"effectiveRect": effectiveRect,
+						"points":        points,
+					})
+				}
+
+				placed := make([][2]float64, 0, len(preflight.Create))
+				placedIDs := make([]string, 0, len(preflight.Create))
+				failed := make([][2]float64, 0)
+				for _, point := range preflight.Create {
+					payload := map[string]any{"x": point[0], "y": point[1], "net": net}
+					if vHole > 0 {
+						payload["holeDiameter"] = vHole
+					}
+					if vDia > 0 {
+						payload["diameter"] = vDia
+					}
+					res, err := requestAction(cfg, "pcb.via.create", window, payload)
+					if err != nil {
+						failed = append(failed, point)
+						continue
+					}
+					placed = append(placed, point)
+					if id := strings.TrimSpace(asString(mnav(res.Result, "primitiveId"))); id != "" {
+						placedIDs = append(placedIDs, id)
+					}
+				}
+				freshVias, readErr := fetchPcbVias(cfg, window)
+				verified := readErr == nil
+				if verified {
+					for _, p := range preflight.Create {
+						found := false
+						for _, v := range freshVias {
+							if v.Net == net && math.Hypot(v.X-p[0], v.Y-p[1]) <= netPathGeomEps && math.Abs(v.Hole-vHole) <= netPathGeomEps && math.Abs(v.Dia-vDia) <= netPathGeomEps {
+								found = true
+								break
+							}
+						}
+						if !found {
+							verified = false
+							failed = append(failed, p)
+						}
+					}
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(map[string]any{
+					"ok":            len(failed) == 0,
+					"shape":         "perimeter",
+					"net":           net,
+					"requested":     len(points),
+					"placed":        len(placed),
+					"existing":      len(preflight.Existing),
+					"primitiveIds":  placedIDs,
+					"verified":      verified,
+					"failed":        len(failed),
+					"failedPoints":  failed,
+					"maxPitchMil":   pitch,
+					"marginMil":     margin,
+					"effectiveRect": effectiveRect,
+					"holeMil":       vHole,
+					"diameterMil":   vDia,
+				}); err != nil {
+					return err
+				}
+				if len(failed) > 0 || !verified {
+					return fmt.Errorf("via-fence placed %d/%d new vias but readback was incomplete; inspect primitiveIds before retrying", len(placed), len(preflight.Create))
+				}
+				return nil
+			},
+		}
+		c.Flags().StringVar(&net, "net", "GND", "net to bind the fence vias to")
+		c.Flags().StringVar(&rectCSV, "rect", "", `protected rectangle "x0,y0,x1,y1" in mil (required)`)
+		c.Flags().Float64Var(&pitch, "pitch", 80, "maximum via center spacing along each edge (mil)")
+		c.Flags().Float64Var(&margin, "margin", 0, "expand the fence outward from the protected rectangle (mil)")
+		c.Flags().Float64Var(&hole, "hole", 0, "via hole diameter (mil; 0 = live board rule)")
+		c.Flags().Float64Var(&diameter, "diameter", 0, "via outer diameter (mil; 0 = live board rule)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the perimeter points without placing vias")
+		_ = c.MarkFlagRequired("rect")
+		pcb.AddCommand(c)
+	}
+
+	// ── Freerouting round-trip: export-dsn / import-autoroute / snapshot ──────
+	// The file-based autoroute workflow (the paradigm EasyEDA's own routing
+	// extensions use): `pcb export-dsn` → run Freerouting on the DSN → `pcb
+	// import-autoroute route.ses`. No autoRouting() typed API (it is @alpha /
+	// undefined this build); these wrap the @beta getDsnFile / importAutoRoute*.
+	{
+		var fileName string
+		var noKeepout bool
+		c := &cobra.Command{
+			Use:   "export-dsn",
+			Short: "Export the active PCB as a Specctra DSN (autorouter input)",
+			Long: `Export the active PCB as a Specctra DSN (the external-autorouter input).
+
+By default it splices keep-out regions (禁止区域) back into the DSN: EasyEDA's
+getDsnFile DROPS pcb_PrimitiveRegion, so a raw export has zero keepout and an
+external router (Freerouting) would route under the antenna. The result reports
+` + "`keepouts`" + ` = how many were injected. Pass --raw for the unmodified EasyEDA export.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb export-dsn
+  easyeda pcb export-dsn --name board.dsn
+  easyeda pcb export-dsn --raw          # unmodified EasyEDA export (no keepout)`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if fileName != "" {
+					payload["fileName"] = fileName
+				}
+				if noKeepout {
+					payload["injectKeepout"] = false
+				}
+				return dispatch(cfg, "pcb.export.dsn", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&fileName, "name", "", "DSN file name (default design.dsn)")
+		c.Flags().BoolVar(&noKeepout, "raw", false, "raw EasyEDA export — do NOT inject keep-out regions")
+		pcb.AddCommand(c)
+	}
+	{
+		var format string
+		c := &cobra.Command{
+			Use:   "import-autoroute <file>",
+			Short: "Import a routed result (Specctra .ses / autoroute .json) into the active PCB",
+			Args:  cobra.ExactArgs(1),
+			Example: `  easyeda pcb import-autoroute design.ses
+  easyeda pcb import-autoroute route.json --format json`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				data, err := os.ReadFile(args[0])
+				if err != nil {
+					return fmt.Errorf("read routed file: %w", err)
+				}
+				if format == "" {
+					if strings.HasSuffix(strings.ToLower(args[0]), ".json") {
+						format = "json"
+					} else {
+						format = "ses"
+					}
+				}
+				payload := map[string]any{
+					"fileBase64": base64.StdEncoding.EncodeToString(data),
+					"format":     format,
+					"fileName":   filepath.Base(args[0]),
+				}
+				return dispatch(cfg, "pcb.import_autoroute", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&format, "format", "", "ses | json (default: inferred from extension)")
+		pcb.AddCommand(c)
+	}
+	{
+		var legacyFit bool
+		var fitMode string
+		var previousSha string
+		c := &cobra.Command{
+			Use:   "snapshot",
+			Short: "Capture the active PCB canvas as a PNG artifact",
+			Args:  cobra.NoArgs,
+			Example: `  easyeda pcb snapshot
+  easyeda pcb snapshot --fit-mode all
+  easyeda pcb snapshot --fit-mode none
+  easyeda view region --left 500 --right 1550 --top -1500 --bottom -2260 && easyeda pcb snapshot --fit-mode none --previous-sha256 <sha>`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				mode, err := normalizePcbSnapshotFitMode(fitMode)
+				if err != nil {
+					return err
+				}
+				if cmd.Flags().Changed("fit") {
+					if cmd.Flags().Changed("fit-mode") {
+						return fmt.Errorf("--fit and --fit-mode cannot be used together")
+					}
+					if legacyFit {
+						mode = "all"
+					} else {
+						mode = "none"
+					}
+				}
+				payload := map[string]any{"fitMode": mode, "fit": mode != "none"}
+				if previousSha != "" {
+					payload["previousSha256"] = previousSha
+				}
+				res, err := dispatchCapture(cfg, "pcb.snapshot", window, payload, stdout)
+				if err != nil {
+					return err
+				}
+				warnIfBlankSnapshot(res, stderr)
+				return nil
+			},
+		}
+		c.Flags().StringVar(&fitMode, "fit-mode", "board", "viewport fit: board | all | none (default board)")
+		c.Flags().BoolVar(&legacyFit, "fit", true, "legacy fit flag (true=all, false=none)")
+		_ = c.Flags().MarkDeprecated("fit", "use --fit-mode board|all|none")
+		c.Flags().StringVar(&previousSha, "previous-sha256", "", "sha256 of the previous snapshot; enables stale-frame detection + auto-retry")
+		pcb.AddCommand(c)
+	}
+	// ── stage-snapshot: recording/demo stage capture (snapshot + data bundle) ──
+	pcb.AddCommand(newPcbSyncDesignatorsCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbStageSnapshotCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbStageCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbZonesCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbSilkZoneOutlineCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(newPcbRouteCriticalCmd(cfg, &window, stdout, stderr))
+	// ── dump: 板级几何快照（金标准 fixture 的生成器，#167 LEARNING 层）─────────
+	pcb.AddCommand(newPcbDumpCmd(cfg, &window, stdout, stderr))
+	// ── layout-score: 多维布局打分 + 归因梯度（#167）──────────────────────────
+	pcb.AddCommand(newPcbLayoutScoreCmd(cfg, &window, stdout, stderr))
+	// ── floorplan: 从 S0 flow 推布局骨架（只读规划，#167 ACHIEVE 层）──────────
+	pcb.AddCommand(newPcbFloorplanCmd(cfg, &window, stdout, stderr))
+	// ── layout-plan: 按模块生成参数化布局候选（纯离线，不写 EDA）─────────────
+	pcb.AddCommand(newPcbLayoutPlanCmd(stdout, stderr))
+	pcb.AddCommand(newPcbEscapePlanCmd(stdout, stderr))
+	// ── module-check: schema-v2 routed-module persistence/integrity gate ─────
+	pcb.AddCommand(newPcbModuleCheckCmd(stdout, stderr))
+	pcb.AddCommand(newPcbModuleOwnedCmd(stdout, stderr))
+	// ── refine: 打分驱动的精修环（默认 dry-run，按步回滚）──────────────────────
+	pcb.AddCommand(newPcbRefineCmd(cfg, &window, stdout, stderr))
+	// ── autoroute: one-command Freerouting round-trip ────────────────────────
+	// export DSN → run an external Freerouting engine → import the routed SES → DRC.
+	// The engine is external (Freerouting needs Java 17+); decoupled via a command
+	// template so any router works. Without one configured it exports + stops
+	// (graceful degradation → route manually, then `pcb import-autoroute`).
+	{
+		var routerCmd string
+		var keep bool
+		var forceReason, forceUnsafeReason string
+		c := &cobra.Command{
+			Use:   "autoroute",
+			Short: "Auto-route the active PCB via an external Freerouting engine (DSN→route→SES→import→DRC)",
+			Long: `Orchestrate a DSN→route→SES→import→DRC round-trip. The routing ENGINE is
+external and pluggable (--router / FREEROUTING_CMD with {in}/{out}); we do NOT
+bundle one.
+
+NOTE — there is no built-in, no-popup, programmatically-callable autorouter today:
+  • eda.pcb_Document.autoRouting() is declared but @alpha / undefined at runtime.
+  • easyeda-pcb-router (official headless Freerouting) is a separate WS service you
+    must run yourself.
+  • the marketplace Freerouting extension can't be invoked from another extension.
+So this command needs an external engine YOU provide, and is SUPERSEDED once a
+native autoRouting() API ships. The building blocks (pcb export-dsn /
+import-autoroute / snapshot) work regardless.
+
+  easyeda pcb autoroute --router '<your-dsn→ses-router-cmd> {in} {out}'
+
+Without a router configured, autoroute exports the DSN and stops — route it
+externally, then run 'easyeda pcb import-autoroute <file.ses>'.
+
+PREREQUISITE: keep-out zones (antenna / board
+edge) MUST be in the DSN, else the router will route under the antenna. Verify the
+exported DSN contains keepout entries before trusting the result.`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// Workflow stage state is historical diagnostic data only. Autoroute
+				// proceeds from the live board and its factual preflights below.
+				// 1. Export DSN, capture the persisted file path.
+				res, err := dispatchCapture(cfg, "pcb.export.dsn", window, map[string]any{}, stdout)
+				if err != nil {
+					return err
+				}
+				dsnPath := ""
+				for _, a := range res.Artifacts {
+					if a.Path != "" {
+						dsnPath = a.Path
+						break
+					}
+				}
+				if dsnPath == "" {
+					return fmt.Errorf("export-dsn returned no file (PCB empty or no nets? run `pcb import-changes` first)")
+				}
+				fmt.Fprintf(stderr, "DSN exported: %s\n", dsnPath)
+
+				tmpl := routerCmd
+				if tmpl == "" {
+					tmpl = os.Getenv("FREEROUTING_CMD")
+				}
+				if tmpl == "" {
+					fmt.Fprintf(stderr, "no --router / FREEROUTING_CMD set — DSN exported, stopping.\n"+
+						"  route it externally (Freerouting), then: easyeda pcb import-autoroute <file.ses>\n")
+					return nil
+				}
+
+				// 2. Run the external router: {in}=DSN, {out}=SES.
+				sesPath := strings.TrimSuffix(dsnPath, ".dsn") + ".ses"
+				runStr := strings.NewReplacer("{in}", dsnPath, "{out}", sesPath).Replace(tmpl)
+				fmt.Fprintf(stderr, "routing: %s\n", runStr)
+				routerCtx, cancelRouter := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancelRouter()
+				if err := runExternalRouter(routerCtx, runStr, stderr); err != nil {
+					if routerCtx.Err() != nil {
+						return fmt.Errorf("external router timed out after 10m: %w", routerCtx.Err())
+					}
+					return fmt.Errorf("external router failed: %w", err)
+				}
+				if _, err := os.Stat(sesPath); err != nil {
+					return fmt.Errorf("router produced no SES at %s (check the command's {out})", sesPath)
+				}
+				if !keep {
+					defer func() { _ = os.Remove(sesPath) }()
+				}
+
+				// 3. Import the routed SES.
+				data, err := os.ReadFile(sesPath)
+				if err != nil {
+					return fmt.Errorf("read SES: %w", err)
+				}
+				fmt.Fprintf(stderr, "importing SES (%d bytes) → tracks/vias\n", len(data))
+				if err := dispatch(cfg, "pcb.import_autoroute", window, map[string]any{
+					"fileBase64": base64.StdEncoding.EncodeToString(data),
+					"format":     "ses",
+					"fileName":   filepath.Base(sesPath),
+				}, stdout, stderr); err != nil {
+					return err
+				}
+
+				// 4. DRC the result.
+				//
+				// 上一步刚导入整版铜，这一步 DRC 用于即时定位问题；若带 staleRisk，
+				// 保存并 reload 后重跑 `easyeda pcb drc` 才是权威判据。
+				fmt.Fprintln(stderr, "--- DRC after routing ---")
+				return dispatch(staleReadOptIn(cfg, "autoroute 写后回读:对刚导入的 SES 走线做收尾 DRC"),
+					"pcb.drc.check", window, nil, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&routerCmd, "router", "", "external router command with {in}/{out} (or FREEROUTING_CMD env)")
+		c.Flags().BoolVar(&keep, "keep", false, "keep the intermediate SES file")
+		c.Flags().StringVar(&forceReason, "force", "", "deprecated compatibility option; workflow stages no longer gate routing")
+		c.Flags().StringVar(&forceUnsafeReason, "force-unsafe", "", "deprecated compatibility option; workflow stages no longer gate routing")
+		pcb.AddCommand(c)
+	}
+
+	// ── auto-place ────────────────────────────────────────────────────────
+	// Module-aware heuristic placement (daemon-side; see pcb_autoplace.go).
+	{
+		var noRotate bool
+		var multiGap float64
+		var mainPins int
+		var gap, pitch, assemblyGap float64
+		var dryRun bool
+		var anchorCSV, excludeMainCSV string
+		c := &cobra.Command{
+			Use:   "auto-place",
+			Short: "Module-aware auto placement: pull each satellite (cap/R/LED) to the chip pin it connects to",
+			Long: `Heuristic "hug the chip" placement, run in the daemon (not the connector, so
+'make dev' hot-reloads tweaks with no re-import). Main chips (>= --main-pins
+distinct pins) are anchors and stay put; every small satellite is moved to the
+chip edge nearest the pad it actually connects to, then packed along that edge so
+nothing overlaps:
+  • decoupling caps land by their power pin (3V3/VCC), resistors by their signal pin
+  • an LED chains next to its series resistor (shared signal net)
+With 2+ main chips, any that overlap / sit closer than --multi-gap are spread into a
+row (leftmost stays put) before satellites are placed. Use --multi-gap 0 to PRESERVE
+a pre-anchored layout untouched; spreading is also auto-skipped when the chips already
+form a 2D floorplan (≥2 columns with vertical stacking) so a hand-anchored grid is not
+flattened into a row. Board-edge connectors (J*/CN*/USB*/… designators, low pin count,
+large footprint) are skipped and left for 'pcb place-constrained'.
+This is a SEED, not a final layout — verify with 'pcb drc'.
+
+  easyeda pcb auto-place --project ceshi --dry-run   # print the plan, move nothing
+  easyeda pcb auto-place --project ceshi             # apply it`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				// 1. Read placed components with pads (net surface) + rendered bbox.
+				res, err := requestAction(cfg, "pcb.components.list", window,
+					map[string]any{"includePads": true, "includeBBox": true})
+				if err != nil {
+					return err
+				}
+				comps := parseApComps(res.Result)
+				if len(comps) == 0 {
+					return fmt.Errorf("no components on the active PCB (run `pcb import-changes` first)")
+				}
+
+				// 2. Plan (pure, daemon-side).
+				opt := defaultApOptions()
+				// Clearance-aware spacing: derive gap/pitch from the board's live DRC
+				// rule (room for a legal track + clearances between parts). (#22) BUT
+				// floor it at --assembly-gap so parts also keep hand-SOLDER room around
+				// their pads — a bare DRC-clearance gap (~28mil) routes fine but is too
+				// cramped to reach with an iron tip; default 40mil leaves that room.
+				// Assembly profile (issue #99): a persisted profile's min-gap is the
+				// default --assembly-gap, so auto-place and `layout-lint --gate`
+				// enforce the SAME clearance instead of drifting apart.
+				if !cmd.Flags().Changed("assembly-gap") {
+					if st, serr := loadPcbStageState(stageKeyBestEffort(cfg, window)); serr == nil && st.Assembly != nil && st.Assembly.MinGapMil > 0 {
+						assemblyGap = st.Assembly.MinGapMil
+					}
+				}
+				apRules := fetchPcbRules(cfg, window)
+				opt.gap = math.Max(assemblyGap, apRules.clearanceMil*2+apRules.trackWidthMil+6)
+				opt.pitch = math.Max(assemblyGap*0.7, apRules.clearanceMil+apRules.trackWidthMil)
+				if mainPins > 0 {
+					opt.mainPins = mainPins
+				}
+				if gap > 0 {
+					opt.gap = gap
+				}
+				if pitch > 0 {
+					opt.pitch = pitch
+				}
+				if noRotate {
+					opt.rotate = false
+				}
+				if cmd.Flags().Changed("multi-gap") {
+					opt.multiGap = multiGap
+				}
+				opt.anchors = designatorSet(anchorCSV)
+				opt.excludeMain = designatorSet(excludeMainCSV)
+				moves, diags := planAutoPlace(comps, opt)
+
+				// 3. Apply (unless --dry-run), one modify per satellite. Re-oriented
+				// 2-pin parts also get a rotation patch.
+				applied := 0
+				var failures []map[string]any
+				if !dryRun {
+					for _, m := range moves {
+						patch := map[string]any{"x": m.NewX, "y": m.NewY}
+						if m.SetRot {
+							patch["rotation"] = m.NewRot
+						}
+						if _, err := requestAction(cfg, "pcb.component.modify", window,
+							map[string]any{"primitiveId": m.ID, "patch": patch}); err != nil {
+							failures = append(failures, map[string]any{"designator": m.Designator, "error": err.Error()})
+							continue
+						}
+						applied++
+					}
+				}
+
+				// 4. Report.
+				out := map[string]any{
+					"ok":       true,
+					"dryRun":   dryRun,
+					"mains":    apMainDesignators(comps, opt),
+					"planned":  len(moves),
+					"applied":  applied,
+					"moves":    moves,
+					"diags":    diags,
+					"failures": failures,
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().IntVar(&mainPins, "main-pins", 0, "distinct-pin threshold to treat a component as a main chip (default 8)")
+		c.Flags().StringVar(&anchorCSV, "anchor", "", "designator(s) to FORCE into the main/anchor set (CSV, e.g. U1,U5) — beats every heuristic (#131)")
+		c.Flags().StringVar(&excludeMainCSV, "exclude-main", "", "designator(s) barred from the main set (CSV) — a high-pin part demoted this way stays put (#131)")
+		c.Flags().Float64Var(&gap, "gap", 0, "override: fixed clearance from chip edge to satellite (mil); 0 = derive")
+		c.Flags().Float64Var(&pitch, "pitch", 0, "override: fixed spacing between satellites on the same edge (mil); 0 = derive")
+		c.Flags().Float64Var(&assemblyGap, "assembly-gap", 40, "min hand-SOLDER clearance around each part (mil floor for gap/pitch)")
+		c.Flags().BoolVar(&noRotate, "no-rotate", false, "do not re-orient satellites (v1 translate-only behavior)")
+		c.Flags().Float64Var(&multiGap, "multi-gap", 0, "min bbox gap between multiple main chips (mil, default 150; 0 disables spacing)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the placement plan without moving anything")
+		pcb.AddCommand(c)
+	}
+
+	// ── place-constrained ─────────────────────────────────────────────────
+	// Tiered constraint-driven placement (daemon-side; see pcb_place_constrained.go).
+	{
+		var mainPins int
+		var edgeMargin, partGap float64
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "place-constrained",
+			Short: "Tiered placement: edge-must parts (connectors/module/IPEX) → board edge + locked, then legalize the rest",
+			Long: `Constraint-driven TIERED placement — the fix for whack-a-mole layout.
+Position-constrained parts are placed FIRST and treated as fixed, then satellites
+are legalized around them, so a satellite pass can never push an edge connector
+off its edge. Tiers (highest priority first):
+
+  1. mounting holes            — obstacles (from 'pcb slot'), never moved
+  2. edge-must parts           — connectors (USB/terminal/card socket/IPEX) + RF
+                                 modules → snapped flush to their NEAREST board edge
+  3. main chips + crystals     — kept where they are (anchors)
+  4. satellites + LED/buttons  — spiral-legalized around the fixed set, avoiding holes
+
+Categories match the circuit-block library's placement hints (board_edge / user-facing;
+see internal/blocks/data/*.json). Works whether the board was block-assembled or
+built from the schematic — reads what's placed, not how. Run AFTER 'pcb outline-fit'
+(edges must be known) and BEFORE routing; layer-aware (BOTTOM parts stay on BOTTOM).
+A SEED — verify with 'pcb layout-lint'. --dry-run prints the plan.
+
+  easyeda pcb place-constrained --project X --dry-run
+  easyeda pcb place-constrained --project X`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				res, err := requestAction(cfg, "pcb.components.list", window,
+					map[string]any{"includePads": true, "includeBBox": true})
+				if err != nil {
+					return err
+				}
+				comps := parseCpComps(res.Result)
+				if len(comps) == 0 {
+					return fmt.Errorf("no components on the active PCB (run `pcb import-changes` / `pcb add-component` first)")
+				}
+				holes := readCpHoles(cfg, window)
+				opt := defaultCpOptions()
+				if mainPins > 0 {
+					opt.mainPins = mainPins
+				}
+				if edgeMargin > 0 {
+					opt.edgeMargin = edgeMargin
+				}
+				if partGap > 0 {
+					opt.partGap = partGap
+				}
+				// Snap edges to the REAL board outline when one exists; fall back to the
+				// part-cloud extent otherwise (and say which was used, so a flaky edge
+				// position is explainable rather than silent).
+				boardSrc := "part-cloud-bbox (no outline — run `pcb outline-fit` for real edges)"
+				if r, oerr := outlineRect(cfg, window, 0); oerr == nil {
+					opt.board = &cpRect{r[0], r[1], r[2], r[3]}
+					boardSrc = "board-outline"
+				}
+				// Functional zone claims (issue #126): resolve each claimed
+				// designator to its zone's board sub-rect. Best-effort — no
+				// claims (or no outline to partition) just means no zone
+				// constraint, exactly the pre-#126 behavior.
+				zoneSrc := "none"
+				if opt.board != nil {
+					if claims, _, zerr := loadZoneClaims(cfg, window); zerr == nil && len(claims) > 0 {
+						opt.zones = map[string]cpZoneClaim{}
+						for module, zc := range claims {
+							rect, ok := pcbZoneRect(zc.Zone, *opt.board)
+							if !ok {
+								continue
+							}
+							for _, d := range zc.Parts {
+								opt.zones[strings.ToUpper(d)] = cpZoneClaim{rect: rect, module: module, zone: zc.Zone}
+							}
+						}
+						zoneSrc = fmt.Sprintf("%d module(s), %d claimed part(s)", len(claims), len(opt.zones))
+					}
+				}
+				moves, diags := planConstrainedPlace(comps, holes, opt)
+
+				// 合法化阶段(#167):用 layout-score/lint 同一个纯核对虚拟落子
+				// 复算 blocking,新引入的重叠/短路/出板框就地重定位或弃子。
+				// 快照拿不到时如实报 skipped —— 不能假装检查过。
+				legal := legalizeResult{}
+				if snap, serr := fetchBoardSnapshot(cfg, window, boardSnapshotOpts{withRules: true}); serr == nil {
+					var lDiags []apDiag
+					moves, lDiags, legal = legalizeConstrainedMoves(snap, moves)
+					diags = append(diags, lDiags...)
+				} else {
+					diags = append(diags, apDiag{Reason: "legalize:skipped: board snapshot unavailable (" + serr.Error() + ") — planned moves were NOT re-checked for overlap/short/off-board"})
+				}
+
+				applied := 0
+				var failures []map[string]any
+				if !dryRun {
+					for _, mv := range moves {
+						patch := map[string]any{"x": mv.NewX, "y": mv.NewY}
+						if mv.SetRot {
+							patch["rotation"] = mv.NewRot
+						}
+						if _, err := requestAction(cfg, "pcb.component.modify", window,
+							map[string]any{"primitiveId": mv.ID, "patch": patch}); err != nil {
+							failures = append(failures, map[string]any{"designator": mv.Designator, "error": err.Error()})
+							continue
+						}
+						applied++
+					}
+				}
+				// Connectors the tool could NOT orient (symmetric terminals/headers —
+				// the opening direction isn't in the pad geometry). Surface them as an
+				// explicit reminder to confirm / hand-place rather than trust a guess.
+				var confirmOrient []string
+				for _, d := range diags {
+					if strings.HasSuffix(d.Reason, ":confirm-orientation") {
+						confirmOrient = append(confirmOrient, d.Designator)
+					}
+				}
+				out := map[string]any{
+					"ok": true, "dryRun": dryRun, "holes": len(holes),
+					"planned": len(moves), "applied": applied,
+					"boardEdges": boardSrc, "zones": zoneSrc,
+					"moves": moves, "diags": diags, "failures": failures,
+					"legalize": legal,
+				}
+				if opt.board != nil {
+					out["board"] = map[string]any{"x0": opt.board.x0, "y0": opt.board.y0, "x1": opt.board.x1, "y1": opt.board.y1}
+				}
+				if len(confirmOrient) > 0 {
+					out["confirmOrientation"] = confirmOrient
+					out["note"] = "对称/低置信连接器工具无法定向,已按原样保留:请确认这些端子的开口朝板外(或手动摆放)—— " + strings.Join(confirmOrient, ", ")
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().IntVar(&mainPins, "main-pins", 0, "distinct-pin threshold for a main chip (default 8)")
+		c.Flags().Float64Var(&edgeMargin, "edge-margin", 0, "gap between an edge part's bbox and the board edge (mil, default 45)")
+		c.Flags().Float64Var(&partGap, "part-gap", 0, "clearance between parts / part-to-hole (mil, default 14)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the placement plan without moving anything")
+		pcb.AddCommand(c)
+	}
+
+	// ── antenna-keepout ─────────────────────────────────────────────────────
+	// Auto-generate the all-layer no-copper keep-out over each RF part's antenna
+	// end (defect #4; geometry in pcb_antenna_keepout.go, depth block-declared).
+	{
+		var dryRun bool
+		var margin, padClear, chipMargin float64
+		c := &cobra.Command{
+			Use:   "antenna-keepout",
+			Short: "Auto-generate the all-layer no-copper keep-out over each RF/antenna part's antenna end",
+			Long: `Generates the no-copper keep-out (禁铜/禁地/禁走线) an antenna part needs on EVERY
+copper layer — but ONLY over the module's PAD-FREE end (physically where the PCB
+antenna sits), never the whole footprint (that would strand the module's ground
+pads). Antenna parts = the RF allowlist (WROOM/WROVER/ANTENNA/ESP32-C3-MINI/ESP8266
+or an ANT* designator). The keep-out DEPTH is block-declared (internal/blocks/data
+'keepout.end_frac'); the pad-free strip always caps it so it can never reach a pad.
+One region per part on the MULTI layer (spans all copper layers). Run AFTER
+placement; re-run 'pcb check' to confirm the antenna-keepout warning clears.
+
+  easyeda pcb antenna-keepout --project X --dry-run
+  easyeda pcb antenna-keepout --project X`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				res, err := requestAction(cfg, "pcb.components.list", window,
+					map[string]any{"includeBBox": true, "includePads": true})
+				if err != nil {
+					return err
+				}
+				keepouts, _ := blocks.LoadAntennaKeepouts()
+				// Device name per component from the silk Device attribute — the same
+				// source pcb check keys on, so both detect the same RF parts (a placed
+				// part's `name` is often the "={Manufacturer Part}" template).
+				silkDev := map[string]string{}
+				if silk, serr := fetchPcbSilk(cfg, window); serr == nil {
+					for _, s := range silk {
+						if s.Kind == "attribute" && s.Key == "Device" && s.CompID != "" {
+							silkDev[s.CompID] = s.Text
+						}
+					}
+				}
+				// Idempotency: collect existing no-copper keep-out regions so a re-run
+				// doesn't stack duplicates over an antenna already protected.
+				var existingKO []cpRect
+				if rres, rerr := requestAction(cfg, "pcb.region.list", window, nil); rerr == nil && rres != nil {
+					for _, rr := range mnavSlice(rres.Result, "regions") {
+						rm, ok := rr.(map[string]any)
+						if !ok {
+							continue
+						}
+						// Only a MULTI-layer NoOuterCopper region (rules 5/6/7 on layer 12)
+						// actually satisfies `pcb check` for every layer — the exact region we
+						// emit. A top-only / inner-only region does NOT, so it must NOT suppress
+						// generation (else the antenna is left under-protected but "covered").
+						outer := false
+						for _, rt := range toFloatSlice(rm["ruleType"]) {
+							if rt == 5 || rt == 6 || rt == 7 { // no-wires/no-fills/no-pours = NoOuterCopper
+								outer = true
+							}
+						}
+						bb, ok := rm["bbox"].(map[string]any)
+						if !outer || int(asFloat(rm["layer"])) != pcbLayerMulti || !ok {
+							continue
+						}
+						existingKO = append(existingKO, cpRect{asFloat(bb["minX"]), asFloat(bb["minY"]), asFloat(bb["maxX"]), asFloat(bb["maxY"])})
+					}
+				}
+				type akPlan struct {
+					Designator string     `json:"designator"`
+					Device     string     `json:"device"`
+					Rect       [4]float64 `json:"rect"`
+					Chip       bool       `json:"chipAntenna,omitempty"` // #123: bbox+margin form, no no-wires
+					Created    bool       `json:"created"`
+				}
+				var plan []akPlan
+				var skipped []map[string]any
+				for _, rc := range mnavSlice(res.Result, "components") {
+					cm, ok := rc.(map[string]any)
+					if !ok {
+						continue
+					}
+					device := resolveAntennaDevice(silkDev[asString(cm["primitiveId"])], cm)
+					desig := asString(cm["designator"])
+					if !isAntennaDevice(device, desig) {
+						continue
+					}
+					bb, ok := cm["bbox"].(map[string]any)
+					if !ok {
+						skipped = append(skipped, map[string]any{"designator": desig, "reason": "no bbox"})
+						continue
+					}
+					var pads [][2]float64
+					for _, pi := range mnavSlice(cm, "pads") {
+						if pm, ok := pi.(map[string]any); ok {
+							pads = append(pads, [2]float64{asFloat(pm["x"]), asFloat(pm["y"])})
+						}
+					}
+					bminX, bminY := asFloat(bb["minX"]), asFloat(bb["minY"])
+					bmaxX, bmaxY := asFloat(bb["maxX"]), asFloat(bb["maxY"])
+					x0, y0, x1, y1, ok := antennaKeepoutRect(
+						bminX, bminY, bmaxX, bmaxY,
+						pads, antennaKeepoutFrac(keepouts, device), margin, padClear)
+					chip := false
+					if !ok && isChipAntennaSize(bmaxX-bminX, bmaxY-bminY) {
+						// #123: a discrete chip antenna (two-pad ceramic SMD) has no
+						// pad-free strip — the whole footprint is the radiator. Keep-out
+						// = bbox + --chip-margin every side; created WITHOUT no-wires so
+						// the 50Ω feed can reach the feed pad (#129).
+						x0, y0, x1, y1, ok = chipAntennaKeepoutRect(bminX, bminY, bmaxX, bmaxY, chipMargin)
+						chip = ok
+					}
+					if !ok {
+						skipped = append(skipped, map[string]any{"designator": desig, "reason": "no pad-free antenna strip found (and not chip-antenna sized)"})
+						continue
+					}
+					myRect := cpRect{x0, y0, x1, y1}
+					covered := false
+					for _, er := range existingKO {
+						if er.overlaps(myRect) {
+							covered = true
+							break
+						}
+					}
+					if covered {
+						skipped = append(skipped, map[string]any{"designator": desig, "reason": "already covered by an existing no-copper keep-out"})
+						continue
+					}
+					plan = append(plan, akPlan{Designator: desig, Device: device, Rect: [4]float64{x0, y0, x1, y1}, Chip: chip})
+				}
+				created := 0
+				for i := range plan {
+					if dryRun {
+						continue
+					}
+					points := rectCorners(plan[i].Rect[0], plan[i].Rect[1], plan[i].Rect[2], plan[i].Rect[3])
+					// Module strip: no-wires/no-fills/no-pours + no-inner-electrical.
+					// Chip antenna (#123): DROP no-wires — the feed line must enter the
+					// clearance zone to reach the feed pad (#129's live-verified trap).
+					rules := []any{5, 6, 7, 8}
+					if plan[i].Chip {
+						rules = []any{6, 7, 8}
+					}
+					if _, err := requestAction(cfg, "pcb.region.create", window, map[string]any{
+						"points":   points,
+						"layer":    pcbLayerMulti,
+						"ruleType": rules,
+						"name":     "antenna-" + plan[i].Designator,
+					}); err != nil {
+						skipped = append(skipped, map[string]any{"designator": plan[i].Designator, "reason": err.Error()})
+						continue
+					}
+					plan[i].Created = true
+					created++
+				}
+				out := map[string]any{
+					"ok": true, "dryRun": dryRun, "layer": pcbLayerMulti,
+					"planned": len(plan), "created": created,
+					"regions": plan, "skipped": skipped,
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the keep-out plan without creating regions")
+		c.Flags().Float64Var(&margin, "margin", 20, "expand the keep-out outward (away from pads) by this many mil")
+		c.Flags().Float64Var(&padClear, "pad-clearance", 40, "pull the keep-out's pad-facing edge back this many mil to clear pad bodies (strip is measured to pad centers)")
+		c.Flags().Float64Var(&chipMargin, "chip-margin", 120, "discrete chip antenna (#123): keep-out margin around the footprint bbox in mil (datasheet clearance ≈3mm; region has NO no-wires so the feed can enter)")
+		pcb.AddCommand(c)
+	}
+
+	// ── route-short ───────────────────────────────────────────────────────
+	// Short-trace self-routing (daemon-side; see pcb_shortroute.go).
+	{
+		var maxLen, width, signalWidth, powerWidth, roundRadius float64
+		var dryRun, routePower, noAvoid, noMultilayer bool
+		var corner, forceReason, forceUnsafeReason string
+		c := &cobra.Command{
+			Use:   "route-short",
+			Short: "Self-route the short, clear hops: per-net MST, L-shaped tracks on the pads' layer",
+			Long: `Heuristic short-trace router, run in the daemon (the "heuristic tier" — NOT the
+@alpha autoRouting() API, NOT an external Freerouting; that is 'pcb autoroute').
+Per net it builds a minimum spanning tree over the pads and routes each hop that
+is short enough (<= --max-len, Manhattan) as an L-shaped track on the pads'
+shared layer. Skips: power+ground nets (VCC/3V3/GND/… — POURED, not routed as thin
+tracks; --route-power to force), already-routed nets, cross-layer hops (need a via),
+and over-long hops (left for the maze tier).
+Obstacle-aware (v2): each hop picks the L orientation (horizontal- vs vertical-
+first) that crosses the fewest already-placed other-net tracks + other-net pads,
+which removes most of the naive tangle; --no-avoid restores the v1 horizontal-
+first behavior. Still NOT a maze router (no push-shove / vias / rip-up) — run
+AFTER 'pcb auto-place' (hops are then short and clear) and verify with 'pcb drc'.
+
+Track width is by net class: power/ground nets (VCC/VDD/3V3/GND…) get --width-power
+(default 20 mil), signals get --width-signal (default 10 mil). A single --width
+overrides both. Corners default to 90° L; --corner 45 chamfers them, --corner round
+emits a chord-approximated fillet (native arcs do not commit on this build).
+
+  easyeda pcb route-short --project ceshi --dry-run            # print the plan, draw nothing
+  easyeda pcb route-short --project ceshi                      # draw with class widths + 90° corners
+  easyeda pcb route-short --project ceshi --corner 45          # chamfered corners
+  easyeda pcb route-short --project ceshi --width-power 25     # fatter power tracks`,
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				// 1. Read pads (net + coords + layer) and which nets already have copper.
+				res, err := requestAction(cfg, "pcb.components.list", window,
+					map[string]any{"includePads": true})
+				if err != nil {
+					return err
+				}
+				comps := parseApComps(res.Result)
+				if len(comps) == 0 {
+					return fmt.Errorf("no components on the active PCB (run `pcb import-changes` first)")
+				}
+				routed := map[string]bool{}
+				if lr, err := requestAction(cfg, "pcb.line.list", window, nil); err == nil {
+					routed = parseRoutedNets(lr.Result)
+				}
+
+				// 2. Plan (pure, daemon-side).
+				switch corner {
+				case "90", "45", "round":
+				default:
+					return fmt.Errorf("--corner must be 90, 45, or round (got %q)", corner)
+				}
+				opt := defaultRtOptions()
+				// Rule-aware widths: SIGNAL uses the board's live track-width default,
+				// POWER stays wider (current capacity — the fab reference's recommended
+				// power width, ≥ signal), both clamped ≥ the legal minimum. Overrides
+				// via --width-signal/--width-power. (#22, power/signal split #corrected)
+				rules := fetchPcbRules(cfg, window)
+				opt.signalWidth = rules.clampWidth(rules.trackWidthMil)
+				opt.powerWidth = rules.clampWidth(rules.powerWidthMil)
+				// Role→width ladder seeded from the live rules (pcb_netclass.go):
+				// signal / power-branch / power-trunk / high-current each get a spec
+				// width instead of one flat power bucket.
+				opt.netClassWidths = netClassWidthTable(rules)
+				if maxLen > 0 {
+					opt.maxLen = maxLen
+				}
+				opt.width = width
+				if signalWidth > 0 {
+					opt.signalWidth = signalWidth
+					opt.netClassWidths[roleSignal] = signalWidth
+				}
+				if powerWidth > 0 {
+					// --width-power forces ONE width across every power role (legacy
+					// single-power-width behavior), overriding the ladder steps.
+					opt.powerWidth = powerWidth
+					for _, role := range []string{rolePowerBranch, rolePowerTrunk, roleHighCurrent, roleGnd} {
+						opt.netClassWidths[role] = powerWidth
+					}
+				}
+				if roundRadius > 0 {
+					opt.roundRadius = roundRadius
+				}
+				opt.corner = corner
+				opt.skipPower = !routePower
+				opt.avoid = !noAvoid
+				opt.clearance = rules.clearanceMil
+				opt.multilayer = !noMultilayer
+				// Existing board copper (tracks/vias from a partial or earlier route)
+				// is an obstacle set — new hops must stay clear of it.
+				if bt, err := fetchPcbTracks(cfg, window); err == nil {
+					for _, t := range bt {
+						opt.existing = append(opt.existing, rtSeg{Net: t.Net, X1: t.X1, Y1: t.Y1, X2: t.X2, Y2: t.Y2, Layer: t.Layer, Width: t.Width})
+					}
+				}
+				if bv, err := fetchPcbVias(cfg, window); err == nil {
+					for _, v := range bv {
+						opt.existingVias = append(opt.existingVias, obVia{net: v.Net, x: v.X, y: v.Y, r: v.Dia / 2})
+					}
+				}
+				if sl, err := fetchPcbSlots(cfg, window); err == nil {
+					opt.slots = sl // board cutouts (M3 holes) — keep copper off the mill
+				}
+				segs, vias, diags := planShortRoutes(comps, routed, opt)
+
+				// 3. Draw (unless --dry-run): one line.create per segment, then one
+				// via.create per multilayer-hop via (layer-change joints).
+				drawn, viasDrawn := 0, 0
+				var failures []map[string]any
+				if !dryRun {
+					for _, s := range segs {
+						payload := map[string]any{"startX": s.X1, "startY": s.Y1, "endX": s.X2, "endY": s.Y2, "net": s.Net, "layer": s.Layer}
+						if s.Width > 0 {
+							payload["lineWidth"] = s.Width
+						}
+						if _, err := requestAction(cfg, "pcb.line.create", window, payload); err != nil {
+							failures = append(failures, map[string]any{"net": s.Net, "error": err.Error()})
+							continue
+						}
+						drawn++
+					}
+					for _, v := range vias {
+						payload := map[string]any{"x": v.X, "y": v.Y, "net": v.Net, "holeDiameter": opt.viaHole, "diameter": opt.viaDia}
+						if _, err := requestAction(cfg, "pcb.via.create", window, payload); err != nil {
+							failures = append(failures, map[string]any{"net": v.Net, "via": true, "error": err.Error()})
+							continue
+						}
+						viasDrawn++
+					}
+				}
+
+				// 4. Report.
+				out := map[string]any{
+					"ok":         true,
+					"dryRun":     dryRun,
+					"segments":   len(segs),
+					"drawn":      drawn,
+					"vias":       len(vias),
+					"viasDrawn":  viasDrawn,
+					"multilayer": opt.multilayer,
+					"avoid":      opt.avoid,
+					"rules":      map[string]any{"source": rules.source, "clearanceMil": rules.clearanceMil, "trackWidthMil": rules.trackWidthMil, "signalWidth": opt.signalWidth, "powerWidth": opt.powerWidth, "netClassWidths": opt.netClassWidths},
+					"routes":     segs,
+					"skipped":    diags,
+					"failures":   failures,
+				}
+				enc := json.NewEncoder(stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(out)
+			},
+		}
+		c.Flags().Float64Var(&maxLen, "max-len", 0, "longest hop to route (Manhattan mil, default 1000)")
+		c.Flags().Float64Var(&width, "width", 0, "force ALL tracks to this width (mil); overrides --width-signal/--width-power")
+		c.Flags().Float64Var(&signalWidth, "width-signal", 0, "signal-net track width (mil); overrides the ladder's signal role (default = live rule track width)")
+		c.Flags().Float64Var(&powerWidth, "width-power", 0, "force ONE width across all power roles (mil); overrides the branch/trunk/high-current ladder (default = §1.2 metric ladder: 0.25/0.4/0.5mm = 9.84/15.75/19.69mil)")
+		c.Flags().StringVar(&corner, "corner", "90", "corner style: 90 (L), 45 (chamfer), round (chord fillet)")
+		c.Flags().Float64Var(&roundRadius, "round-radius", 0, "max fillet radius for --corner round (mil, default 20)")
+		c.Flags().BoolVar(&noAvoid, "no-avoid", false, "disable obstacle-aware L-orientation (v1 naive horizontal-first)")
+		c.Flags().BoolVar(&noMultilayer, "no-multilayer", false, "disable multilayer routing (defer too-long / cross-layer hops to the maze tier instead of detouring them via the alternate copper layer with vias)")
+		c.Flags().BoolVar(&routePower, "route-power", false, "also route power/ground nets as tracks (default skip — pour them instead; VCC/3V3/GND/… routed as thin tracks through pad fields is the #1 DRC source)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the routing plan without drawing anything")
+		c.Flags().StringVar(&forceReason, "force", "", "deprecated compatibility option; workflow stages no longer gate routing")
+		c.Flags().StringVar(&forceUnsafeReason, "force-unsafe", "", "deprecated compatibility option; workflow stages no longer gate routing")
+		pcb.AddCommand(c)
+	}
+
+	// ── region ────────────────────────────────────────────────────────────
+	// pcb.region.* — keep-out / rule regions (禁止区域). NOT net-bound copper
+	// (that's `pcb pour`). The #5 prerequisite: antenna / board-edge keep-out.
+	{
+		region := &cobra.Command{
+			Use:   "region",
+			Short: "Keep-out / rule regions (禁止区域): create / list / delete",
+			Long: `Manage keep-out / rule regions (禁止区域) — a polygon that keeps components,
+wires, and/or copper OUT of an area (antenna clearance, board-edge inset,
+mechanical exclusion). This is NOT net-bound filled copper — use 'pcb pour' for a
+ground/power plane.
+
+ruleType (name or number, repeatable): no-components(2), no-wires(5), no-fills(6),
+no-pours(7), no-inner-electrical(8), follow-rule(9). Default is a hard keep-out
+[no-components, no-wires, no-pours].`,
+		}
+
+		{
+			var pointsJSON, rectSpec, ref, name string
+			var ruleTypes []string
+			var layer int
+			var width, margin float64
+			var locked bool
+			c := &cobra.Command{
+				Use:   "create",
+				Short: "Create a keep-out / rule region (area via --points | --rect | --ref)",
+				Args:  cobra.NoArgs,
+				Example: `  easyeda pcb region create --points '[[100,100],[400,100],[400,300],[100,300]]'   # default keep-out
+  easyeda pcb region create --rect 2250,-2420,2700,-2180 --rule no-pours
+  easyeda pcb region create --rect 2250,-2420,2700,-2180 --rule follow-rule --name antenna-rule
+  easyeda pcb region create --ref U1 --margin 40 --rule no-pours --rule no-components   # keep-out under U1's antenna`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					points, err := areaPointsFrom(cfg, window, pointsJSON, rectSpec, ref, margin)
+					if err != nil {
+						return err
+					}
+					payload := map[string]any{"points": points}
+					if cmd.Flags().Changed("layer") {
+						payload["layer"] = layer
+					}
+					if len(ruleTypes) > 0 {
+						payload["ruleType"] = ruleTypes
+					}
+					if name != "" {
+						payload["name"] = name
+					}
+					if cmd.Flags().Changed("width") {
+						payload["lineWidth"] = width
+					}
+					if locked {
+						payload["locked"] = true
+					}
+					return dispatch(cfg, "pcb.region.create", window, payload, stdout, stderr)
+				},
+			}
+			c.Flags().StringVar(&pointsJSON, "points", "", `JSON array of [x,y] points in mil (or use --rect / --ref)`)
+			c.Flags().StringVar(&rectSpec, "rect", "", "axis-aligned rect 'x0,y0,x1,y1' (mil) — shorthand for a rectangular keep-out")
+			c.Flags().StringVar(&ref, "ref", "", "designator of a placed component — keep-out over its bbox (e.g. an antenna module)")
+			c.Flags().Float64Var(&margin, "margin", 0, "expand the --rect/--ref box outward by this many mil (antenna clearance)")
+			c.Flags().StringArrayVar(&ruleTypes, "rule", nil, "rule type (repeatable): no-components|no-wires|no-fills|no-pours|no-inner-electrical|follow-rule (default keep-out)")
+			c.Flags().IntVar(&layer, "layer", 1, "copper layer id (TOP=1, BOTTOM=2; inner via 'easyeda pcb layers')")
+			c.Flags().StringVar(&name, "name", "", "DRC region name (requires --rule follow-rule)")
+			c.Flags().Float64Var(&width, "width", 0, "region border width (mil)")
+			c.Flags().BoolVar(&locked, "locked", false, "create the region locked")
+			region.AddCommand(c)
+		}
+		{
+			var layer int
+			c := &cobra.Command{
+				Use:     "list",
+				Short:   "List keep-out / rule regions, optionally by layer",
+				Args:    cobra.NoArgs,
+				Example: `  easyeda pcb region list`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					payload := map[string]any{}
+					if cmd.Flags().Changed("layer") {
+						payload["layer"] = layer
+					}
+					return dispatch(cfg, "pcb.region.list", window, payload, stdout, stderr)
+				},
+			}
+			c.Flags().IntVar(&layer, "layer", 0, "filter by copper layer id")
+			region.AddCommand(c)
+		}
+		{
+			var idsRaw string
+			c := &cobra.Command{
+				Use:   "delete",
+				Short: "Delete keep-out / rule regions by primitiveId",
+				Args:  cobra.NoArgs,
+				Example: `  easyeda pcb region delete --ids id1,id2
+  easyeda pcb region delete --ids id1,id2   # CSV works too`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					if idsRaw == "" {
+						return fmt.Errorf("--ids is required")
+					}
+					ids, err := parseIDList(idsRaw)
+					if err != nil {
+						return err
+					}
+					return dispatch(cfg, "pcb.region.delete", window,
+						map[string]any{"primitiveIds": ids}, stdout, stderr)
+				},
+			}
+			c.Flags().StringVar(&idsRaw, "ids", "", "region primitiveIds to delete — CSV: id1,id2 (required)")
+			region.AddCommand(c)
+		}
+		pcb.AddCommand(region)
+	}
+
+	// ── fill ──────────────────────────────────────────────────────────────
+	// pcb.fill.* — net-bound filled region (填充区域 / 异形大块铜). STATIC copper
+	// (no reflow), distinct from `pcb pour` (覆铜, reflows) and `pcb region` (keep-out).
+	{
+		fill := &cobra.Command{
+			Use:   "fill",
+			Short: "Net-bound filled region (填充区域 / 异形大块铜): create / list / delete",
+			Long: `Manage net-bound filled regions (填充区域) — a STATIC filled polygon bound to a
+net (a 3V3/RF-ground patch, thermal copper, odd-shaped plane). Unlike 'pcb pour'
+(覆铜) it does NOT reflow around obstacles; unlike 'pcb region' (keep-out) it
+carries a net. fillMode: solid (default) | mesh | inner.`,
+		}
+		{
+			var pointsJSON, rectSpec, at, size, ref, net, fillMode string
+			var layer int
+			var width, margin float64
+			var locked, forceLarge bool
+			c := &cobra.Command{
+				Use:   "create",
+				Short: "Create a net-bound filled region (area via --points | --rect | --at/--size | --ref)",
+				Args:  cobra.NoArgs,
+				Example: `  easyeda pcb fill create --points '[[100,100],[400,100],[400,300],[100,300]]' --net 3V3 --layer 1
+  easyeda pcb fill create --rect 2150,-1550,2400,-1400 --net GND    # --rect = 两个对角点 x0,y0,x1,y1（不是 x,y,宽,高！）
+  easyeda pcb fill create --at 2150,-1550 --size 250,150 --net GND  # 同一块铜：角点 + 宽高（无歧义写法）
+  easyeda pcb fill create --ref U3 --margin 20 --net GND   # copper patch over U3`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					effRect := rectSpec
+					if at != "" || size != "" {
+						if rectSpec != "" {
+							return fmt.Errorf("--at/--size and --rect are mutually exclusive (they describe the same box two ways)")
+						}
+						r, err := atSizeToRectSpec(at, size)
+						if err != nil {
+							return err
+						}
+						effRect = r
+					}
+					points, err := areaPointsFrom(cfg, window, pointsJSON, effRect, ref, margin)
+					if err != nil {
+						return err
+					}
+					// Oversized-fill guard (issue #109): a --rect passed as
+					// x,y,w,h instead of two corners generates a giant fill.
+					if !forceLarge {
+						boardArea, haveBoard := 0.0, false
+						if ores, oerr := requestAction(cfg, "pcb.outline.get", window, nil); oerr == nil && ores != nil {
+							if bb, ok := ores.Result["bbox"].(map[string]any); ok && bb != nil {
+								w := asFloat(bb["maxX"]) - asFloat(bb["minX"])
+								h := asFloat(bb["maxY"]) - asFloat(bb["minY"])
+								if w > 0 && h > 0 {
+									boardArea, haveBoard = w*h, true
+								}
+							}
+						}
+						if err := checkFillAreaGuard(points, boardArea, haveBoard, false); err != nil {
+							return err
+						}
+					}
+					payload := map[string]any{"points": points}
+					if net != "" {
+						payload["net"] = net
+					}
+					if cmd.Flags().Changed("layer") {
+						payload["layer"] = layer
+					}
+					if fillMode != "" {
+						payload["fillMode"] = fillMode
+					}
+					if cmd.Flags().Changed("width") {
+						payload["lineWidth"] = width
+					}
+					if locked {
+						payload["locked"] = true
+					}
+					return dispatch(cfg, "pcb.fill.create", window, payload, stdout, stderr)
+				},
+			}
+			c.Flags().StringVar(&pointsJSON, "points", "", `JSON array of [x,y] points in mil (or use --rect / --at+--size / --ref)`)
+			c.Flags().StringVar(&rectSpec, "rect", "", "axis-aligned rect as TWO OPPOSITE CORNERS 'x0,y0,x1,y1' (mil) — NOT x,y,w,h; for width/height use --at + --size")
+			c.Flags().StringVar(&at, "at", "", "rect anchor corner 'x,y' (mil, y-up); pairs with --size — unambiguous alternative to --rect")
+			c.Flags().StringVar(&size, "size", "", "rect size 'w,h' (mil), extends +x/+y from --at")
+			c.Flags().StringVar(&ref, "ref", "", "designator of a placed component — fill over its bbox")
+			c.Flags().Float64Var(&margin, "margin", 0, "expand the --rect/--ref box outward by this many mil")
+			c.Flags().BoolVar(&forceLarge, "force-large", false, "allow a fill larger than 25% of the board bbox (guard catches --rect mistakenly passed as x,y,w,h)")
+			c.Flags().StringVar(&net, "net", "", "net to bind the fill to (e.g. 3V3, GND)")
+			c.Flags().IntVar(&layer, "layer", 1, "layer id (TOP=1, BOTTOM=2; inner via 'easyeda pcb layers')")
+			c.Flags().StringVar(&fillMode, "fill-mode", "", "fill mode: solid (default) | mesh | inner")
+			c.Flags().Float64Var(&width, "width", 0, "fill border width (mil)")
+			c.Flags().BoolVar(&locked, "locked", false, "create the fill locked")
+			fill.AddCommand(c)
+		}
+		{
+			var layer int
+			var net string
+			c := &cobra.Command{
+				Use:     "list",
+				Short:   "List net-bound filled regions, optionally by layer/net",
+				Args:    cobra.NoArgs,
+				Example: `  easyeda pcb fill list --net 3V3`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					payload := map[string]any{}
+					if cmd.Flags().Changed("layer") {
+						payload["layer"] = layer
+					}
+					if net != "" {
+						payload["net"] = net
+					}
+					return dispatch(cfg, "pcb.fill.list", window, payload, stdout, stderr)
+				},
+			}
+			c.Flags().IntVar(&layer, "layer", 0, "filter by layer id")
+			c.Flags().StringVar(&net, "net", "", "filter by net name")
+			fill.AddCommand(c)
+		}
+		{
+			var idsRaw string
+			c := &cobra.Command{
+				Use:   "delete",
+				Short: "Delete net-bound filled regions by primitiveId",
+				Args:  cobra.NoArgs,
+				Example: `  easyeda pcb fill delete --ids id1,id2
+  easyeda pcb fill delete --ids id1,id2     # CSV works too`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					if idsRaw == "" {
+						return fmt.Errorf("--ids is required")
+					}
+					ids, err := parseIDList(idsRaw)
+					if err != nil {
+						return err
+					}
+					return dispatch(cfg, "pcb.fill.delete", window,
+						map[string]any{"primitiveIds": ids}, stdout, stderr)
+				},
+			}
+			c.Flags().StringVar(&idsRaw, "ids", "", "fill primitiveIds to delete — CSV: id1,id2 (required)")
+			fill.AddCommand(c)
+		}
+		pcb.AddCommand(fill)
+	}
+
+	// ── slot (挖槽 / board cutout) ──────────────────────────────────────────
+	// A slot is a pcb_PrimitiveFill on the MULTI layer (12): per the eda API types
+	// (index.d.ts — "填充所属层为 EPCB_LayerId.MULTI 时代表挖槽区域"), a MULTI-layer
+	// fill IS a board cutout, and the manufacturing output emits it as a BoardCutout
+	// object. Same area shorthand as region/fill. Antenna isolation / mechanical
+	// opening. List / delete via `pcb fill list --layer 12` / `pcb fill delete`.
+	{
+		var pointsJSON, rectSpec, ref string
+		var margin float64
+		var locked bool
+		c := &cobra.Command{
+			Use:   "slot",
+			Short: "Board cutout / slot (挖槽) — a MULTI-layer fill that mills a hole",
+			Long: `Create a board cutout / slot (挖槽) — physically removes board material (e.g.
+under an antenna for isolation, or a mechanical opening). Implemented as a
+pcb_PrimitiveFill on the MULTI layer (12), which the EasyEDA manufacturing output
+treats as a BoardCutout. Specify the area three ways (pick one): --points, --rect
+x0,y0,x1,y1, or --ref <designator> (+ --margin to expand). Inspect / remove with
+'pcb fill list --layer 12' / 'pcb fill delete'.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb slot --rect 2450,-1550,2700,-1400
+  easyeda pcb slot --ref ANT1 --margin 20     # cut a slot under the antenna`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				points, err := areaPointsFrom(cfg, window, pointsJSON, rectSpec, ref, margin)
+				if err != nil {
+					return err
+				}
+				payload := map[string]any{"points": points, "layer": 12}
+				if locked {
+					payload["locked"] = true
+				}
+				return dispatch(cfg, "pcb.fill.create", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&pointsJSON, "points", "", `JSON array of [x,y] points in mil (or use --rect / --ref)`)
+		c.Flags().StringVar(&rectSpec, "rect", "", "axis-aligned rect 'x0,y0,x1,y1' (mil)")
+		c.Flags().StringVar(&ref, "ref", "", "designator of a placed component — slot over its bbox (e.g. an antenna)")
+		c.Flags().Float64Var(&margin, "margin", 0, "expand the --rect/--ref box outward by this many mil")
+		c.Flags().BoolVar(&locked, "locked", false, "create the slot locked")
+		pcb.AddCommand(c)
+	}
+
+	// ── mount-holes (M3 安装孔按板框角自动放置) ─────────────────────────────
+	// Issue #102: corner mounting holes used to be hand-placed at guessed coords
+	// and landed on parts. This reads the REAL outline + component bboxes and
+	// refuses a conflicting corner instead. Core in pcb_place_constrained_mountholes.go.
+	{
+		var dia, inset, clearance float64
+		var corners string
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "mount-holes",
+			Short: "Place M3 mounting holes at the board-outline corners (collision-checked cutouts)",
+			Long: `Place mounting holes at the board-outline corners — the "四角 M3 孔" requirement,
+automated (issue #102). Reads the real board outline (pcb.outline.get — errors if
+none is set; run 'pcb outline-fit' first), computes each requested corner center
+at --inset from both edges, and mills a near-circular cutout there: a MULTI-layer
+(12) fill, the same primitive 'pcb slot' creates (manufacturing emits a
+BoardCutout), so 'pcb place-constrained' avoids it as a Tier-1 obstacle and
+'pcb check' keeps copper off the milled edge.
+
+Safety: each corner is checked against every component's rendered bbox using the
+fastener keep-out radius max(hole R + 40mil, M3 washer/head R 118mil) — a
+conflicting corner is WARNED and SKIPPED, never force-placed on a part
+(--clearance overrides the keep-out radius for a smaller fastener head you
+knowingly accept). A corner that already has a cutout is reported as "exists"
+(idempotent rerun). Defaults: Ø3.2mm M3 clearance hole (126mil), center ~5mm
+(197mil) from each edge.
+
+Inspect / remove with 'pcb fill list --layer 12' / 'pcb fill delete'; save after.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb mount-holes --dry-run          # plan only
+  easyeda pcb mount-holes                    # 4 corners, M3 defaults
+  easyeda pcb mount-holes --corners tl,tr --dia 126 --inset 250`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runPcbMountHoles(cfg, window, dia, inset, clearance, corners, dryRun, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&dia, "dia", mhDefaultDiaMil, "hole diameter in mil (default 126 = M3 clearance Ø3.2mm)")
+		c.Flags().Float64Var(&inset, "inset", mhDefaultInsetMil, "hole-center inset from each board edge in mil (default 197 ≈ 5mm)")
+		c.Flags().Float64Var(&clearance, "clearance", 0, "override the fastener keep-out radius in mil (0 = auto: max(hole R+40, washer 118))")
+		c.Flags().StringVar(&corners, "corners", "tl,tr,bl,br", "comma-separated corner subset: tl,tr,bl,br")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the per-corner plan without milling anything")
+		pcb.AddCommand(c)
+	}
+
+	// ── layout-lint (布局质量 + 可布性预测) ──────────────────────────────────
+	// PCB sibling of `sch layout-lint`: overlap / off-board / tight-spacing PLUS a
+	// routability score from the ratsnest (signal-net MST length + cross-net
+	// crossings). Run BEFORE routing to catch a placement that won't route; factual
+	// geometry errors still return non-zero. Core in pcb_layoutlint.go.
+	{
+		var minGap float64
+		var asJSON, gate bool
+		var minScore, maxCrossings int
+		c := &cobra.Command{
+			Use:   "layout-lint",
+			Short: "Score PCB placement quality + predict routability (ratsnest crossings)",
+			Long: `Check the PCB placement and predict how hard it will be to route — run this
+BEFORE routing (or after auto-place) to catch a bad layout early.
+
+Pulls every footprint's rendered bbox + pads (pcb.components.list) and computes:
+
+  • overlap          — two footprint bboxes intersect                → ERROR (score 0)
+  • off-board        — a footprint extends outside the board outline → ERROR
+  • tight spacing    — bbox gap below project assembly profile/min-gap → WARN
+  • ratsnest         — per signal-net minimum spanning tree (power/GND
+                       excluded — they're poured, not routed)
+  • crossings        — cross-net ratline segments that geometrically
+                       cross → the single-layer routability killer   → WARN
+
+Yields a 0-100 routability score + verdict (easy/moderate/hard/very-hard). Fewer
+crossings + shorter ratsnest = more routable. --gate is retained as a compatibility
+diagnostic: it displays the historical thresholds when available, but does not
+authorize routing, write workflow state, or turn a score into a refusal. Factual
+short/overlap/off-board errors still exit non-zero.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb layout-lint
+  easyeda pcb layout-lint --json
+  easyeda pcb layout-lint --min-gap 8`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runPcbLayoutLint(cfg, window, minGap, asJSON, pcbLayoutGateOpts{
+					gate: gate, project: cfg.project, minScore: minScore, maxCrossings: maxCrossings,
+				}, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&minGap, "min-gap", 0, "min gap between footprint bboxes in mil (closer = WARN; default = board clearance)")
+		c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON")
+		c.Flags().BoolVar(&gate, "gate", false, "deprecated compatibility mode: report historical assembly/score thresholds without authorizing or blocking routing")
+		c.Flags().IntVar(&minScore, "min-score", 60, "historical score threshold displayed by compatibility --gate")
+		c.Flags().IntVar(&maxCrossings, "max-crossings", 8, "historical crossing threshold displayed by compatibility --gate (-1 = unlimited)")
+		pcb.AddCommand(c)
+	}
+
+	// ── check (DFM 审查:制造性/可靠性几何隐患) ─────────────────────────────
+	// PCB sibling of `sch check`. Native `pcb drc` catches rule-clearance; this
+	// reconstructs the DFM hazards it doesn't — acute (acid-trap) angles, dangling
+	// copper stubs, stacked / pointless single-layer vias, 2-pin neck-down
+	// asymmetry, duplicated overlapping copper — purely from placed primitives
+	// (tracks + vias + pads). Read-only. Core in pcb_check.go.
+	{
+		var strict, asJSON bool
+		var couplingW float64
+		var checkSpecPath string
+		c := &cobra.Command{
+			Use:   "check",
+			Short: "DFM audit: acute angles / dangling copper / bad vias / neck-down / 3W coupling (read-only)",
+			Long: `Reconstructed DFM (design-for-manufacture) audit — the manufacturability and
+reliability hazards the native 'pcb drc' does NOT flag. Computed purely from the
+placed copper (pcb.line.list + pcb.via.list + pcb.components.list --include-pads),
+so it needs no extra setup and never mutates the board.
+
+Rules:
+  • dangling-end      — a track end anchored to no pad/via/track  → WARN
+  • acute-angle       — two same-net segments bend <90° outside exact same-net pad copper (acid trap) → WARN
+  • overlapping-via   — two vias stacked on the same spot          → WARN
+  • single-layer-via  — a signal via that changes no layer         → WARN
+  • width-mismatch    — a 2-pin part with asymmetric neck-down     → INFO
+  • duplicate-segment — collinear overlapping (redundant) copper   → WARN
+  • parallel-coupling — different-net traces closer than N×W (3W rule) → WARN
+  • netless-pour      — copper pour bound to no net (dead copper)      → WARN
+  • via-crosses-plane — a via whose net ≠ an inner PLANE(内电层)'s net → WARN
+                        (anti-pad risk, easyeda/pro-api-sdk#32: a via created
+                        AFTER the plane exists gets no anti-pad; fix = remove it
+                        and route on outer layers, or 'doc reload' + 'pour-rebuild')
+  • floating-track-island — a connected GROUP of tracks anchoring to no pad → WARN
+                        (dangling-end's blind spot: members anchor each other;
+                        islands under a same-net pour are exempt)
+  • power-not-poured  — a power/GND net (≥2 pads) with no same-net pour/plane → WARN
+                        (power should be poured, not carried by thin tracks;
+                        fix: 'pcb pour-fit --net N' 2-layer / 'pcb power-planes' 4-layer)
+  • width-under-spec  — a routed power track thinner than its net-class spec  → WARN
+                        (branch 0.25mm / trunk 0.4mm / high-current 0.5mm — see
+                        'pcb net-classes'; fine-pitch narrowing + stitch stubs exempt)
+
+Complements 'pcb drc' (rule clearance) and 'pcb layout-lint' (placement/routability).
+Exit code: 0 by default (informational). --strict exits non-zero on any WARN/ERROR
+so it can gate the flow. Arcs are out of scope for v1 (line/via/pad only).`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb check
+  easyeda pcb check --json
+  easyeda pcb check --strict
+  easyeda pcb check --coupling-w 2.5`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				var checkSpec *spec.Spec
+				if checkSpecPath != "" {
+					raw, rerr := os.ReadFile(checkSpecPath)
+					if rerr != nil {
+						return fmt.Errorf("read spec: %w", rerr)
+					}
+					var perr error
+					if checkSpec, perr = spec.Parse(raw); perr != nil {
+						return perr
+					}
+				}
+				return runPcbCheck(cfg, window, couplingW, checkSpec, strict, asJSON, stdout, stderr)
+			},
+		}
+		c.Flags().BoolVar(&strict, "strict", false, "exit non-zero when there are issues (gate mode)")
+		c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON")
+		c.Flags().Float64Var(&couplingW, "coupling-w", 3.0, "3W-rule factor: flag different-net parallel traces closer than this × trace width")
+		c.Flags().StringVar(&checkSpecPath, "spec", "", "S0 spec JSON — lets the connector rules (internal-on-edge) read the declared facing\n"+
+			"instead of guessing. A spec-declared internal connector reports WARN; a heuristic\n"+
+			"guess only reports INFO, because being wrong about someone's intent should not\n"+
+			"block them as loudly as a fact they wrote down themselves")
+		pcb.AddCommand(c)
+	}
+
+	// ── stackup (层叠:层数 + 内层类型) ──────────────────────────────────────
+	// pcb.stackup.set — set copper layer count + inner-layer types (signal/plane).
+	// The foundation for multi-layer designs: a PLANE inner layer gives GND/power a
+	// dedicated plane, which is the clean fix for the 2-layer pour-conflict (two
+	// power nets can't both connect on one shared layer). Read via `pcb layers`.
+	{
+		stackup := &cobra.Command{
+			Use:   "stackup",
+			Short: "Board stackup: copper layer count + inner-layer types (signal/plane)",
+			Long: `Configure the board stackup — the count of copper layers and the type of each
+inner layer. A PLANE (内电层) inner layer is a solid negative plane, the clean way
+to distribute GND + power on 4+ layer boards: each gets a dedicated plane instead
+of two power nets fighting over one layer (the 2-layer pour conflict). Read the
+current stackup with 'pcb layers' (copperLayerCount + each layer's type).`,
+		}
+		{
+			c := &cobra.Command{
+				Use:     "show",
+				Short:   "Show the current stackup (copper layer count + layers)",
+				Args:    cobra.NoArgs,
+				Example: `  easyeda pcb stackup show`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					return dispatch(cfg, "pcb.layers.list", window, nil, stdout, stderr)
+				},
+			}
+			stackup.AddCommand(c)
+		}
+		{
+			var layers int
+			var planes, signals []int
+			c := &cobra.Command{
+				Use:   "set",
+				Short: "Set copper layer count and/or inner-layer types",
+				Args:  cobra.NoArgs,
+				Example: `  easyeda pcb stackup set --layers 4
+  easyeda pcb stackup set --layers 4 --plane 15 --plane 16   # Inner1+Inner2 = planes (GND / power)
+  easyeda pcb stackup set --signal 15                        # Inner1 back to a signal layer`,
+				RunE: func(cmd *cobra.Command, args []string) error {
+					payload := map[string]any{}
+					if cmd.Flags().Changed("layers") {
+						payload["count"] = layers
+					}
+					var specs []map[string]any
+					for _, id := range planes {
+						specs = append(specs, map[string]any{"id": id, "type": "plane"})
+					}
+					for _, id := range signals {
+						specs = append(specs, map[string]any{"id": id, "type": "signal"})
+					}
+					if len(specs) > 0 {
+						payload["layers"] = specs
+					}
+					if len(payload) == 0 {
+						return fmt.Errorf("nothing to set — use --layers and/or --plane/--signal (ids from `easyeda pcb layers`)")
+					}
+					var response bytes.Buffer
+					err := dispatch(cfg, "pcb.stackup.set", window, payload, &response, stderr)
+					if _, writeErr := stdout.Write(response.Bytes()); writeErr != nil {
+						return writeErr
+					}
+					if err != nil {
+						return err
+					}
+					return checkPcbStackupResponse(response.Bytes())
+				},
+			}
+			c.Flags().IntVar(&layers, "layers", 0, "copper layer count (2|4|6|…|32)")
+			c.Flags().IntSliceVar(&planes, "plane", nil, "inner layer id to set as PLANE/内电层 (repeatable; ids from 'pcb layers', e.g. 15=Inner1)")
+			c.Flags().IntSliceVar(&signals, "signal", nil, "inner layer id to set as SIGNAL (repeatable)")
+			stackup.AddCommand(c)
+		}
+		pcb.AddCommand(stackup)
+	}
+
+	// ── power-planes (4层电源平面启发式) ────────────────────────────────────
+	// The proper fix for the 2-layer pour conflict: dedicated inner planes + via
+	// stitching. Ensures 4 layers, assigns GND + power nets to inner layers,
+	// via-stitches every power pad down to its plane, pours each plane. Validated on
+	// ceshi: DRC No-Connection → 0. Core in pcb_powerplanes.go.
+	{
+		var gndLayer, powerLayer int
+		var dryRun, gndPlane, allowStackupChange bool
+		c := &cobra.Command{
+			Use:   "power-planes",
+			Short: "4-layer power distribution: GND 内电层 + power inner plane + via-stitch (fixes 2-layer pour conflict)",
+			Long: `Distribute power/ground on dedicated INNER PLANES — the clean 4-layer fix for the
+2-layer pour conflict (two power nets can't both connect on one shared layer, which
+stranded 5 of ceshi's 3V3 pads). This:
+
+  1. verifies the existing board has >=4 copper layers; a confirmed 2-layer board
+     requires --allow-stackup-change to plan or perform an upgrade to 4 layers,
+  2. assigns GND to an inner layer and power nets (VCC/3V3/… via isGlobalNet) to another,
+  3. via-stitches every power/ground pad DOWN to its plane (the connection point the
+     inner pour needs — without it the inner pour is all isolated islands),
+  4. pours each net on its inner layer,
+  5. flips the GND inner layer to 内电层/PLANE (--gnd-plane, default on), then rebuilds.
+
+Step 5 uses the verified pour-while-SIGNAL → flip-type → rebuild recipe: the net-bound
+GND fill survives the flip and DRC stays clean (0 Plane-Zone/via clashes). The power
+layer stays 信号层 so its net pour is an ordinary positive plane — matching the common
+customer stackup (GND=内电层, VCC/3V3=信号层). Pass --gnd-plane=false to keep GND as a
+plain signal-layer pour.
+
+Validated on ceshi: DRC 31 → 0, No-Connection → 0. Run AFTER auto-place + outline-fit
++ route-short (signals). Two power nets sharing one plane layer re-create the conflict
+(warned) — give each its own inner layer on a 6+ layer board. Existing 4+ layer counts
+are preserved. --dry-run runs the same stackup preflight and prints the intended
+current/target layer counts without mutation. Missing layer evidence always refuses.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb power-planes
+  easyeda pcb power-planes --gnd-layer 15 --power-layer 16
+  easyeda pcb power-planes --gnd-plane=false   # keep GND as a signal-layer pour
+  easyeda pcb power-planes --dry-run`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runPowerPlanes(cfg, window, gndLayer, powerLayer, gndPlane, dryRun, allowStackupChange, stdout, stderr)
+			},
+		}
+		c.Flags().IntVar(&gndLayer, "gnd-layer", 15, "inner layer id for the GND plane (15=Inner1)")
+		c.Flags().IntVar(&powerLayer, "power-layer", 16, "inner layer id for the power plane (16=Inner2)")
+		c.Flags().BoolVar(&gndPlane, "gnd-plane", true, "flip the GND inner layer to 内电层/PLANE after pouring (customer-stackup correct)")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the plan (nets→layers, pad counts) without mutating")
+		c.Flags().BoolVar(&allowStackupChange, "allow-stackup-change", false,
+			"permit step 1 to CHANGE the board's copper layer count (pcb stackup set --layers 4). "+
+				"Off by default: a board with <4 copper layers is REFUSED, not silently re-stacked "+
+				"Unknown layer counts always refuse. On a 2-layer board use `pcb power-pour` instead")
+		pcb.AddCommand(c)
+	}
+
+	// ── power-pour (2-layer 电源走铺铜块) ────────────────────────────────────
+	// The 2-layer analog of power-planes: deliver every power net through copper
+	// POUR area instead of thin tracks (能力 B). GND → board-outline pour on both
+	// layers; each rail → a LOCAL pour over its own pad bbox on top. All dynamic
+	// pours (retreat, never short). Core in pcb_powerpour.go.
+	{
+		var gndLayersSpec, railsMode string
+		var margin, inset float64
+		var replace, rebuild, dryRun bool
+		c := &cobra.Command{
+			Use:   "power-pour",
+			Short: "2-layer power distribution: pour GND + each rail's local copper (电源走铺铜块, not thin tracks)",
+			Long: `Deliver power through copper POUR on a 2-layer board — the 2-layer analog of
+'power-planes' (which requires at least 4 layers). Thin power tracks are the #1 DRC source
+(design-decisions.md: six thin 3V3 tracks = 18/27 Safe-Spacing violations); this
+pours them instead:
+
+  • GND  → a board-outline-fitted pour on the requested layer(s) (--gnd-layers,
+           default both) — the reference plane.
+  • each non-GND rail (3V3/5V/VBUS…, via isGlobalNet) → a LOCAL pour bounded to
+           the bbox of ITS OWN pads (+ --margin) on the TOP layer, so a small rail
+           doesn't claim the whole board.
+
+Every region is a DYNAMIC pour (retreats from other-net copper by the clearance
+rule), so different-net regions never short — a static fill would. Rails with <2
+pads are skipped. --replace clears same-net pours first (no stacking); --rebuild
+reflows after. Run AFTER auto-place + outline-fit + route-short (signals), then
+'pcb check' (power-not-poured should clear) and 'pcb drc'. For 4-layer boards use
+'power-planes' instead.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb power-pour --project ceshi
+  easyeda pcb power-pour --gnd-layers bottom --rails pour
+  easyeda pcb power-pour --dry-run              # print the pour plan only`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runPowerPour(cfg, window, gndLayersSpec, railsMode, margin, inset, replace, rebuild, dryRun, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&gndLayersSpec, "gnd-layers", "both", "GND pour layer(s): both | top | bottom")
+		c.Flags().StringVar(&railsMode, "rails", "pour", "non-GND rail handling: pour (local copper) | skip")
+		c.Flags().Float64Var(&margin, "margin", railMargin, "how far a rail's local pour extends past its pad bbox (mil)")
+		c.Flags().Float64Var(&inset, "inset", 0, "inset from the board outline (mil; default = board's copper-to-edge rule ~8–10)")
+		c.Flags().BoolVar(&replace, "replace", true, "clear existing pours on each net first (avoid stacking)")
+		c.Flags().BoolVar(&rebuild, "rebuild", true, "run pour-rebuild after creating the pours")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the pour plan (nets→layers→rects) without mutating")
+		pcb.AddCommand(c)
+	}
+
+	// ── outline-round (圆角板框) ────────────────────────────────────────────
+	// Replace the board outline with a rounded rectangle (#29). Corners use the
+	// connector's verified native ARC polygon source. Core in pcb_outline_round.go.
+	{
+		var rectSpec string
+		var radius, margin float64
+		var dryRun bool
+		c := &cobra.Command{
+			Use:   "outline-round",
+			Short: "Set a rounded-rectangle board outline (圆角板框)",
+			Long: `Replace the board outline with a rounded rectangle. The rect defaults to the
+CURRENT outline's center-line bounds (or pass --rect x0,y0,x1,y1); --margin expands it outward.
+--radius is the corner radius (default ≈12% of the shorter side, clamped to half).
+Each corner is stored as a native 90° EasyEDA ARC in one locked BOARD_OUTLINE
+polyline. The line width is 10mil (0.254mm). Read back exact center-line dimensions
+with 'pcb outline-get'; its rendered bbox includes the stroke. Run BEFORE pour/route
+(changing the outline after copper can strand it).`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb outline-round --radius 80
+  easyeda pcb outline-round --rect 0,0,2000,1500 --radius 100
+  easyeda pcb outline-round --margin 100 --radius 60 --dry-run`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runOutlineRound(cfg, window, rectSpec, radius, margin, dryRun, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&rectSpec, "rect", "", "axis-aligned rect 'x0,y0,x1,y1' (mil); default = current outline center-line bounds")
+		c.Flags().Float64Var(&radius, "radius", 0, "corner radius (mil); default ≈12% of the shorter side")
+		c.Flags().Float64Var(&margin, "margin", 0, "expand the rect outward by this many mil before rounding")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print the generated native-ARC polygon source without setting the outline")
+		pcb.AddCommand(c)
+	}
+
+	// ── silk-align (丝印/位号对齐) ──────────────────────────────────────────
+	// pcb.silk.align — reposition each designator to a consistent spot above/below
+	// its footprint. Designators are component-bound attributes (pcb_PrimitiveAttribute).
+	{
+		var offset, spacing float64
+		var side string
+		var refs []string
+		c := &cobra.Command{
+			Use:   "silk-align",
+			Short: "Place component designators (位号) and verify measured collisions",
+			Long: `Reposition every component's DESIGNATOR silkscreen with COLLISION AVOIDANCE: for
+each label it searches candidate slots around the footprint (preferred --side first,
+then the other directions, at increasing distance) and takes the first that hits no
+component envelope, pad or other measured label — so dense-cluster designators get
+pushed into open space instead of piling on top of each other. --side (top|bottom|
+left|right) biases the search, --offset is the base gap, --refs limits to specific
+parts. Requires readable rendered geometry and outline bounds. A complete plan is
+built before position writes; upright pose normalization is measured separately.
+Fresh text bboxes and pose are checked after writing. Unresolved, missing or
+unverified geometry returns a nonzero exit with appliedIds and partial evidence;
+read the actual state before recomputing. Snapshot is supplementary evidence.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb silk-align
+  easyeda pcb silk-align --side bottom --offset 15
+  easyeda pcb silk-align --refs U1 --refs LED1`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{}
+				if cmd.Flags().Changed("offset") {
+					payload["offset"] = offset
+				}
+				if side != "" {
+					payload["side"] = side
+				}
+				if len(refs) > 0 {
+					payload["refs"] = refs
+				}
+				if cmd.Flags().Changed("spacing") {
+					payload["spacing"] = spacing
+				}
+				return dispatch(cfg, "pcb.silk.align", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&offset, "offset", 15, "base distance from the footprint edge (mil); ×spacing")
+		c.Flags().Float64Var(&spacing, "spacing", 1.5, "spacing coefficient — scales the label drift for assembly/solder room (bigger = further out)")
+		c.Flags().StringVar(&side, "side", "", "bias which side of the footprint: top|bottom|left|right (soft hint)")
+		c.Flags().StringArrayVar(&refs, "refs", nil, "limit to these designators (repeatable); default = all")
+		pcb.AddCommand(c)
+	}
+
+	// pcb.silk.add — create a free silkscreen string (board marking / credit / note).
+	{
+		var text string
+		var fontFamily string
+		var x, y, fontSize, lineWidth, rotation float64
+		var layer int
+		c := &cobra.Command{
+			Use:   "silk-add",
+			Short: "Add a free silkscreen string (board marking / credit / note) with config",
+			Long: `Create a FREE silkscreen STRING at (x,y) — a board credit / label / note — with
+full config: --layer (3=top silk default, 4=bottom), --font-size (mil), --line-width
+(stroke mil), --rotation. The defaults (font 40 / stroke 6) are legible + JLCPCB-safe;
+a small font with a thick stroke smears the glyphs together (糊). Returns the new
+primitiveId + rendered bbox — check it fits the board and clears parts. Reposition or
+restyle later with 'pcb silk-set'.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb silk-add --text "auto created by easyeda-agent" --x 1850 --y -2455
+  easyeda pcb silk-add --text "REV A" --x 2400 --y -2455 --font-size 50 --line-width 6
+  easyeda pcb silk-add --text "bottom mark" --x 2000 --y -2000 --layer 4 --rotation 90`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if text == "" {
+					return fmt.Errorf("--text is required")
+				}
+				payload := map[string]any{"text": text, "x": x, "y": y, "layer": layer}
+				if cmd.Flags().Changed("font-size") {
+					payload["fontSize"] = fontSize
+				}
+				if cmd.Flags().Changed("font-family") {
+					payload["fontFamily"] = fontFamily
+				}
+				if cmd.Flags().Changed("line-width") {
+					payload["lineWidth"] = lineWidth
+				}
+				if cmd.Flags().Changed("rotation") {
+					payload["rotation"] = rotation
+				}
+				return dispatch(cfg, "pcb.silk.add", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&text, "text", "", "the silkscreen text (required)")
+		c.Flags().StringVar(&fontFamily, "font-family", "default", "font family configured in EasyEDA (for example Arial)")
+		c.Flags().Float64Var(&x, "x", 0, "X position (mil)")
+		c.Flags().Float64Var(&y, "y", 0, "Y position (mil)")
+		c.Flags().IntVar(&layer, "layer", 3, "silk layer: 3=TOP_SILKSCREEN, 4=BOTTOM_SILKSCREEN")
+		c.Flags().Float64Var(&fontSize, "font-size", 40, "font height (mil; ≥~32 for JLCPCB legibility)")
+		c.Flags().Float64Var(&lineWidth, "line-width", 6, "stroke width (mil; JLCPCB min ~6)")
+		c.Flags().Float64Var(&rotation, "rotation", 0, "rotation (deg)")
+		pcb.AddCommand(c)
+	}
+
+	// pcb.silk.set — batch reconfigure existing silk (position / rotation / size / text
+	// / align-to-reference).
+	{
+		var ids string
+		var x, y, rotation, fontSize, lineWidth float64
+		var text, align, ref, fontFamily string
+		c := &cobra.Command{
+			Use:   "silk-set",
+			Short: "Batch-adjust existing silk: position / rotation / size / text, or align to a reference",
+			Long: `Reconfigure existing silkscreen primitive(s) in ONE batch — component designators
+(位号) and free strings alike. --ids is a CSV of primitiveIds (from 'pcb
+check --json' or a silk list); set any of --x/--y/--rotation/--font-size/--line-width
+/--text and ONLY those keys change.
+
+ALIGN shortcut (--align + --ref): position each silk relative to a reference bbox —
+--ref a component designator, "board"/"outline", or "fill" (default board). --align:
+center|mid (both axes), centerx|centery, or left|right|top|bottom (edge-align). Each
+silk is computed from ITS OWN bbox so the center/edge lands exactly on the reference.
+
+NOTE: rotation via the reliable .modify persists, but a 'pcb snapshot' taken before a
+document reload shows the OLD orientation (stale render) — judge success by 'pcb check'
+/ silk list, not a screenshot.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb silk-set --ids id1 --rotation 0
+  easyeda pcb silk-set --ids credit --ref board --align centerx   # center the board credit
+  easyeda pcb silk-set --ids lbl --ref U1 --align top             # align label to U1's top
+  easyeda pcb silk-set --ids id1,id2 --font-size 45 --line-width 6`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if ids == "" {
+					return fmt.Errorf("--ids is required (CSV of primitiveIds)")
+				}
+				idList, err := parseIDList(ids)
+				if err != nil {
+					return err
+				}
+				payload := map[string]any{"primitiveIds": idList}
+				for flag, key := range map[string]string{"x": "x", "y": "y", "rotation": "rotation", "font-size": "fontSize", "line-width": "lineWidth"} {
+					if cmd.Flags().Changed(flag) {
+						switch key {
+						case "x":
+							payload[key] = x
+						case "y":
+							payload[key] = y
+						case "rotation":
+							payload[key] = rotation
+						case "fontSize":
+							payload[key] = fontSize
+						case "lineWidth":
+							payload[key] = lineWidth
+						}
+					}
+				}
+				if cmd.Flags().Changed("text") {
+					payload["text"] = text
+				}
+				if cmd.Flags().Changed("font-family") {
+					payload["fontFamily"] = fontFamily
+				}
+				if align != "" {
+					payload["align"] = align
+					if ref != "" {
+						payload["ref"] = ref
+					}
+				}
+				return dispatch(cfg, "pcb.silk.set", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&ids, "ids", "", "silk primitiveIds to adjust — CSV: id1,id2 (required)")
+		c.Flags().Float64Var(&x, "x", 0, "new X (mil)")
+		c.Flags().Float64Var(&y, "y", 0, "new Y (mil)")
+		c.Flags().Float64Var(&rotation, "rotation", 0, "new rotation (deg) — 0 = upright")
+		c.Flags().Float64Var(&fontSize, "font-size", 0, "new font height (mil)")
+		c.Flags().Float64Var(&lineWidth, "line-width", 0, "new stroke width (mil)")
+		c.Flags().StringVar(&text, "text", "", "new text (designators: the value)")
+		c.Flags().StringVar(&fontFamily, "font-family", "", "new font family (for example Arial)")
+		c.Flags().StringVar(&align, "align", "", "align to --ref: center|mid|centerx|centery|left|right|top|bottom")
+		c.Flags().StringVar(&ref, "ref", "", "align reference: a designator, \"board\"/\"outline\", or \"fill\" (default board)")
+		pcb.AddCommand(c)
+	}
+
+	// ── silk-netnames (网络名自动标注) ──────────────────────────────────────────
+	// pcb.silk.netnames — auto-generate silkscreen labels for net names in a zone.
+	{
+		var zoneLeft, zoneTop, zoneRight, zoneBottom float64
+		var layer int
+		var align string
+		var fontSize, lineWidth float64
+		var excludeNets []string
+
+		c := &cobra.Command{
+			Use:   "silk-netnames",
+			Short: "Auto-generate network-name silkscreen labels in a zone",
+			Long: `Auto-generate network-name silkscreen labels for nets with pads in a rectangular zone.
+Reads all nets on the PCB, filters those with pads in the zone (--zone-left/top/right/bottom),
+computes collision-free positions (avoiding pads + other silk), and creates free silkscreen
+STRINGs. Useful for debugging: label each net to correlate with probing/analysis.
+
+COORDINATES: in mil, y-up (positive y = upward). Silk layer defaults to TOP_SILKSCREEN (3).
+ALIGNMENT: --align left (left-to-right order, default) or right (right-to-left order).
+
+Pair with 'pcb silk-list' to verify positions and 'pcb snapshot' for visual QA.`,
+			Example: `  easyeda pcb silk-netnames \
+  --zone-left 0 --zone-top 3000 --zone-right 2000 --zone-bottom 1000
+  easyeda pcb silk-netnames \
+  --zone-left 100 --zone-top 2800 --zone-right 1900 --zone-bottom 1200 \
+  --layer 4 --align right --exclude-nets GND --exclude-nets +5V`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				payload := map[string]any{
+					"zone_rect": map[string]float64{
+						"left":   zoneLeft,
+						"top":    zoneTop,
+						"right":  zoneRight,
+						"bottom": zoneBottom,
+					},
+				}
+				if layer > 0 {
+					payload["layer"] = layer
+				}
+				if align != "" && align != "left" {
+					payload["align"] = align
+				}
+				if cmd.Flags().Changed("font-size") && fontSize > 0 {
+					payload["fontSize"] = fontSize
+				}
+				if cmd.Flags().Changed("line-width") && lineWidth > 0 {
+					payload["lineWidth"] = lineWidth
+				}
+				if len(excludeNets) > 0 {
+					payload["exclude_nets"] = excludeNets
+				}
+				return dispatch(cfg, "pcb.silk.netnames", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().Float64Var(&zoneLeft, "zone-left", 0, "zone rectangle left (mil, required)")
+		c.Flags().Float64Var(&zoneTop, "zone-top", 0, "zone rectangle top (mil, required)")
+		c.Flags().Float64Var(&zoneRight, "zone-right", 0, "zone rectangle right (mil, required)")
+		c.Flags().Float64Var(&zoneBottom, "zone-bottom", 0, "zone rectangle bottom (mil, required)")
+		c.Flags().IntVar(&layer, "layer", 3, "silk layer: 3=TOP_SILKSCREEN, 4=BOTTOM_SILKSCREEN (default 3)")
+		c.Flags().StringVar(&align, "align", "left", "sort order: left (left-to-right, default) or right (right-to-left)")
+		c.Flags().Float64Var(&fontSize, "font-size", 40, "label font height (mil, default 40)")
+		c.Flags().Float64Var(&lineWidth, "line-width", 6, "label stroke width (mil, default 6)")
+		c.Flags().StringSliceVar(&excludeNets, "exclude-nets", nil, "net names to skip (e.g., --exclude-nets GND --exclude-nets +5V)")
+		pcb.AddCommand(c)
+	}
+
+	// ── silk-label-pads (器件端子标注) ──────────────────────────────────────────
+	// pcb.silk.label_pads — label component pads with pin numbers and/or net names.
+	{
+		var refs []string
+		var layer int
+		var content, side, alignAxis string
+		var fontSize, lineWidth float64
+		var excludeNets []string
+
+		c := &cobra.Command{
+			Use:   "silk-label-pads",
+			Short: "Label component pads with pin numbers / net names",
+			Long: `Label component pads with pin numbers and/or net names. Flexible placement:
+- X-axis align (--align-axis x): all labels same X, Y=pin-Y (vertical pin array)
+- Y-axis align (--align-axis y): all labels same Y, X=pin-X (horizontal pin array)
+- Auto-detect (default): analyzes component shape
+
+CONTENT: --content pin-number|net-name|both (default both).
+SIDE: --side auto|right|below|above|left (default auto).
+ALIGN_AXIS: --align-axis auto|x|y (default auto — x for vertical pins, y for horizontal).
+LAYER: --layer 3=TOP_SILKSCREEN (default), 4=BOTTOM_SILKSCREEN.
+
+Pair with 'pcb snapshot' for visual QA. Agent Skill can analyze pins and choose optimal layout.`,
+			Example: `  easyeda pcb silk-label-pads --refs J2
+  easyeda pcb silk-label-pads --refs J2 --align-axis x --side right
+  easyeda pcb silk-label-pads --refs J2 --align-axis y --side below
+  easyeda pcb silk-label-pads --refs J2 --content both --side auto`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				if len(refs) == 0 {
+					return fmt.Errorf("--refs required (component designators, e.g., --refs J2)")
+				}
+				payload := map[string]any{
+					"refs": refs,
+				}
+				if content != "" && content != "both" {
+					payload["content"] = content
+				}
+				if side != "" && side != "auto" {
+					payload["side"] = side
+				}
+				if alignAxis != "" && alignAxis != "auto" {
+					payload["align_axis"] = alignAxis
+				}
+				if layer > 0 {
+					payload["layer"] = layer
+				}
+				if cmd.Flags().Changed("font-size") && fontSize > 0 {
+					payload["fontSize"] = fontSize
+				}
+				if cmd.Flags().Changed("line-width") && lineWidth > 0 {
+					payload["lineWidth"] = lineWidth
+				}
+				if len(excludeNets) > 0 {
+					payload["exclude_nets"] = excludeNets
+				}
+				return dispatch(cfg, "pcb.silk.label_pads", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringSliceVar(&refs, "refs", nil, "component designators to label (required, e.g., --refs J2 --refs U1)")
+		c.Flags().IntVar(&layer, "layer", 3, "silk layer: 3=TOP_SILKSCREEN, 4=BOTTOM_SILKSCREEN (default 3)")
+		c.Flags().StringVar(&content, "content", "both", "label content: pin-number|net-name|both (default both)")
+		c.Flags().StringVar(&side, "side", "auto", "label placement side: auto|right|below|above|left (default auto)")
+		c.Flags().StringVar(&alignAxis, "align-axis", "auto", "pin alignment: auto|x (vertical)|y (horizontal) (default auto)")
+		c.Flags().Float64Var(&fontSize, "font-size", 30, "label font height (mil, default 30)")
+		c.Flags().Float64Var(&lineWidth, "line-width", 4, "label stroke width (mil, default 4)")
+		c.Flags().StringSliceVar(&excludeNets, "exclude-nets", nil, "net names to skip (e.g., --exclude-nets GND)")
+		pcb.AddCommand(c)
+	}
+
+	// pcb.silk.import_svg — import an SVG logo/artwork as a FILLED silkscreen image.
+	{
+		var file, svgStr, at string
+		var x, y, width, height, rotation, minLineWidth, flattenTol float64
+		var layer int
+		var keepAspect, mirror, dryRun bool
+		c := &cobra.Command{
+			Use:   "silk-import-svg",
+			Short: "Import an SVG logo/artwork as a FILLED silkscreen graphic",
+			Long: `Import an SVG (logo / brand mark / artwork) as a FILLED silkscreen primitive
+(eda.pcb_PrimitiveImage) — the typed path for placing a vector graphic on a PCB
+without debug.exec_js.
+
+The CLI parses the SVG, flattens every curve (Bézier/arc) to line segments,
+applies viewBox→mil scaling, and sends the resulting complex polygon (contours +
+even-odd holes, so a logo's counters punch through) to the connector, which
+creates ONE image primitive on the silk layer.
+
+PLACEMENT: --x/--y (or --at "x,y") is where the artwork's TOP-LEFT lands (mil).
+SIZE: --width and/or --height in mil; --keep-aspect forces uniform scaling. With
+only --width (or only --height) aspect is always preserved.
+LAYER: --layer 3=TOP_SILKSCREEN (default), 4=BOTTOM_SILKSCREEN (auto-mirrors).
+--rotation (deg), --mirror (horizontal), --flatten-tol (curve tolerance, mil).
+
+--dry-run parses + scales WITHOUT touching the editor and prints target bbox,
+contour count, vertex count and the min-feature size (a DFM proxy); it warns when
+min-feature < --min-line-width (JLCPCB silk minimum ≈ 6 mil).
+
+Fill rule is even-odd; stroke-only art is not stroked (all geometry is filled).
+After a real import, follow reload → pcb.silk.list / pcb check → pcb save.`,
+			Args: cobra.NoArgs,
+			Example: `  easyeda pcb silk-import-svg --file ./logo.svg --x 1000 --y -1000 --width 600 --dry-run
+  easyeda pcb silk-import-svg --file ./logo.svg --at "1000,-1000" --width 600 --keep-aspect
+  easyeda pcb silk-import-svg --file ./logo.svg --x 1000 --y -1000 --width 400 --layer 4`,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证。
+				if dryRun {
+					defer setDispatchDryRun(true)()
+				}
+				if file == "" && svgStr == "" {
+					return fmt.Errorf("provide --file <path> or --svg <string>")
+				}
+				var data []byte
+				if file != "" {
+					b, err := os.ReadFile(file)
+					if err != nil {
+						return fmt.Errorf("read --file: %w", err)
+					}
+					data = b
+				} else {
+					data = []byte(svgStr)
+				}
+
+				res, err := svgimport.Parse(strings.NewReader(string(data)), svgimport.Options{
+					TargetWidth:  width,
+					TargetHeight: height,
+					KeepAspect:   keepAspect,
+					FlattenTol:   flattenTol,
+				})
+				if err != nil {
+					return fmt.Errorf("parse svg: %w", err)
+				}
+
+				// --at "x,y" overrides --x/--y when given.
+				if at != "" {
+					ax, ay, err := parseXYPair(at)
+					if err != nil {
+						return err
+					}
+					x, y = ax, ay
+				}
+
+				// Bottom silk (layer 4) mirrors by convention unless --mirror was set explicitly.
+				if layer == 4 && !cmd.Flags().Changed("mirror") {
+					mirror = true
+				}
+
+				// EDA is y-up; the artwork's top-left lands at (x,y) and extends DOWNWARD
+				// (screen_y = y − local_y), so the rendered bbox runs y-height … y.
+				bbox := map[string]any{
+					"minX": x, "maxX": x + res.Width,
+					"minY": y - res.Height, "maxY": y,
+				}
+				dfmWarn := minLineWidth > 0 && res.MinFeature > 0 && res.MinFeature < minLineWidth
+
+				if dryRun {
+					out := map[string]any{
+						"dryRun":     true,
+						"width":      res.Width,
+						"height":     res.Height,
+						"contours":   res.PathCount,
+						"vertices":   res.PointCount,
+						"minFeature": res.MinFeature,
+						"layer":      layer,
+						"x":          x,
+						"y":          y,
+						"rotation":   rotation,
+						"mirror":     mirror,
+						"bbox":       bbox,
+					}
+					if dfmWarn {
+						out["dfmWarning"] = fmt.Sprintf("min-feature %.2f mil < %.2f mil (JLCPCB silk minimum) — thin features may be clipped in fab", res.MinFeature, minLineWidth)
+					}
+					enc := json.NewEncoder(stdout)
+					enc.SetIndent("", "  ")
+					return enc.Encode(out)
+				}
+
+				if dfmWarn {
+					fmt.Fprintf(stderr, "WARN: min-feature %.2f mil < %.2f mil (JLCPCB silk minimum) — thin features may be clipped in fab\n", res.MinFeature, minLineWidth)
+				}
+
+				payload := map[string]any{
+					"polygons": res.Polygons,
+					"x":        x,
+					"y":        y,
+					"layer":    layer,
+					"rotation": rotation,
+					"mirror":   mirror,
+				}
+				if res.Width > 0 {
+					payload["width"] = res.Width
+				}
+				if res.Height > 0 {
+					payload["height"] = res.Height
+				}
+				return dispatch(cfg, "pcb.silk.import_svg", window, payload, stdout, stderr)
+			},
+		}
+		c.Flags().StringVar(&file, "file", "", "path to an SVG file")
+		c.Flags().StringVar(&svgStr, "svg", "", "inline SVG string (alternative to --file)")
+		c.Flags().Float64Var(&x, "x", 0, "artwork top-left X (mil)")
+		c.Flags().Float64Var(&y, "y", 0, "artwork top-left Y (mil)")
+		c.Flags().StringVar(&at, "at", "", `artwork top-left as "x,y" (mil; overrides --x/--y)`)
+		c.Flags().Float64Var(&width, "width", 0, "target width (mil; 0 = intrinsic)")
+		c.Flags().Float64Var(&height, "height", 0, "target height (mil; 0 = derive from aspect)")
+		c.Flags().BoolVar(&keepAspect, "keep-aspect", false, "force uniform scaling when both width & height are given")
+		c.Flags().Float64Var(&rotation, "rotation", 0, "rotation (deg)")
+		c.Flags().BoolVar(&mirror, "mirror", false, "horizontal mirror (auto-true for --layer 4)")
+		c.Flags().IntVar(&layer, "layer", 3, "silk layer: 3=TOP_SILKSCREEN, 4=BOTTOM_SILKSCREEN")
+		c.Flags().Float64Var(&flattenTol, "flatten-tol", 2, "curve flattening tolerance (mil)")
+		c.Flags().Float64Var(&minLineWidth, "min-line-width", 6, "DFM min silk feature (mil); warns below this")
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "parse + scale only; print bbox/contours/min-feature without editing")
+		pcb.AddCommand(c)
+	}
+
+	// ── length constraints (#176) — see cmd_pcb_constraints.go ────────────
+	addPcbConstraintCmds(pcb, cfg, &window, stdout, stderr)
+
+	return pcb
+}
+
+// parseXYPair parses an "x,y" string into two floats (mil), used by
+// silk-import-svg's --at shortcut.
+func parseXYPair(s string) (float64, float64, error) {
+	parts := strings.Split(s, ",")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("expected \"x,y\", got %q", s)
+	}
+	x, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid x in %q: %w", s, err)
+	}
+	y, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid y in %q: %w", s, err)
+	}
+	return x, y, nil
+}
+
+// parseRoutedNets extracts the set of nets that already have copper tracks from a
+// pcb.line.list result, so route-short skips them.
+func parseRoutedNets(result map[string]any) map[string]bool {
+	out := map[string]bool{}
+	var arr []any
+	for _, key := range []string{"tracks", "lines"} {
+		if a, ok := result[key].([]any); ok {
+			arr = a
+			break
+		}
+	}
+	for _, ri := range arr {
+		if m, ok := ri.(map[string]any); ok {
+			if net := asString(m["net"]); net != "" {
+				out[net] = true
+			}
+		}
+	}
+	return out
+}
+
+// parseApComps converts a pcb.components.list result (with includePads +
+// includeBBox) into the planner's component slice. Missing/odd fields degrade to
+// zero values; a component with no bbox is flagged so the planner skips it.
+func parseApComps(result map[string]any) []apComp {
+	raw, _ := result["components"].([]any)
+	out := make([]apComp, 0, len(raw))
+	for _, ri := range raw {
+		cm, ok := ri.(map[string]any)
+		if !ok {
+			continue
+		}
+		c := apComp{
+			id:         asString(cm["primitiveId"]),
+			designator: asString(cm["designator"]),
+			x:          asFloat(cm["x"]),
+			y:          asFloat(cm["y"]),
+			rotation:   asFloat(cm["rotation"]),
+			locked:     asBool(cm["locked"]),
+		}
+		if bb, ok := cm["bbox"].(map[string]any); ok {
+			c.hasBBox = true
+			c.minX, c.minY = asFloat(bb["minX"]), asFloat(bb["minY"])
+			c.maxX, c.maxY = asFloat(bb["maxX"]), asFloat(bb["maxY"])
+		}
+		if pads, ok := cm["pads"].([]any); ok {
+			for _, pi := range pads {
+				pm, ok := pi.(map[string]any)
+				if !ok {
+					continue
+				}
+				c.pads = append(c.pads, apPad{
+					num:   asString(pm["padNumber"]),
+					net:   asString(pm["net"]),
+					x:     asFloat(pm["x"]),
+					y:     asFloat(pm["y"]),
+					layer: int(asFloat(pm["layer"])),
+					w:     asFloat(pm["width"]), // real extents (0 = old connector)
+					h:     asFloat(pm["height"]),
+				})
+			}
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// apMainDesignators lists which components the planner treats as anchors, for the report.
+func apMainDesignators(comps []apComp, opt apOptions) []string {
+	var out []string
+	for _, c := range comps {
+		if c.hasBBox && isMainComp(c, opt) { // the SAME judge planAutoPlace uses (#131)
+			out = append(out, c.designator)
+		}
+	}
+	return out
+}
+
+func asBool(v any) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
+}
+
+// pourClearanceRaiseJS builds the connector-side script for `pcb drc-rules-set
+// --pour-clearance`. It patches every lineClearance row under the Plane rules
+// (copperRegion multi/single pad models + innerPlane) of the CURRENT rule
+// configuration, raise-only, then writes the config back and verifies by
+// re-reading. Two platform traps are baked in: overwriteCurrentRuleConfiguration
+// takes the BARE config content (passing the {name, config} wrapper from
+// getCurrentRuleConfiguration silently no-ops), and system presets are
+// immutable (a successful write turns the board's config into 自定义配置).
+
+func pourClearanceRaiseJS(mil float64) string {
+	mm := mil * 0.0254
+	return fmt.Sprintf(`
+const MIN_MM = %.6f;
+const cfg = await eda.pcb_Drc.getCurrentRuleConfiguration();
+if (!cfg || !cfg.config) throw new Error('getCurrentRuleConfiguration returned no config — is a PCB the active document?');
+function planeModels(config) {
+  const plane = config['Plane'] || {};
+  const models = [];
+  try {
+    const cr = plane['Copper Zone'].copperRegion.form;
+    if (cr.multiLayerPadModel && cr.multiLayerPadModel.data) models.push(['copperRegion.multiLayerPadModel', cr.multiLayerPadModel.data]);
+    if (cr.singleLayerPadModel && cr.singleLayerPadModel.data) models.push(['copperRegion.singleLayerPadModel', cr.singleLayerPadModel.data]);
+  } catch (e) {}
+  try {
+    const ip = plane['Plane Zone'].innerPlane.form;
+    if (ip.data) models.push(['innerPlane', ip.data]);
+  } catch (e) {}
+  return models;
+}
+const models = planeModels(cfg.config);
+if (!models.length) throw new Error('no Plane pour/innerPlane rules found in the current configuration');
+const before = {}, after = {};
+let changed = false;
+for (const [label, data] of models) {
+  for (const [row, entry] of Object.entries(data)) {
+    if (!entry || typeof entry.lineClearance !== 'number') continue;
+    const key = label + '[' + row + ']';
+    before[key] = entry.lineClearance;
+    if (entry.lineClearance < MIN_MM - 1e-9) { entry.lineClearance = MIN_MM; changed = true; }
+    after[key] = entry.lineClearance;
+  }
+}
+let writeOk = null, verified = null;
+if (changed) {
+  // MUST pass the bare config content — the {name, config} wrapper silently no-ops.
+  writeOk = await eda.pcb_Drc.overwriteCurrentRuleConfiguration(cfg.config);
+  const again = await eda.pcb_Drc.getCurrentRuleConfiguration();
+  verified = true;
+  for (const [label, data] of planeModels(again && again.config || {})) {
+    for (const [row, entry] of Object.entries(data)) {
+      if (!entry || typeof entry.lineClearance !== 'number') continue;
+      if (entry.lineClearance < MIN_MM - 1e-6) verified = false;
+    }
+  }
+  if (writeOk !== true || !verified) throw new Error('rule write did not stick (writeOk=' + writeOk + ', verified=' + verified + ') — is the active document a PCB?');
+}
+const configName = await eda.pcb_Drc.getCurrentRuleConfigurationName();
+return { targetMil: %.4g, targetMm: MIN_MM, changed, writeOk, verified, configName, before, after,
+         hint: changed ? 'run "easyeda pcb pour-rebuild" so existing pours reflow under the new clearance; on a freshly CREATED PCB also run "easyeda doc reload" first — its reflow keeps the creation-time rules snapshot until the document is reopened' : 'already at or above target — nothing written' };
+`, mm, mil)
+}
+
+// runPcbClearVerified is `pcb clear`'s default compound flow (#121):
+//
+//	clear (pass 1) → pcb.save → doc reload → clear (pass 2) → dry-run count
+//
+// The in-call enumeration loop (#112) cured handler-side staleness, but some
+// primitives are only MATERIALIZED by the engine on save/reload — no
+// enumeration inside the first handler call can ever see them (R2: 3 tracks
+// surfaced only after reload). Pass 2 after a real reload is exactly the
+// manual workaround, mechanized; the final dry-run proves (or honestly
+// disproves) that the board is now empty.
+func runPcbClearVerified(cfg *appConfig, window string, payload map[string]any,
+	only string, noPreserveOutline, includeLocked bool, stdout, stderr io.Writer) error {
+	// Pass 1.
+	r1, err := requestAction(cfg, "pcb.page.clear", window, payload)
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"ok": true, "verified": false, "pass1": r1.Result}
+
+	// Save + reload the active document (must be the PCB the clear just ran on).
+	cur, err := requestAction(cfg, "document.current", window, nil)
+	if err != nil || cur.Context == nil || cur.Context.DocumentUUID == "" {
+		fmt.Fprintf(stderr, "warning: could not resolve the active document for the verify pass (%v) — cleared once, NOT verified; run `easyeda doc reload` then `pcb clear --dry-run` to check for reload-materialized leftovers (#121)\n", err)
+		return writeJSON(stdout, out)
+	}
+	if _, err := reloadDocumentByUUID(cfg, window, cur.Context.DocumentUUID); err != nil {
+		fmt.Fprintf(stderr, "warning: reload for the verify pass failed (%v) — cleared once, NOT verified (#121)\n", err)
+		return writeJSON(stdout, out)
+	}
+
+	// Pass 2: whatever the reload materialized.
+	r2, err := requestAction(cfg, "pcb.page.clear", window, payload)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: verify-pass clear failed (%v) — pass 1 applied, leftovers unknown (#121)\n", err)
+		return writeJSON(stdout, out)
+	}
+	out["pass2"] = r2.Result
+
+	// Final proof: a dry-run count of what would STILL be deleted (usually 0).
+	//
+	// `dryRun:true` 的 page.clear 只枚举不删；这里用它统计 pass2 后还剩多少，
+	// 为 verified 结论提供实际回读证据。
+	dryPayload, err := buildPcbClearPayload(only, true, noPreserveOutline, includeLocked)
+	if err == nil {
+		r3, derr := requestReadAfterWrite(cfg, "pcb.page.clear", window, dryPayload,
+			"pcb clear 写后回读:pass2 之后数还剩多少可删(#121 的证实读)")
+		if derr == nil {
+			out["remainingAfterVerify"] = r3.Result
+		} else {
+			fmt.Fprintf(stderr, "warning: post-verify dry-run count failed (%v) — cleared twice, remaining count unknown (#121)\n", derr)
+		}
+	}
+	out["verified"] = true
+	out["note"] = "verify pass ran: pass1 = in-call clear, pass2 = reload-materialized leftovers (#121); remainingAfterVerify is the post-verify dry-run count — non-zero means locked/preserved primitives or a deeper engine issue"
+	return writeJSON(stdout, out)
+}
+
+// syncSchAttrsToPcb backfills PCB components' EMPTY otherProperty values from
+// their DEVICE-LIBRARY records (resolved by each part's LCSC C-number on the
+// connector side) — repairing the platform's sch→PCB import, which creates the
+// attribute KEYS but leaves the VALUES empty, blanking the 器件标准化 panel's
+// PCB columns. The schematic is NOT a usable source (its instance values are
+// empty after save/reload too — live-verified), so everything runs against the
+// PCB + the library; no page switching involved.
+func syncSchAttrsToPcb(cfg *appConfig, window string, overwrite bool, out io.Writer) error {
+	payload := map[string]any{}
+	if overwrite {
+		payload["overwrite"] = true
+	}
+	res, err := requestActionTimed(cfg, "pcb.component.attrs_backfill", window, payload, rebindTimeout)
+	if err != nil {
+		return err
+	}
+	updated, _ := res.Result["updatedCount"].(float64)
+	withLcsc, _ := res.Result["partsWithLcsc"].(float64)
+	fmt.Fprintf(out, "sync-attrs: %d/%d PCB component(s) backfilled from the device library\n",
+		int(updated), int(withLcsc))
+	if um, ok := res.Result["unresolvedDesignators"].([]any); ok && len(um) > 0 {
+		fmt.Fprintf(out, "⚠ sync-attrs: %d part(s) whose C-number did not resolve in the library: %v\n", len(um), um)
+	}
+	if nl, ok := res.Result["noLcscDesignators"].([]any); ok && len(nl) > 0 {
+		fmt.Fprintf(out, "ℹ sync-attrs: %d part(s) without an LCSC C-number skipped: %v\n", len(nl), nl)
+	}
+	return nil
+}

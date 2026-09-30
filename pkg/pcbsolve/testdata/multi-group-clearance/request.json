@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1, "units": "mil", "maxStates": 200000, "maxCandidates": 1,
+  "layout": {
+    "minGap": 5, "maxStates": 2000, "maxCandidates": 3,
+    "fixedRefs": ["U1", "J1"],
+    "keepouts": [{
+      "id": "lower-mechanical-area",
+      "bbox": {"minX": 100, "minY": 0, "maxX": 210, "maxY": 60},
+      "layers": [1]
+    }],
+    "groups": [
+      {
+        "id": "blocker", "anchorRef": "M1", "refs": ["M1", "C1"],
+        "fixedAxes": ["x", "rotation"],
+        "translationSearch": {"step": 10, "maxDistance": 80}
+      },
+      {
+        "id": "dependent", "anchorRef": "M2", "refs": ["M2", "C2"],
+        "fixedAxes": ["y", "rotation"],
+        "translationSearch": {"step": 10, "maxDistance": 60}
+      }
+    ]
+  },
+  "routing": {
+    "step": 10, "maxDetour": 0, "maxStates": 100000,
+    "demands": [
+      {"id": "a", "net": "A", "from": "U1.1", "to": "J1.1", "width": 4, "layers": [1], "maxVias": 0},
+      {"id": "b", "net": "B", "from": "U1.2", "to": "J1.2", "width": 4, "layers": [1], "maxVias": 0},
+      {"id": "external", "net": "EXT", "from": "U1.3", "to": "M1.3", "width": 4, "layers": [2], "maxVias": 0}
+    ]
+  }
+}

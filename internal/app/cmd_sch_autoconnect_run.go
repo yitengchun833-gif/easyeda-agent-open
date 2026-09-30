@@ -1,0 +1,1060 @@
+package app
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/zhoushoujianwork/easyeda-agent/internal/protocol"
+)
+
+// ── autoconnect orchestration (I/O side; the scorer in cmd_sch_autoconnect.go is pure) ──
+
+// acSpec is the batch `--spec` JSON shape (issue #24).
+type acSpec struct {
+	Connections []acSpecConn `json:"connections"`
+	Rules       *acSpecRules `json:"rules"`
+}
+
+type acSpecConn struct {
+	Pin  string   `json:"pin"`
+	X    *float64 `json:"x"`
+	Y    *float64 `json:"y"`
+	Kind string   `json:"kind"`
+	Net  string   `json:"net"`
+}
+
+// acSpecRules mirrors the rules block; pointer fields so an omitted key keeps the
+// default instead of zeroing it.
+type acSpecRules struct {
+	AvoidTitleBlock *bool     `json:"avoidTitleBlock"`
+	AvoidPinFanout  *bool     `json:"avoidPinFanout"`
+	StaggerLabels   *bool     `json:"staggerLabels"`
+	OffsetRange     []float64 `json:"offsetRange"`
+	OffsetStep      *float64  `json:"offsetStep"`
+	MinLabelGap     *float64  `json:"minLabelGap"`
+}
+
+// applyTo overlays the spec's rules onto a base ruleset.
+func (r *acSpecRules) applyTo(base autoconnectRules) autoconnectRules {
+	if r == nil {
+		return base
+	}
+	if r.AvoidTitleBlock != nil {
+		base.AvoidTitleBlock = *r.AvoidTitleBlock
+	}
+	if r.AvoidPinFanout != nil {
+		base.AvoidPinFanout = *r.AvoidPinFanout
+	}
+	if r.StaggerLabels != nil {
+		base.StaggerLabels = *r.StaggerLabels
+	}
+	if len(r.OffsetRange) == 2 {
+		base.OffsetMin, base.OffsetMax = r.OffsetRange[0], r.OffsetRange[1]
+	}
+	if r.OffsetStep != nil {
+		base.OffsetStep = *r.OffsetStep
+	}
+	if r.MinLabelGap != nil {
+		base.MinLabelGap = *r.MinLabelGap
+	}
+	return base
+}
+
+// acConnSpec is the normalized form of one connection to plan, after merging CLI
+// flags / spec entries.
+type acConnSpec struct {
+	PinRef string   // "U1:41" (for reporting / coordinate resolution); empty when explicit coords given
+	X, Y   *float64 // explicit coordinate override
+	Kind   string   // raw CLI/spec kind ("gnd", "power", "netport", …)
+	Net    string
+}
+
+// acConnResult is the per-connection output (issue #24 result shape).
+type acConnResult struct {
+	Pin             string       `json:"pin,omitempty"`
+	Net             string       `json:"net"`
+	Kind            string       `json:"kind"`
+	PinX            float64      `json:"pinX"`
+	PinY            float64      `json:"pinY"`
+	Selected        *acCandidate `json:"selected,omitempty"`
+	Rejected        []acRejected `json:"rejected,omitempty"`
+	WirePrimitiveID string       `json:"wirePrimitiveId,omitempty"`
+	FlagPrimitiveID string       `json:"flagPrimitiveId,omitempty"`
+	// Retried 记这一脚是重试后才连上的。**必须可见**:它是平台随机卡死的
+	// 唯一现场证据,报告里不体现的话,一条重试救回来的连接看起来和一次就成的
+	// 完全一样,谁也不会知道这条路正在变差(还是变好)。
+	Retried bool   `json:"retried,omitempty"`
+	DryRun  bool   `json:"dryRun,omitempty"`
+	Error   string `json:"error,omitempty"`
+	// Warning 是「连上了,但落点带痕」的现场提示:选中候选 score 超过软阈值,或
+	// reasons 里含碰撞类惩罚。此前唯一的门是 score≥1e9 硬拒,软惩罚累加成千分照样
+	// 静默入选(真机:score=1737 的 down/78 长桩扎进邻组标签区,报告只显示落选项)。
+	Warning string `json:"warning,omitempty"`
+	// State is the idempotency decision (issue #50): "new" (planned/connected),
+	// "already-connected" (skipped), or "conflict" (blocked, or replaced under
+	// --replace). CurrentNet is the pin's pre-existing net when known.
+	State      acConnState `json:"state,omitempty"`
+	CurrentNet string      `json:"currentNet,omitempty"`
+	Replaced   bool        `json:"replaced,omitempty"`
+}
+
+type acRejected struct {
+	Direction string  `json:"direction"`
+	Offset    float64 `json:"offset"`
+	Score     float64 `json:"score"`
+	Reason    string  `json:"reason"`
+}
+
+// acReport is the whole autoconnect run.
+type acReport struct {
+	OK bool `json:"ok"`
+	// Partial-run bookkeeping (issue #146): when a batch is interrupted mid-way
+	// (connector drop) some pins connect and some fail. Partial=true then, with the
+	// pin refs split into Succeeded/Failed so a retry re-does ONLY the failures
+	// instead of replaying the whole spec (which stacks duplicate markers — caught
+	// by `sch check`'s duplicate-net-marker rule).
+	Partial               bool           `json:"partial,omitempty"`
+	Succeeded             []string       `json:"succeeded,omitempty"`
+	Failed                []string       `json:"failed,omitempty"`
+	Connections           []acConnResult `json:"connections"`
+	TitleBlockProvisional bool           `json:"titleBlockProvisional,omitempty"`
+	Note                  string         `json:"note,omitempty"`
+}
+
+// buildScene pulls real geometry from schematic.components.list and assembles the
+// scoring scene: part bboxes, every pin (tagged with owner), existing flag/port/
+// label bboxes, and a title-block keep-out derived from the sheet bbox (or a
+// reported provisional fallback when no sheet bbox is exposed).
+func buildScene(result map[string]any) acScene {
+	scene := acScene{}
+	raw, _ := result["components"].([]any)
+	var sheet *layoutBBox
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		ctype := asString(m["componentType"])
+		var box *layoutBBox
+		if bm, ok := m["bbox"].(map[string]any); ok {
+			box = &layoutBBox{
+				MinX: asFloat(bm["minX"]), MinY: asFloat(bm["minY"]),
+				MaxX: asFloat(bm["maxX"]), MaxY: asFloat(bm["maxY"]),
+			}
+		}
+		switch ctype {
+		case "part", "":
+			if box != nil {
+				scene.Parts = append(scene.Parts, *box)
+			}
+			designator := asString(m["designator"])
+			if amb, _ := m["netAmbiguous"].(bool); amb && designator != "" {
+				scene.AmbiguousDesignators = append(scene.AmbiguousDesignators, designator)
+			}
+			hasPins := false
+			if pins, ok := m["pins"].([]any); ok {
+				for _, pp := range pins {
+					pm, ok := pp.(map[string]any)
+					if !ok {
+						continue
+					}
+					hasPins = true
+					var pinRotation *float64
+					if rv, ok := pm["rotation"]; ok {
+						r := asFloat(rv)
+						pinRotation = &r
+					}
+					// The extension attaches each pin's current net as `net`:
+					// a string (possibly "") when the netlist is available, or
+					// null when it isn't. asString collapses null → "", so use
+					// presence-of-key to decide NetKnown.
+					netVal, netKnown := pm["net"]
+					scene.Pins = append(scene.Pins, acPin{
+						X:           asFloat(pm["x"]),
+						Y:           asFloat(pm["y"]),
+						Designator:  designator,
+						PinNumber:   asString(pm["pinNumber"]),
+						PinName:     asString(pm["pinName"]),
+						OwnerBBox:   box,
+						PinRotation: pinRotation,
+						Net:         asString(netVal),
+						NetKnown:    netKnown && netVal != nil,
+					})
+				}
+			}
+			if designator != "" {
+				scene.Components = append(scene.Components, acComponent{
+					Designator: designator,
+					HasPins:    hasPins,
+					PageUuid:   asString(m["pageUuid"]),
+					PageName:   asString(m["pageName"]),
+				})
+			}
+		case "netflag", "netport", "netlabel":
+			if box != nil {
+				scene.Flags = append(scene.Flags, *box)
+			}
+		case "sheet":
+			if box != nil {
+				sheet = box
+			}
+		}
+	}
+	scene.Wires = buildWireSegments(result)
+	scene.TitleBlock, scene.TitleBlockProvisional = titleBlockKeepout(sheet)
+	return scene
+}
+
+// buildWireSegments parses the extension's `wires` payload (issue #64) into the
+// scene's wire segments. The extension emits one entry per polyline edge:
+// {x0,y0,x1,y1, net}. Missing/malformed entries are skipped so a partial payload
+// degrades gracefully rather than panicking the scorer.
+func buildWireSegments(result map[string]any) []wireSegment {
+	raw, _ := result["wires"].([]any)
+	if len(raw) == 0 {
+		return nil
+	}
+	segs := make([]wireSegment, 0, len(raw))
+	for _, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		segs = append(segs, wireSegment{
+			X0:  asFloat(m["x0"]),
+			Y0:  asFloat(m["y0"]),
+			X1:  asFloat(m["x1"]),
+			Y1:  asFloat(m["y1"]),
+			Net: asString(m["net"]),
+		})
+	}
+	return segs
+}
+
+// titleBlockKeepout derives the title-block keep-out for the autoconnect scorer.
+// It delegates to deriveSheetGeometry (the issue #26 single source of the keep-out
+// ratio) so the geometry is computed in exactly one place. When the sheet bbox is
+// NOT exposed it reports a provisional fallback and applies NO geometric penalty
+// (returning nil), so a guessed absolute box can't corrupt scoring — the caller
+// still surfaces `titleBlockProvisional` so a human knows it was not enforced.
+func titleBlockKeepout(sheet *layoutBBox) (*layoutBBox, bool) {
+	if sheet == nil {
+		return nil, true // provisional: not applied
+	}
+	g := deriveSheetGeometry(sheet, nil)
+	if g.TitleBlock.BBox == nil {
+		return nil, true // could not derive (e.g. degenerate bbox) → not enforced
+	}
+	return g.TitleBlock.BBox, false
+}
+
+// acPinFanoutSuffix marks a pin reference that must fan out to EVERY pin sharing
+// that FUNCTION NAME on the component: "J1:VBUS*".
+//
+// Connectors legitimately carry the same function on several pins — USB-C 16P has
+// 2×VBUS, 2×GND and 4×EP; headers and shield tabs do the same. Referring to them by
+// name is ambiguous and correctly rejected (autoconnect must not pick one for you),
+// but for these the intent is invariably "bond them ALL to this net" — USB-C's dual
+// orientation in fact REQUIRES both the A- and B-side pins be connected. The star is
+// how a block says that out loud, instead of the planner guessing from the net's kind.
+const acPinFanoutSuffix = "*"
+
+// expandPinFanouts rewrites every "DESIG:NAME*" spec into one spec per matching pin,
+// keyed by pin NUMBER so each is unambiguous downstream. A star that matches nothing
+// keeps the plain name so resolvePinCoord issues its canonical "not found" diagnosis
+// (naming a real pin, not the wildcard). Order is deterministic: pins sort by number.
+func expandPinFanouts(scene acScene, conns []acConnSpec) []acConnSpec {
+	out := make([]acConnSpec, 0, len(conns))
+	for _, c := range conns {
+		desig, name, ok := strings.Cut(c.PinRef, ":")
+		if !ok || !strings.HasSuffix(name, acPinFanoutSuffix) {
+			out = append(out, c)
+			continue
+		}
+		want := strings.TrimSuffix(name, acPinFanoutSuffix)
+		var numbers []string
+		for _, p := range scene.Pins {
+			if p.Designator == desig && (p.PinName == want || p.PinNumber == want) {
+				numbers = append(numbers, p.PinNumber)
+			}
+		}
+		if len(numbers) == 0 {
+			c.PinRef = desig + ":" + want
+			out = append(out, c)
+			continue
+		}
+		sort.Strings(numbers)
+		for _, n := range numbers {
+			exp := c
+			exp.PinRef = desig + ":" + n
+			out = append(out, exp)
+		}
+	}
+	return out
+}
+
+// resolvePinCoord finds a pin's coordinate from a "designator:pinNumberOrName"
+// reference against the scene's pins.
+func resolvePinCoord(scene acScene, ref string) (acPin, error) {
+	parts := strings.SplitN(ref, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return acPin{}, fmt.Errorf("invalid --pin %q; expected DESIGNATOR:PIN, e.g. U1:41 or U1:3V3", ref)
+	}
+	desig, token := parts[0], parts[1]
+	var matches []acPin
+	for _, p := range scene.Pins {
+		if p.Designator == desig && (p.PinNumber == token || p.PinName == token) {
+			matches = append(matches, p)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		// The pin isn't on the active page. Before blaming a typo, check whether
+		// the component itself IS known to the scene but has no pins here — that's
+		// the tell for "placed on another page" (mutations only land on the active
+		// page, so its pins never came through). Give an actionable switch hint
+		// instead of the misleading "not placed".
+		for _, comp := range scene.Components {
+			if comp.Designator == desig && !comp.HasPins {
+				return acPin{}, fmt.Errorf("%s", offPageHint(ref, comp))
+			}
+		}
+		return acPin{}, fmt.Errorf("no pin %q found (component %q not placed, or pin number/name mismatch — check `easyeda sch list --include-pins`)", ref, desig)
+	default:
+		nums := make([]string, 0, len(matches))
+		for _, m := range matches {
+			nums = append(nums, m.PinNumber)
+		}
+		sort.Strings(nums)
+		return acPin{}, fmt.Errorf("pin reference %q is ambiguous (%d matches: %s); use the pin NUMBER, "+
+			"or %q to bond ALL of them to the net (right for a connector's redundant VBUS/GND/shield pins)",
+			ref, len(matches), strings.Join(nums, " "), ref+acPinFanoutSuffix)
+	}
+}
+
+// offPageHint builds the "this component is on another page — switch first"
+// message. When the extension supplies the owning page's uuid/name it points at
+// the exact `doc switch` target; otherwise it degrades to a generic hint (the
+// current EDA API can't attribute a component to a page without switching to it,
+// so pageUuid/pageName may be empty).
+func offPageHint(ref string, comp acComponent) string {
+	base := fmt.Sprintf("no pin %q found on the active page: component %q is placed on ANOTHER schematic page", ref, comp.Designator)
+	if comp.PageUuid != "" {
+		where := comp.PageUuid
+		if comp.PageName != "" {
+			where = fmt.Sprintf("%s (%s)", comp.PageName, comp.PageUuid)
+		}
+		return fmt.Sprintf("%s: %s — switch to it first: `easyeda doc switch %s`. Note: --all-pages only widens candidate scoring, it does NOT build wires across pages.", base, where, comp.PageUuid)
+	}
+	return fmt.Sprintf("%s — switch to that page first with `easyeda doc switch <page>` (see `easyeda doc ls`). Note: --all-pages only widens candidate scoring, it does NOT build wires across pages.", base)
+}
+
+// acRunOpts 汇集一次 autoconnect 运行的开关位。加新开关时在这里加字段,而不是
+// 继续拉长 runAutoconnect 的布尔参数列(旧签名保留给既有调用方)。
+type acRunOpts struct {
+	AllPages bool
+	DryRun   bool
+	Replace  bool
+	JSON     bool
+	// Strict:选中候选「落点带痕」(见 selectedCandidateWarning)时直接失败不落地,
+	// 而不是打 WARN 后照连。
+	Strict bool
+}
+
+// runAutoconnect is the command core: build the scene once, then plan → (dispatch)
+// each connection sequentially, staggering later labels off earlier placements.
+// 兼容旧签名的入口;需要报告(成败清单)或 --strict 的调用方用 runAutoconnectOpts。
+func runAutoconnect(cfg *appConfig, window string, conns []acConnSpec, rules autoconnectRules, allPages, dryRun, replace, asJSON bool, stdout, stderr io.Writer) error {
+	_, err := runAutoconnectOpts(cfg, window, conns, rules,
+		acRunOpts{AllPages: allPages, DryRun: dryRun, Replace: replace, JSON: asJSON}, stdout, stderr)
+	return err
+}
+
+// runAutoconnectOpts 是真正的运行核心,返回整份报告(Succeeded/Failed 清单),
+// 让调用方(如 group-move 的失败恢复段)拿到结构化的成败,而不是解析错误文案。
+func runAutoconnectOpts(cfg *appConfig, window string, conns []acConnSpec, rules autoconnectRules, opts acRunOpts, stdout, stderr io.Writer) (acReport, error) {
+	allPages, dryRun, replace, asJSON := opts.AllPages, opts.DryRun, opts.Replace, opts.JSON
+	// Validate the entire batch before creating any stubs, even in --dry-run.
+	// Pin the same window for the capability check and all following actions.
+	for _, c := range conns {
+		kind, _ := resolveNetflagKind(c.Kind)
+		if kind != "net_label" {
+			continue
+		}
+		windows, err := listWindows(cfg)
+		if err != nil {
+			return acReport{}, err
+		}
+		window, err = selectWindow(windows, cfg.project, window)
+		if err != nil {
+			return acReport{}, err
+		}
+		hostVersion := ""
+		for _, w := range windows {
+			if w.WindowID == window {
+				hostVersion = w.EasyEDAVersion
+			}
+		}
+		if err := protocol.NativeNetLabelSupport(hostVersion); err != nil {
+			return acReport{}, fmt.Errorf("HOST_API_UNSUPPORTED: %w", err)
+		}
+		break
+	}
+	// ADR-0004 Decision 4: dry-run 必须纯计算 —— 机械保证,Mutates 派发直接被拒。
+	if dryRun {
+		defer setDispatchDryRun(true)()
+	}
+	res, err := requestAction(cfg, "schematic.components.list", window, map[string]any{
+		"includeBBox": true,
+		"includePins": true,
+		// includeWires attaches existing wire segments (issue #64) so the scorer can
+		// hard-reject any stub that would touch a foreign-net wire (silent merge).
+		"includeWires": true,
+		"allPages":     allPages,
+		// With --all-pages, parts on non-active pages come through pin-less; tagPages
+		// attributes each to its owning page so an off-page pin ref yields a precise
+		// `doc switch` hint instead of a misleading "not placed".
+		"tagPages": allPages,
+	})
+	if err != nil {
+		return acReport{}, err
+	}
+	// 同侧 lane 台账:器件+方向 → 该侧已用的最大 offset。逐 pin 贪心在相邻脚上
+	// 必然失败(见 applyLaneStagger),必须记住同一侧已经落到哪儿了。
+	lanes := map[string]float64{}
+	scene := buildScene(res.Result)
+	// 电路说明(自由文本)也是页面上的占位对象 —— components.list **不返回文本**,
+	// 必须单独拉一次 text.list,否则 marker 会直接压在说明上(ADR-0003:注释与器件
+	// 同级)。平台不给文本 bbox,用 schNoteBBoxEstimate 按字数估;读不到就退化成
+	// 「看不见文字」的旧行为,不阻断连线。
+	if tres, terr := requestAction(cfg, "schematic.text.list", window, map[string]any{}); terr == nil {
+		for _, t := range parseZoneMoveTexts(tres.Result) {
+			scene.Texts = append(scene.Texts, schNoteBBoxEstimate(t))
+		}
+	} else {
+		fmt.Fprintf(stderr, "warn: 取不到页面文本(%v)—— 本轮 marker 落点看不见电路说明,可能压在说明上\n", terr)
+	}
+	// "DESIG:NAME*" fans out to every pin carrying that function name (a connector's
+	// redundant VBUS/GND/shield pins) before anything is planned, so each resulting
+	// connection is an ordinary unambiguous pin-number spec.
+	conns = expandPinFanouts(scene, conns)
+
+	report := acReport{OK: true, TitleBlockProvisional: scene.TitleBlockProvisional}
+	if scene.TitleBlockProvisional && rules.AvoidTitleBlock {
+		report.Note = "no sheet bbox exposed — title-block keep-out is provisional and was NOT geometrically enforced"
+	}
+	if len(scene.AmbiguousDesignators) > 0 {
+		amb := fmt.Sprintf("designator(s) %s collide across schematic pages — their pin→net state is untrustworthy and treated as unknown; rename to unique designators (issue #136)",
+			strings.Join(scene.AmbiguousDesignators, ", "))
+		if report.Note != "" {
+			report.Note += "; " + amb
+		} else {
+			report.Note = amb
+		}
+	}
+
+	for _, c := range conns {
+		cr := acConnResult{Net: c.Net, Kind: c.Kind, DryRun: dryRun}
+
+		canonicalKind, kerr := resolveNetflagKind(c.Kind)
+		if kerr != nil {
+			cr.Error = kerr.Error()
+			report.OK = false
+			report.Connections = append(report.Connections, cr)
+			continue
+		}
+
+		// Resolve pin coordinate: explicit --x/--y wins; else designator:pin.
+		var pin acPin
+		if c.X != nil && c.Y != nil {
+			pin = acPin{X: *c.X, Y: *c.Y}
+		} else if c.PinRef != "" {
+			cr.Pin = c.PinRef
+			p, perr := resolvePinCoord(scene, c.PinRef)
+			if perr != nil {
+				cr.Error = perr.Error()
+				report.OK = false
+				report.Connections = append(report.Connections, cr)
+				continue
+			}
+			pin = p
+		} else {
+			cr.Error = "no pin coordinate: pass --pin DESIGNATOR:PIN or both --x and --y"
+			report.OK = false
+			report.Connections = append(report.Connections, cr)
+			continue
+		}
+		cr.PinX, cr.PinY = pin.X, pin.Y
+
+		// Idempotency decision (issue #50): classify the pin's current net BEFORE
+		// planning/mutating so a repeat run doesn't stack duplicate flags+wires.
+		state := decideConnState(pin.Net, pin.NetKnown, c.Net)
+		cr.State = state
+		if pin.NetKnown {
+			cr.CurrentNet = pin.Net
+		}
+
+		switch state {
+		case acStateAlreadyConnected:
+			// Pin is already on the target net — nothing to do, and NOT an error.
+			// Skip planning entirely so no candidate is reported as "would place".
+			report.Connections = append(report.Connections, cr)
+			continue
+		case acStateConflict:
+			if !replace {
+				cr.Error = fmt.Sprintf("pin already connected to net %q, not %q; pass --replace to delete the old flag+wire and reconnect", pin.Net, c.Net)
+				report.OK = false
+				report.Connections = append(report.Connections, cr)
+				continue
+			}
+			// --replace: on a real run, remove the old stub (wire+flag together, so
+			// no orphan wire — see #51) before reconnecting. In dry-run we only
+			// report the intent.
+			cr.Replaced = true
+			if !dryRun {
+				if _, derr := requestAction(cfg, "schematic.pin.disconnect", window, map[string]any{
+					"pinX": pin.X,
+					"pinY": pin.Y,
+				}); derr != nil {
+					cr.Error = fmt.Sprintf("replace: failed to disconnect old net %q: %v", pin.Net, derr)
+					report.OK = false
+					report.Connections = append(report.Connections, cr)
+					continue
+				}
+			}
+		}
+
+		// 这一侧已经排到哪儿了,决定候选要铺多远:布局推开器件腾出的空间,只有被
+		// 枚举到才用得上(真机:腾了 276,而上界卡在 240,第 6 个 marker 排不进去)。
+		laneFloor := 0.0
+		for _, dir := range acDirections {
+			used, ok := lanes[laneKeyOf(pin.Designator, dir)]
+			if !ok {
+				continue
+			}
+			if need := used + laneStepFor(canonicalKind, c.Net); need > laneFloor {
+				laneFloor = need
+			}
+		}
+		all := planConnection(pin, canonicalKind, c.Net, scene, rules, laneFloor)
+		selected := applyLaneStagger(all, lanes, pin.Designator, c.Net, canonicalKind)
+		cr.Selected = &selected
+		cr.Rejected = summarizeRejected(all, selected)
+
+		// Hard-reject guard (issue #64): if even the best candidate would cross a
+		// non-target pin or touch a foreign-net wire, EVERY direction/offset is a
+		// silent-short hazard. Refuse to place a stub — report it as a failure so a
+		// human resolves the layout instead of the tool creating a wrong connection.
+		if candidateHardRejected(selected) {
+			cr.Error = fmt.Sprintf("no safe candidate: every direction/offset is unsafe (%s) — resolve the layout (move the part, clear the wire, or free the title-block corner) and retry", dominantReason(selected))
+			report.OK = false
+			report.Connections = append(report.Connections, cr)
+			continue
+		}
+
+		// Soft-taint gate:硬拒(1e9)之下还有一整片「入选只因别人更糟」的区间 ——
+		// 软惩罚累加成千分照样静默入选(真机:score=1737 的长桩扎进邻组标签区)。
+		// 默认打 WARN 照连;--strict 时直接失败不落地。
+		if !applySelectionGate(&cr, selected, opts.Strict) {
+			report.OK = false
+			report.Connections = append(report.Connections, cr)
+			continue
+		}
+
+		if !dryRun {
+			payload := map[string]any{
+				"pinX":      pin.X,
+				"pinY":      pin.Y,
+				"kind":      canonicalKind,
+				"net":       c.Net,
+				"direction": selected.Direction,
+				"offset":    selected.Offset,
+			}
+			cres, cerr, retried := acConnectPinWithRetry(cfg, window, payload)
+			cr.Retried = retried
+			if cerr != nil {
+				cr.Error = cerr.Error()
+				report.OK = false
+				report.Connections = append(report.Connections, cr)
+				continue
+			}
+			cr.WirePrimitiveID = asString(cres.Result["wirePrimitiveId"])
+			cr.FlagPrimitiveID = asString(cres.Result["flagPrimitiveId"])
+		}
+
+		lanes[laneKeyOf(pin.Designator, selected.Direction)] = selected.Offset
+		// Stagger: register the just-placed label so later connections in this
+		// batch avoid stacking on it (clustered-pin staggering).
+		if rules.StaggerLabels {
+			scene.Flags = append(scene.Flags, predictedMarkerBBox(
+				selected.EndPoint.X, selected.EndPoint.Y, canonicalKind, selected.Direction, c.Net,
+			))
+		}
+		// Batch mutual exclusion (issue #138): register the just-planned stub as a
+		// scene wire so later connections treat it exactly like existing copper —
+		// a foreign-net stub that would touch or collinear-overlap it is
+		// hard-rejected (or steered to another direction/offset) instead of
+		// letting EasyEDA silently merge the nets. Without this, adjacent pins of
+		// one part on different nets (isolated DC-DC domain pins, B0512S-class)
+		// planned in one batch could pick mutually-touching stubs, because each
+		// candidate was scored against a scene that ignored its batch siblings.
+		scene.Wires = append(scene.Wires, wireSegment{
+			X0: pin.X, Y0: pin.Y,
+			X1: selected.EndPoint.X, Y1: selected.EndPoint.Y,
+			Net: c.Net,
+		})
+
+		report.Connections = append(report.Connections, cr)
+	}
+
+	// Create-after real-bbox backstop (issue #147 DoD2): the scorer hard-rejects a
+	// title-block intrusion using a NOMINAL label box, but the REAL rendered marker
+	// (its width scales with the net-name text) can still spill into the hard
+	// keep-out even when the plan looked clear. Read the created markers' real bboxes
+	// back; delete any that intrude the title block and fail that connection — the
+	// command must never RETURN SUCCESS while leaving a marker on the 图签.
+	if !dryRun && scene.TitleBlock != nil {
+		backstopTitleBlockIntrusion(cfg, window, scene.TitleBlock, &report, stderr)
+	}
+
+	// Partial-run bookkeeping (issue #146): split the pins into succeeded/failed so a
+	// caller retrying an interrupted batch re-does ONLY the failures.
+	report.Succeeded, report.Failed, report.Partial = splitConnResults(report.Connections, dryRun)
+
+	if asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			return report, err
+		}
+	} else {
+		renderAutoconnectReport(report, dryRun, stdout)
+	}
+	if !report.OK {
+		return report, fmt.Errorf("autoconnect: %d connection(s) failed", countFailed(report))
+	}
+	return report, nil
+}
+
+// acScoreWarnThreshold 是「选中候选也要打 WARN」的软阈值。依据成本表
+// (cmd_sch_autoconnect.go):一个干净落点的 score 只由 bonus(最多 -30)+ 长度成本
+// (extended 上限 ~240×0.1=24)构成,落在约 -30~90 区间;而任何软惩罚起步就是
+// 100(costFanoutChannel)、150(costFoldedPort)、1000(costFlagCollision)、
+// 10000(costPartOverlap)…… 100 正好卡在两个区间的分界上:score 超过它,选中项
+// 必然吃了至少一条软惩罚 —— 它能入选只是因为其它候选更糟。
+const acScoreWarnThreshold = 100.0
+
+// acCollisionClassReasons 摘出选中候选身上的碰撞类惩罚(压旗/压件/穿件/背面引出)。
+// 这类痕迹即使总分没过阈值也值得点名 —— 它们是画布上肉眼可见的破坏。
+func acCollisionClassReasons(c acCandidate) []string {
+	var out []string
+	for _, r := range c.Reasons {
+		switch r.Cost {
+		case costFlagCollision, costPartOverlap, costThroughPart, costOppositeSide:
+			out = append(out, r.Desc)
+		}
+	}
+	return out
+}
+
+// selectedCandidateWarning 判定选中候选是否「带痕」,带则返回一句人话告警;
+// 干净返回 ""。纯函数,单测直接喂 acCandidate。
+func selectedCandidateWarning(c acCandidate) string {
+	coll := acCollisionClassReasons(c)
+	if c.Score <= acScoreWarnThreshold && len(coll) == 0 {
+		return ""
+	}
+	reasons := coll
+	if len(reasons) == 0 { // 分超了但没有碰撞类:列出全部正成本项
+		for _, r := range c.Reasons {
+			if r.Cost > 0 {
+				reasons = append(reasons, r.Desc)
+			}
+		}
+	}
+	desc := strings.Join(reasons, "; ")
+	if desc == "" {
+		desc = "总成本异常偏高"
+	}
+	return fmt.Sprintf("落点带痕(score=%.0f):%s —— 建议挪件腾位后重连", c.Score, desc)
+}
+
+// applySelectionGate 把带痕判定落到连接结果上,返回是否继续落地:
+// 默认档在结果上记 Warning 照连;strict 档写 Error 拒绝落地。
+func applySelectionGate(cr *acConnResult, selected acCandidate, strict bool) bool {
+	warn := selectedCandidateWarning(selected)
+	if warn == "" {
+		return true
+	}
+	if strict {
+		cr.Error = "--strict:" + warn + "(未落地)"
+		return false
+	}
+	cr.Warning = warn
+	return true
+}
+
+// summarizeRejected returns the best-scoring candidate of each direction OTHER
+// than the selected one, with its dominant reason — compact but representative.
+func summarizeRejected(all []acCandidate, selected acCandidate) []acRejected {
+	seen := map[string]bool{selected.Direction: true}
+	var out []acRejected
+	for _, c := range all {
+		if seen[c.Direction] {
+			continue
+		}
+		seen[c.Direction] = true
+		out = append(out, acRejected{
+			Direction: c.Direction,
+			Offset:    c.Offset,
+			Score:     c.Score,
+			Reason:    dominantReason(c),
+		})
+	}
+	return out
+}
+
+// backstopTitleBlockIntrusion re-reads the just-created markers' real rendered
+// bboxes and deletes (wire + flag) any whose body actually intrudes the title-block
+// hard keep-out, failing that connection. Best-effort I/O: a components.list failure
+// leaves the report as-is (the plan-time hard reject is still the primary guard).
+func backstopTitleBlockIntrusion(cfg *appConfig, window string, titleBlock *layoutBBox, report *acReport, stderr io.Writer) {
+	// Index the created flags by primitive id → their connection result.
+	byFlag := map[string]*acConnResult{}
+	for i := range report.Connections {
+		cr := &report.Connections[i]
+		if cr.Error == "" && cr.FlagPrimitiveID != "" {
+			byFlag[cr.FlagPrimitiveID] = cr
+		}
+	}
+	if len(byFlag) == 0 {
+		return
+	}
+	res, err := requestAction(cfg, "schematic.components.list", window, map[string]any{"includeBBox": true})
+	if err != nil {
+		fmt.Fprintf(stderr, "autoconnect: title-block create-after recheck skipped — components.list failed: %v\n", err)
+		return
+	}
+	comps, perr := parseLayoutComps(res.Result)
+	if perr != nil {
+		return
+	}
+	bboxByID := map[string]*layoutBBox{}
+	for _, c := range comps {
+		if c.BBox != nil {
+			bboxByID[c.ID] = c.BBox
+		}
+	}
+	var toDelete []any
+	deleted := 0
+	for flagID, cr := range byFlag {
+		bb := bboxByID[flagID]
+		if bb == nil {
+			continue
+		}
+		ox, oy, ov := overlapExtent(*bb, *titleBlock)
+		if !ov || math.Min(ox, oy) <= acCoordEps {
+			continue
+		}
+		cr.Error = fmt.Sprintf("created marker's real bbox intrudes the title-block keep-out (%.1f×%.1f) — deleted; free the corner and retry", round2(ox), round2(oy))
+		report.OK = false
+		toDelete = append(toDelete, flagID)
+		if cr.WirePrimitiveID != "" {
+			toDelete = append(toDelete, cr.WirePrimitiveID)
+		}
+		cr.FlagPrimitiveID = ""
+		cr.WirePrimitiveID = ""
+		deleted++
+	}
+	if len(toDelete) > 0 {
+		if _, derr := requestAction(cfg, "schematic.primitives.delete", window, map[string]any{"primitiveIds": toDelete}); derr != nil {
+			fmt.Fprintf(stderr, "autoconnect: WARN could not delete %d title-block-intruding primitive(s): %v\n", len(toDelete), derr)
+		} else {
+			fmt.Fprintf(stderr, "autoconnect: deleted %d marker(s) whose real bbox intruded the title block — retry the failed pin(s)\n", deleted)
+		}
+	}
+}
+
+// splitConnResults partitions a batch's per-connection results into succeeded and
+// failed pin refs (a pin that was already-connected — an idempotent skip — counts
+// as succeeded, nothing to re-do). partial = a real (non-dry-run) batch that both
+// connected some pins and failed others, i.e. an interrupted run a caller should
+// resume by retrying ONLY the failures. See issue #146. Pure for unit testing.
+func splitConnResults(conns []acConnResult, dryRun bool) (succeeded, failed []string, partial bool) {
+	for _, c := range conns {
+		ref := c.Pin
+		if ref == "" {
+			ref = fmt.Sprintf("%s@(%.2f,%.2f)", c.Net, c.PinX, c.PinY)
+		}
+		if c.Error != "" {
+			failed = append(failed, ref)
+		} else {
+			succeeded = append(succeeded, ref)
+		}
+	}
+	partial = !dryRun && len(failed) > 0 && len(succeeded) > 0
+	return succeeded, failed, partial
+}
+
+func countFailed(r acReport) int {
+	n := 0
+	for _, c := range r.Connections {
+		if c.Error != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// countStates tallies the three idempotency states for the report header (issue
+// #50). "conflict" counts every pin found on a different net, whether it errored
+// out (no --replace) or was replaced.
+func countStates(r acReport) (newCount, skipCount, conflictCount int) {
+	for _, c := range r.Connections {
+		switch c.State {
+		case acStateAlreadyConnected:
+			skipCount++
+		case acStateConflict:
+			conflictCount++
+		case acStateNew:
+			newCount++
+		}
+	}
+	return
+}
+
+func renderAutoconnectReport(r acReport, dryRun bool, w io.Writer) {
+	mode := "connect"
+	if dryRun {
+		mode = "plan (dry-run)"
+	}
+	nNew, nSkip, nConflict := countStates(r)
+	fmt.Fprintf(w, "autoconnect: %d connection(s), mode=%s — %d new, %d already-connected, %d conflict\n",
+		len(r.Connections), mode, nNew, nSkip, nConflict)
+	if r.Note != "" {
+		fmt.Fprintf(w, "  note: %s\n", r.Note)
+	}
+	if r.Partial {
+		// Interrupted batch (issue #146): tell the caller to re-do ONLY the failures,
+		// not replay the whole spec (which stacks duplicate markers).
+		fmt.Fprintf(w, "  ⚠ PARTIAL: %d succeeded, %d failed — retry ONLY the failed pins (%s), then `sch check` for duplicate-net-marker\n",
+			len(r.Succeeded), len(r.Failed), strings.Join(r.Failed, ", "))
+	}
+	for _, c := range r.Connections {
+		id := c.Pin
+		if id == "" {
+			id = fmt.Sprintf("(%.2f,%.2f)", c.PinX, c.PinY)
+		}
+		if c.Error != "" {
+			fmt.Fprintf(w, "  ✗ %s → %s [%s]: %s\n", id, c.Net, c.Kind, c.Error)
+			continue
+		}
+		// already-connected: idempotent skip, no plan/mutation happened.
+		if c.State == acStateAlreadyConnected {
+			fmt.Fprintf(w, "  ⏭ %s → %s [%s]: already-connected (skipped)\n", id, c.Net, c.Kind)
+			continue
+		}
+		s := c.Selected
+		tag := ""
+		if c.Replaced {
+			verb := "will replace"
+			if !dryRun {
+				verb = "replaced"
+			}
+			tag = fmt.Sprintf(" [%s net %q]", verb, c.CurrentNet)
+		}
+		fmt.Fprintf(w, "  ✓ %s → %s [%s]: %s offset=%.0f end=(%.2f,%.2f) score=%.2f%s\n",
+			id, c.Net, c.Kind, s.Direction, s.Offset, s.EndPoint.X, s.EndPoint.Y, s.Score, tag)
+		if c.Warning != "" {
+			fmt.Fprintf(w, "      ⚠ WARN %s\n", c.Warning)
+		}
+		if !dryRun {
+			fmt.Fprintf(w, "      wire=%s flag=%s\n", c.WirePrimitiveID, c.FlagPrimitiveID)
+		}
+		for _, rj := range c.Rejected {
+			fmt.Fprintf(w, "      rejected %-5s offset=%.0f score=%.2f — %s\n", rj.Direction, rj.Offset, rj.Score, rj.Reason)
+		}
+	}
+}
+
+// newAutoconnectCmd builds the `sch autoconnect` subcommand.
+func newAutoconnectCmd(cfg *appConfig, window *string, stdout, stderr io.Writer) *cobra.Command {
+	var (
+		pin, kind, net, spec         string
+		x, y                         float64
+		avoidTitleBlock, avoidFanout bool
+		offsetMin, offsetMax, step   float64
+		offsetCap                    float64
+		allPages, dryRun, asJSON     bool
+		replace, strict              bool
+	)
+	c := &cobra.Command{
+		Use:   "autoconnect",
+		Short: "Pin-aware planner: auto-pick direction/offset and connect a pin (or batch) to a flag/netport",
+		Long: `Pin-aware autoconnect planner.
+
+connect_pin already guarantees the structural safety (pin → short wire →
+flag/netport, so a netflag never sits on a bare pin and trips DRC). autoconnect
+removes the remaining judgment call — which direction and offset — by turning it
+into a deterministic geometry decision:
+
+  1. Resolve the pin coordinate (DESIGNATOR:PIN, or explicit --x/--y).
+  2. Enumerate every direction (up/down/left/right) × offset candidate.
+  3. Score each against real geometry: part bboxes, pin coordinates, existing
+     flag/port/label bboxes, and the title-block keep-out.
+  4. Pick the lowest-cost candidate (deterministic tie-break) and delegate the
+     actual mutation to connect_pin.
+
+The scorer is pure and deterministic: the same schematic state + spec always
+yields the same selection. Use --dry-run to see the plan (and rejected options)
+without mutating.
+
+Idempotent by default: before connecting, each pin's CURRENT net is checked.
+A pin already on the target net is SKIPPED (already-connected), so re-running the
+same spec never stacks duplicate flags+wires. A pin on a DIFFERENT net is an error
+unless you pass --replace, which deletes the old flag+wire and reconnects.`,
+		Args: cobra.NoArgs,
+		Example: `  easyeda sch autoconnect --pin U1:41 --kind gnd --net GND
+  easyeda sch autoconnect --x 720 --y 670 --kind gnd --net GND
+  easyeda sch autoconnect --pin U1:3V3 --kind power --net +3V3 --dry-run
+  easyeda sch autoconnect --spec p1-connect.json --json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rules := defaultAutoconnectRules()
+			if cmd.Flags().Changed("avoid-titleblock") {
+				rules.AvoidTitleBlock = avoidTitleBlock
+			}
+			if cmd.Flags().Changed("avoid-pin-fanout") {
+				rules.AvoidPinFanout = avoidFanout
+			}
+			if cmd.Flags().Changed("offset-min") {
+				rules.OffsetMin = offsetMin
+			}
+			if cmd.Flags().Changed("offset-max") {
+				rules.OffsetMax = offsetMax
+			}
+			if cmd.Flags().Changed("offset-step") {
+				rules.OffsetStep = step
+			}
+			if cmd.Flags().Changed("offset-cap") {
+				rules.OffsetCap = offsetCap
+			}
+
+			var conns []acConnSpec
+			if spec != "" {
+				raw, err := os.ReadFile(spec)
+				if err != nil {
+					return fmt.Errorf("read --spec: %w", err)
+				}
+				var s acSpec
+				if err := json.Unmarshal(raw, &s); err != nil {
+					return fmt.Errorf("invalid --spec json: %w", err)
+				}
+				if len(s.Connections) == 0 {
+					return fmt.Errorf("--spec has no connections")
+				}
+				rules = s.Rules.applyTo(rules)
+				for _, sc := range s.Connections {
+					if sc.Kind == "" || sc.Net == "" {
+						return fmt.Errorf("each spec connection needs kind and net (got pin=%q)", sc.Pin)
+					}
+					conns = append(conns, acConnSpec{PinRef: sc.Pin, X: sc.X, Y: sc.Y, Kind: sc.Kind, Net: sc.Net})
+				}
+			} else {
+				if kind == "" || net == "" {
+					return fmt.Errorf("--kind and --net are required (or use --spec)")
+				}
+				cs := acConnSpec{Kind: kind, Net: net}
+				if pin != "" {
+					cs.PinRef = pin
+				} else if cmd.Flags().Changed("x") && cmd.Flags().Changed("y") {
+					cs.X, cs.Y = &x, &y
+				} else {
+					return fmt.Errorf("pass --pin DESIGNATOR:PIN or both --x and --y")
+				}
+				conns = append(conns, cs)
+			}
+			if cmd.Flags().Changed("offset-cap") && (math.IsNaN(offsetCap) || math.IsInf(offsetCap, 0) || offsetCap <= 0 || offsetCap < rules.OffsetMin) {
+				return fmt.Errorf("--offset-cap must be finite, positive and at least --offset-min")
+			}
+
+			_, err := runAutoconnectOpts(cfg, *window, conns, rules,
+				acRunOpts{AllPages: allPages, DryRun: dryRun, Replace: replace, JSON: asJSON, Strict: strict},
+				stdout, stderr)
+			return err
+		},
+	}
+	c.Flags().StringVar(&pin, "pin", "", "pin reference DESIGNATOR:PIN (number or name), e.g. U1:41 or U1:3V3; "+
+		"a trailing * bonds EVERY pin sharing that function name (J1:VBUS* → a USB-C's two VBUS pins) — "+
+		"the right answer for a connector's redundant power/ground/shield pins, and an identity for single-pin functions")
+	c.Flags().Float64Var(&x, "x", 0, "explicit pin X coordinate (use with --y instead of --pin)")
+	c.Flags().Float64Var(&y, "y", 0, "explicit pin Y coordinate (use with --x instead of --pin)")
+	c.Flags().StringVar(&kind, "kind", "", netflagKindHelp)
+	c.Flags().StringVar(&net, "net", "", "net name")
+	c.Flags().StringVar(&spec, "spec", "", "batch spec JSON file ({connections:[...], rules:{...}})")
+	c.Flags().BoolVar(&avoidTitleBlock, "avoid-titleblock", true, "penalize candidates whose label enters the title-block keep-out")
+	c.Flags().BoolVar(&avoidFanout, "avoid-pin-fanout", true, "penalize candidates that run close to a pin fanout channel")
+	c.Flags().Float64Var(&offsetMin, "offset-min", 18, "minimum stub offset to consider")
+	c.Flags().Float64Var(&offsetMax, "offset-max", 80, "maximum stub offset to consider")
+	c.Flags().Float64Var(&step, "offset-step", 6, "offset increment")
+	c.Flags().Float64Var(&offsetCap, "offset-cap", 0, "hard maximum stub offset across regular, staggered and extended candidates (omit for no cap)")
+	c.Flags().BoolVar(&allPages, "all-pages", false, "widen candidate SCORING to all schematic pages (avoids cross-page label conflicts); does NOT build wires across pages — mutations only land on the ACTIVE page, so `doc switch` to the target page first")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "plan and print the selection without mutating")
+	c.Flags().BoolVar(&replace, "replace", false, "when a pin is already on a DIFFERENT net, delete its old flag+wire and reconnect (without --replace such pins error out; pins already on the target net are always skipped)")
+	c.Flags().BoolVar(&strict, "strict", false, "fail (and do NOT place) any connection whose selected candidate is tainted — score above the soft threshold or collision-class penalties; without --strict such connections succeed with a WARN")
+	c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON")
+	return c
+}
+
+// acConnectPinTimeout 是 connect_pin 的**专用**预算,比默认 20s 长。
+//
+// 连接器内部的最坏路径是 wire(7s)+ 重试间隔(0.25s)+ wire 重试(7s)+ netflag(7s)
+// = **21.25s > 默认 20s** —— daemon 会先于连接器放弃,报「connector did not
+// respond」(实测 57 次失败里 17 次是它),而此时连接器往往还在跑、甚至已经把线和旗
+// 建完了。CLI 认为失败、画布上却有东西,是最难查的那种不一致。预算必须**大于**被
+// 调用方的最坏耗时,否则超时报告的是我们自己的不耐烦,不是对方的故障。
+const acConnectPinTimeout = 35 * time.Second
+
+// acConnectPinRetryable 判一次失败能不能安全重试。
+//
+// 判据是**连接器有没有明确说它回滚了**:netflag 创建超时时,连接器会删掉已建的桩线
+// 再抛错(actions.ts 的 rollbackWire),此时画布干净,重试等价于第一次。反过来,
+// 「connector did not respond」这类**状态未知**的失败绝不能盲目重试 —— 那可能只是
+// 我们没等到回应而对方已经建好了,重试会得到第二条桩线和第二面旗。
+//
+// 依赖错误文案是刻意的:连接器是本仓库自己的代码,这句话是双方的契约,改文案就要
+// 一起改这里。
+func acConnectPinRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "rolled back") || strings.Contains(msg, "Rolling back")
+}
+
+// acConnectPinWithRetry 发一次 connect_pin,失败且**可证明干净**时再发一次。
+//
+// 为什么值得重试:实测 57 次失败里 23 次是 netflag 卡在平台的 stuck-at-99%
+// (「请求被丢掉但不报错」),它是**随机**的 —— 同一脚重发一次通常就成。不重试的
+// 代价不是慢,是那一脚根本没连上,要等到几步之后 `sch check` 才暴露成悬空引脚。
+func acConnectPinWithRetry(cfg *appConfig, window string, payload map[string]any) (*actionResult, error, bool) {
+	res, err := requestActionTimed(cfg, "schematic.power.connect_pin", window, payload, acConnectPinTimeout)
+	if err == nil || !acConnectPinRetryable(err) {
+		return res, err, false
+	}
+	res2, err2 := requestActionTimed(cfg, "schematic.power.connect_pin", window, payload, acConnectPinTimeout)
+	if err2 != nil {
+		// 两次都失败:报**第一次**的原因(它才是根因;第二次往往是同一次平台抽风的
+		// 余波),并写明重试过 —— 否则读日志的人会以为只试了一次。
+		return res2, fmt.Errorf("%w(重试一次仍失败)", err), true
+	}
+	return res2, nil, true
+}

@@ -1,0 +1,94 @@
+{
+  "units": "mil",
+  "labels": [
+    {
+      "pin": "1",
+      "text": "1 GND",
+      "layer": 3,
+      "x": -268.2,
+      "y": 150,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "2",
+      "text": "2 VCC",
+      "layer": 3,
+      "x": -125,
+      "y": 150,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "3",
+      "text": "3 GDO0",
+      "layer": 3,
+      "x": -268.2,
+      "y": 50,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "4",
+      "text": "4 CSN",
+      "layer": 3,
+      "x": -125,
+      "y": 50,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "5",
+      "text": "5 SCK",
+      "layer": 3,
+      "x": -268.2,
+      "y": -50,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "6",
+      "text": "6 MOSI",
+      "layer": 3,
+      "x": -125,
+      "y": -50,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "7",
+      "text": "7 MISO/GDO1",
+      "layer": 3,
+      "x": -268.2,
+      "y": -150,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    },
+    {
+      "pin": "8",
+      "text": "8 GDO2",
+      "layer": 3,
+      "x": -125,
+      "y": -150,
+      "fontSize": 32,
+      "lineWidth": 6,
+      "alignMode": 8
+    }
+  ],
+  "modelLabel": {
+    "text": "AS07-M1101D-SMA",
+    "x": 451.1811,
+    "y": 335.2756,
+    "fontSize": 40,
+    "lineWidth": 6,
+    "alignMode": 5
+  },
+  "note": "All visible text outside module body; pin legend has odd/even columns to the left; numbers identify exact pads."
+}

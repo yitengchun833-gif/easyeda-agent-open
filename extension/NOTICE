@@ -1,0 +1,62 @@
+easyeda-agent
+Copyright (c) zhoushoujianwork and contributors
+
+This product includes third-party software listed below.
+
+────────────────────────────────────────────────────────────────────────
+Easy_EDA_PCB_Beautify
+────────────────────────────────────────────────────────────────────────
+PCB 走线美化(拐角圆弧化 + 差分/等长同心圆弧 + 线宽平滑)算法。
+
+  Source:  https://github.com/m-RNA/Easy_EDA_PCB_Beautify
+  Author:  m-RNA
+  License: Apache License 2.0
+
+Absorbed into this project as the `pcb.beautify` typed action / `easyeda pcb
+beautify` command. The pure-geometry modules were ported largely verbatim:
+
+  extension/src/beautify/math.ts         ← src/lib/math.ts
+  extension/src/beautify/arcGeometry.ts  ← src/lib/arcGeometry.ts
+  extension/src/beautify/drc.ts          ← src/lib/drc.ts (violated-ID parse)
+  extension/src/beautify/index.ts        ← src/lib/beautify.ts (orchestration)
+
+Changes made vs. upstream (per Apache-2.0 §4b):
+  • Removed the extension's self-built snapshot/undo engine — this project
+    relies on `pcb.save` checkpoints instead.
+  • Removed the iframe settings panel and sys_Message / LoadingBar UI; the
+    routine is headless and driven by the daemon action payload, returning a
+    structured summary.
+  • Added a `dryRun` mode that computes the plan without mutating the board.
+  • Line-width bezier smoothing (widthTransition.ts) is not yet ported.
+
+Licensing: this project is MIT-licensed as a whole (see `LICENSE`), except for
+the four files under `extension/src/beautify/`, which remain under the Apache
+License 2.0 inherited from Easy_EDA_PCB_Beautify. A verbatim copy of that
+license sits next to them at `extension/src/beautify/LICENSE`. MIT and
+Apache-2.0 are compatible; redistributing this repository (or the compiled
+`.eext`, which contains the beautify output) means carrying this NOTICE and
+that Apache-2.0 copy along.
+
+
+EasyEDA Agent Open local modifications (2026-09-29)
+Based on easyeda-agent 1.8.1, commit 65694c3896fa08b640100e819108c30f0e495fb7.
+Modified dispatch, approval defaults, Connector batch/identity handling, MCP,
+ports/startup, SDK index generator and active Skill. Not an upstream release.
+
+Official API reference documentation under api-reference/ is copied from:
+https://github.com/easyeda/easyeda-api-skill
+commit 122fb27efa1f2b73664844cacfd329a526d0ab86 (metadata version 1.1.37).
+Upstream SKILL.md declares license: MIT and author: JLCEDA.
+The original declaration is preserved in api-reference/UPSTREAM-SKILL.md.
+
+Nambers/easyeda-pro-mcp (Apache-2.0) informed inline image and method lookup
+interface design. No implementation code from that repository was copied.
+easyeda/eext-run-api-gateway and hyl64/jlcmcp were architecture references.
+No code from cheewee2000/easyeda-mcp (no license declaration found) was copied.
+
+The embedded API index is generated from @jlceda/pro-api-types 0.4.25
+(JLCEDA, Apache-2.0). Its original license is preserved as LICENSE-SDK.
+
+EasyEDA Agent Open distribution maintained by yitengchun833-gif.
+Repository: https://github.com/yitengchun833-gif/easyeda-agent-open
+2026-09-30: changed branding, icon and user documentation; original notices retained.

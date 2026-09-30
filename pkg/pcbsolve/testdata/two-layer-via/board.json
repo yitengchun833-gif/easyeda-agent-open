@@ -1,0 +1,12 @@
+{
+  "schemaVersion":1,"units":"mil",
+  "outline":{"bbox":{"minX":0,"minY":0,"maxX":300,"maxY":220},"points":[[0,0],[300,0],[300,220],[0,220]],"source":"polygon"},
+  "stackup":{"copper":[{"id":1,"name":"TOP","role":"signal"},{"id":2,"name":"BOTTOM","role":"signal"}]},
+  "rules":{"clearance":5,"trackTrack":5,"copperToEdge":5,"trackWidthMinimum":4,"viaDiameter":16,"viaDrill":8,"source":"fixture"},
+  "components":[
+    {"ref":"U1","side":1,"anchor":[30,80],"locked":true,"bbox":{"minX":20,"minY":70,"maxX":40,"maxY":90},"pads":[{"padNumber":"1","net":"A","layer":1,"center":[30,80],"width":10,"height":10,"shape":"rect"}]},
+    {"ref":"J1","side":1,"anchor":[270,80],"locked":true,"bbox":{"minX":260,"minY":70,"maxX":280,"maxY":90},"pads":[{"padNumber":"1","net":"A","layer":1,"center":[270,80],"width":10,"height":10,"shape":"rect"}]}
+  ],
+  "tracks":[{"primitiveId":"wall","net":"WALL","layer":1,"width":4,"points":[[150,5],[150,215]]}],
+  "semanticHash":"two-layer-via-v1"
+}

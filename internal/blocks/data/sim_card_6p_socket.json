@@ -1,0 +1,212 @@
+{
+  "id": "block.sim_card_6p_socket",
+  "desc": "4G/Cat.1 模组的 6P SIM(UICC)卡座接口:22R 串阻(模组侧)+ 100nF/33pF 去耦与 GSM 抗扰(卡座侧)+ 四路 ESD + DATA 10k 上拉[可 DNF];⚠SIM_VDD 是模组内部 LDO 的**输出**(1.8V/3.0V 自适应,≤10mA),严禁外接 3V3 灌电——与 LC29H 的 VDD_RF 同类陷阱",
+  "category": "comms",
+  "author": "@zhoushoujianwork",
+  "contributors": [],
+  "added": "v0.13.1",
+  "updated": "v0.13.1",
+  "source": "三家模组厂官方硬件设计手册交叉对账(2026-07-16 实取 PDF 逐图核对,取三家共识值): official-ref:合宙 Luat《Air780E 硬件设计手册》V1.3.3(2024-08-13)§3.10 表格9/图表10(6P 卡座参考电路:C1=0.1uF + C5=33pF,C2/C3/C4=33pF,R1/R2/R3=22Ω,R4=10k DATA 上拉,TVS1-4)+ 设计原则 6-10 ; official-ref:Quectel《EC20 R2.1 Hardware Design》V1.2 §3.9 Table 9 + Fig 18(USIM_VDD 100nF,33pF×3,0Ω 串阻『to facilitate debugging』,15K DATA 上拉『can improve anti-jamming capability upon applying of long layout trace』,TVS『parasitic capacitance should not be more than 15pF』,布线 ≤200mm / GND+USIM_VDD ≥0.5mm) ; official-ref:SIMCom《SIM7600 Series Hardware Design》V1.04 §3.5/3.5.1 Table 11-12 + Fig 20(USIM_VDD LDO 输出实测 1.8V 档 1.75-1.95V / 3.0V 档 2.75-3.05V;22Ω 串阻;33pF 位标 NM=不贴;『USIM_DATA has been pulled up with a 10KΩ resistor to USIM_VDD in module』;ESD 推荐 ESDA6V1W5/SMF15C;『the rise time and fall time of USIM_CLK should be less than 40ns』) ; official-ref:合宙官方文档中心 docs.openluat.com/air780eg/at/hardware/design/sim/(原则同上,官方域名佐证) ; official-ref:Silabs AN0820 Table 2.1(ISO 7816 触点定义 C1=Vcc/C2=RST/C3=CLK/C5=GND/C6=Vpp『Usually Not used』/C7=I/O,C4/C8=RFU)。 **本块所有脚名均未经 sch read 核实**(卡座/ESD 符号见 _internal_nets_note)",
+  "validated": null,
+  "parts": {
+    "J": {
+      "part": "conn.simcardsocket_sim6p",
+      "qty": 1,
+      "note": "6P SIM(UICC)卡座,暴露 ISO 7816 的 C1/C2/C3/C5/C6/C7,省掉 C4/C8(RFU,8P 件上用作 USB D±)。6P 件**无检测触点**→ 模组的 SIM_DET/USIM_PRESENCE 悬空即可(Quectel §3.9 明文:『If (U)SIM card detection function is not needed, please keep USIM_PRESENCE unconnected』,且该功能默认关闭,需 AT+QSIMDET 开)。要热插拔检测须换 8P 带 SW 触点卡座(Air780E 图表11)。SIMCom §3.5.1 点名可用 Amphenol C707 10M006 512。"
+    },
+    "R_RST": {
+      "part": "res.22r_0402",
+      "qty": 1,
+      "note": "RST 串阻 22Ω,放**模组侧**。取值依据:Air780E 原则9『在模块和SIM卡之间也可以串联 22 欧姆的电阻用以抑制杂散EMI,增强ESD防护』+ SIM7600 图 20 同为 22Ω(2/3 家共识)。Quectel EC20 此位画 0Ω 且理由不同(『to facilitate debugging』的调试跳线位)——22Ω 严格覆盖 0Ω 的意图,故取 22Ω。"
+    },
+    "R_CLK": {
+      "part": "res.22r_0402",
+      "qty": 1,
+      "note": "CLK 串阻 22Ω,放模组侧。⚠SIM7600 §3.5.1 警告:『USIM_CLK is very important signal, the rise time and fall time of USIM_CLK should be less than 40ns, otherwise the USIM card might not be initialized correctly』—— 串阻 + 33pF 会一起吃边沿,若卡初始化失败,优先减小/短接此阻并把 C_CLK 改 DNF。"
+    },
+    "R_DAT": {
+      "part": "res.22r_0402",
+      "qty": 1,
+      "note": "DATA 串阻 22Ω,放模组侧。"
+    },
+    "R_PU": {
+      "part": "res.10k_0402",
+      "qty": 1,
+      "note": "DATA → SIM_VDD 上拉 10k,放**卡座侧**(EC20 §3.9:『should be placed close to the (U)SIM card connector』)。**默认贴,但可 DNF** —— 是否必需取决于模组:SIM7600 图 20 注明『USIM_DATA has been pulled up with a 10KΩ resistor to USIM_VDD in module』(内部已有,外部并联成 5k 仍无害);Air780E 图表10 画的是外部 10k;EC20 图 18 画 15k 且定性为可选(『can improve anti-jamming capability upon applying of long layout trace and sensitive occasion』)。**换模组时必查该模组是否内置上拉**。上拉必须到 SIM_VDD,不是 3V3。"
+    },
+    "C_VDD": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "SIM_VDD 去耦 100nF,贴卡座(SIM7600 §3.5.1:『A 100nF capacitor on USIM_VDD is used to reduce interference』;EC20/Air780E 同值)。⚠三家参考电路**均无 1uF** —— 该轨是模组 LDO 输出、限流仅 ~10mA(Air780E 表格9:『最大供电电流 10mA』),不要按普通电源轨的习惯往上堆大容值。"
+    },
+    "C_VDD_HF": {
+      "part": "cap.33pf_0402",
+      "qty": 1,
+      "note": "SIM_VDD 上的 33pF(Air780E 图表10 的 C5),贴卡座。与信号线的 33pF 同理:滤 GSM 突发射频,不是去耦。"
+    },
+    "C_RST": {
+      "part": "cap.33pf_0402",
+      "qty": 1,
+      "note": "RST 对地 33pF,贴**卡座侧**。用途是滤射频而非去抖 —— EC20 §3.9 原文:『The 33pF capacitors are used for filtering interference of EGSM900』(GSM900 突发被卡内电路整流成干扰)。SIM7600 图 20 此位画 22pF 且标 NM(不贴);纯 LTE Cat.1(无 GSM 回落)场景可评估改 DNF。"
+    },
+    "C_CLK": {
+      "part": "cap.33pf_0402",
+      "qty": 1,
+      "note": "CLK 对地 33pF,贴卡座侧。⚠与 SIM7600 的 40ns 边沿要求相权衡,见 R_CLK 注。"
+    },
+    "C_DAT": {
+      "part": "cap.33pf_0402",
+      "qty": 1,
+      "note": "DATA 对地 33pF,贴卡座侧。"
+    },
+    "D_VDD": {
+      "part": "esd.esd9b5v0_sod923",
+      "qty": 1,
+      "note": "SIM_VDD 对地 ESD(Air780E 图表10 的 TVS4),贴卡座。双向件,方向无关。"
+    },
+    "D_RST": {
+      "part": "esd.esd9b5v0_sod923",
+      "qty": 1,
+      "note": "RST 对地 ESD(TVS3),贴卡座侧。"
+    },
+    "D_CLK": {
+      "part": "esd.esd9b5v0_sod923",
+      "qty": 1,
+      "note": "CLK 对地 ESD(TVS2),贴卡座侧。"
+    },
+    "D_DAT": {
+      "part": "esd.esd9b5v0_sod923",
+      "qty": 1,
+      "note": "DATA 对地 ESD(TVS1),贴卡座侧。SIM 卡触点直通壳外,是整机最易被手指打 ESD 的口之一,四路一个都别省。"
+    }
+  },
+  "_internal_nets_note": "⚠**本块脚名全部未经 sch read 核实**,验证时必须逐个核对后再落线。 J(卡座):此处按 ISO 7816 功能名书写(VCC=C1 / RST=C2 / CLK=C3 / GND=C5 / VPP=C6 / IO=C7,依据 Silabs AN0820 Table 2.1);EasyEDA 符号实际可能写成 C1/C2/C3/C5/C6/C7、或 VCC/RST/CLK/GND/VPP/DATA、或纯数字 1-6。**物理脚号绝不可硬编码**:同一份 Air780E 手册里 6P 卡座(图表10)是 1=IO/2=VPP/3=GND/4=VCC/5=RST/6=CLK,8P 卡座(图表11)却是 1=IO/2=CLK/3=VPP/4=RST/5=GND/6=VCC —— 编号是器件私有的,只有功能名稳定。 D_*(ESD9B5V0 SOD-923):脚 1/2,沿用已验证块 block.lc29h_dr_gnss_frontend 的写法(该块 validated,D_ESD.1/D_ESD.2 已落网)。 J.VPP(C6)悬空不接,故不出现在任何 internal_nets 里 —— ISO 7816 里 Vpp 是给老卡烧 EEPROM 的高压脚,AN0820 原文『Usually Not used』,EC20 图18/SIM7600 图20 均画作无网络。",
+  "internal_nets": [
+    ["J.VCC", "C_VDD.1", "C_VDD_HF.1", "D_VDD.1", "R_PU.2", "PORT:SIM_VDD"],
+    ["J.RST", "R_RST.2", "C_RST.1", "D_RST.1"],
+    ["R_RST.1", "PORT:SIM_RST"],
+    ["J.CLK", "R_CLK.2", "C_CLK.1", "D_CLK.1"],
+    ["R_CLK.1", "PORT:SIM_CLK"],
+    ["J.I/O", "R_DAT.2", "C_DAT.1", "D_DAT.1", "R_PU.1"],
+    ["R_DAT.1", "PORT:SIM_DATA"],
+    ["J.GND*", "C_VDD.2", "C_VDD_HF.2", "C_RST.2", "C_CLK.2", "C_DAT.2", "D_VDD.2", "D_RST.2", "D_CLK.2", "D_DAT.2", "PORT:GND"]
+  ],
+  "ports": {
+    "SIM_VDD": {
+      "dir": "in",
+      "at": "J.VCC",
+      "desc": "卡供电 —— 接模组的 USIM_VDD/SIM_VDD 脚。⚠这是模组**内部 LDO 的输出**(类型 PO),1.8V/3.0V 由模组自动识别卡后选择,限流 ~10mA。**绝不可接 3V3 或任何外部电源轨**(接了=两个源对灌,烧模组 LDO)——与 block.lc29h_dr_gnss_frontend 的 VDD_RF『输出脚被当输入接』属同一类 P0 级评审错误",
+      "default_net": "SIM_VDD"
+    },
+    "SIM_RST": {
+      "dir": "in",
+      "at": "R_RST.1",
+      "desc": "复位 ← 模组 USIM_RST/USIM_RST_N(模组输出到卡,DO)",
+      "default_net": "SIM_RST"
+    },
+    "SIM_CLK": {
+      "dir": "in",
+      "at": "R_CLK.1",
+      "desc": "时钟 ← 模组 USIM_CLK(模组输出到卡,DO);~4MHz 级,边沿敏感(≤40ns)",
+      "default_net": "SIM_CLK"
+    },
+    "SIM_DATA": {
+      "dir": "bidir",
+      "at": "R_DAT.1",
+      "desc": "数据 ↔ 模组 USIM_DATA/USIM_DAT(半双工 IO)",
+      "default_net": "SIM_DATA"
+    },
+    "GND": {
+      "dir": "bidir",
+      "at": "J.GND*",
+      "desc": "地。EC20 §3.9:若板上地平面完整,卡座地可直接接系统地(『If the ground is complete on customers' PCB, USIM_GND can be connected to PCB ground directly』);模组若有专用 USIM_GND 脚则优先接过去",
+      "default_net": "GND"
+    }
+  },
+  "schematic_notes": [
+    "**SIM_VDD 是输出不是输入**(三家一致):Air780E 表格9『SIM 卡供电电源,最大供电电流 10mA。模块可以自动识别 1.8V 或者 3V (U)SIM 卡』、脚类型 PO(LDO 输出);EC20 Table 9 类型 PO『Either 1.8V or 3.0V is supported by the module automatically』;SIM7600 Table 11-12 给实测档位(1.8V 档 1.75/1.8/1.95V,3.0V 档 2.75/2.95/3.05V)。原理图上只能由模组喂进本块,**不许并任何外部轨**。",
+    "⚠**存疑未决(1.8V/3.0V vs 3.3V)**:合宙官方网页 docs.openluat.com 写『自适应支持 1.8V 和 3.3V USIM卡』,与其自家 Air780E PDF(1.8V/3.0V)及 SIM7600 实测表相矛盾。本块按 **1.8V/3.0V** 记(2/3 份 PDF + ISO 规范侧),仅影响文档口径,不影响拓扑;选定模组后以该模组 PDF 为准。",
+    "6P 卡座无检测触点 → 模组的 USIM_PRESENCE / USIM_DET **悬空**(EC20 §3.9 明文允许,且检测默认关闭)。要做热插拔检测须换 8P 带 SW 触点卡座:Air780E 图表11 的接法是 SW 触点插卡时短到地(低有效)、10k 上拉。**上拉源有坑** —— Air780E 原则10:『在需要模块进入休眠的场景 SIM_DET 禁止用 VDD_EXT 上拉,否则会造成无法休眠的问题。建议用外部LDO上拉』(VDD_EXT 休眠期会发周期不等的高脉冲,反复触发 DET 中断)。",
+    "VPP(C6)悬空:ISO 7816 里是老卡烧 EEPROM 的编程高压脚,AN0820 Table 2.1 原文『Usually Not used』;EC20 图18 / SIM7600 图20 均画作无网络。**别顺手接到 SIM_VDD**。",
+    "33pF 的用途是滤射频不是去抖:EC20 §3.9『The 33pF capacitors are used for filtering interference of EGSM900』。若目标模组是纯 LTE Cat.1 无 GSM 回落,可评估把 C_RST/C_CLK/C_DAT 改 DNF(SIM7600 图 20 本来就把这三位标 NM=不贴)。",
+    "元件分侧铁律(三家一致):**串阻在模组侧,其余(去耦/33pF/ESD/上拉)全部贴卡座**。EC20 §3.9『the (U)SIM peripheral circuit should be close to the (U)SIM card connector』;SIM7600 §3.5.1 同;Air780E 原则9『SIM卡的外围电路必须尽量靠近SIM卡座』。这条决定了 placement/pcb_layout,不是可选建议。",
+    "ESD 结电容口径冲突:EC20 要求『not more than 15pF』,Air780E/官网写『寄生电容不大于50pF』。本块按 **≤15pF** 取(同时满足两家,且 SIM 是 ~4MHz 边沿敏感线,越低越好)。当前选用的 ESD9B5V0 是多 pF 级(见 block.lc29h_dr_gnss_frontend 对同一颗的实测注记:『结电容为多 pF 级』)→ 满足 15pF,可用;若换 4 通道阵列(SIM7600 §3.5.1 点名 ESDA6V1W5/SMF15C)需先入 standard-parts 再改本块。",
+    "本块只覆盖卡座侧;模组本体(Air780E/EC20/SIM7600)与其电源/RF 尚无对应块,ports 需手工绑到模组的 USIM_* 脚。",
+    "netflag 必须经真实导线连接(坐标重叠不算连通)——本项目通用约束。"
+  ],
+  "pcb_layout": [
+    {
+      "rule": "peripheral-at-socket",
+      "target": "C_VDD / C_VDD_HF / C_RST / C_CLK / C_DAT / D_VDD / D_RST / D_CLK / D_DAT / R_PU",
+      "constraint": "除串阻外的全部外围(去耦/33pF/ESD/上拉)紧贴卡座摆放;串阻 R_RST/R_CLK/R_DAT 贴模组侧。ESD 必须在卡座与其它元件之间(先泄放再进板)",
+      "value": "外围到卡座 <= 5mm",
+      "severity": "must"
+    },
+    {
+      "rule": "trace-length",
+      "target": "SIM_VDD / SIM_RST / SIM_CLK / SIM_DATA",
+      "constraint": "卡座尽量靠近模组(EC20 §3.9『Keep the trace length less than 200mm as far as possible』;Air780E 原则6『布线不超过20cm』——两家同一条线)",
+      "value": "<= 200mm (20cm)",
+      "severity": "must"
+    },
+    {
+      "rule": "trace-width",
+      "target": "GND / SIM_VDD",
+      "constraint": "地与 SIM_VDD 走线短而宽以保持同电位(EC20 §3.9『Keep the trace width of ground and USIM_VDD no less than 0.5mm』)",
+      "value": ">= 0.5mm",
+      "severity": "must"
+    },
+    {
+      "rule": "crosstalk-guard",
+      "target": "SIM_CLK / SIM_DATA / SIM_RST",
+      "constraint": "CLK 与 DATA 拉开距离并在两者间加地屏蔽(EC20:『To avoid cross-talk between USIM_DATA and USIM_CLK, keep them away from each other and shield them with surrounded ground』;Air780E 原则8 同,并额外要求『对 USIM_RST_N 信号也需要地保护』)",
+      "value": "",
+      "severity": "must"
+    },
+    {
+      "rule": "keepout",
+      "target": "SIM_VDD / SIM_RST / SIM_CLK / SIM_DATA",
+      "constraint": "SIM 全部信号线远离 RF 走线与 VBAT 电源线(EC20 §3.9 + Air780E 原则7)",
+      "value": "",
+      "severity": "must"
+    }
+  ],
+  "placement": {
+    "_doc": "卡座是结构件:插拔面必须可达。",
+    "J": {
+      "board_edge": true,
+      "edge": "user-facing",
+      "side": "either",
+      "orientation": "卡槽开口朝板外,插拔方向无遮挡;若用自弹(push-push)件需预留弹出行程",
+      "severity": "must",
+      "reason": "SIM 卡需插拔;同时受『尽量靠近模组、走线 ≤20cm』约束 —— 这两条会打架,布局时先定模组位再选最近的那条可插拔边"
+    }
+  },
+  "signals": {
+    "SIM_BUS": {
+      "nets": ["SIM_CLK", "SIM_DATA", "SIM_RST"],
+      "type": "single_high_speed",
+      "route": "CLK 与 DATA 拉开并夹地屏蔽,RST 亦需地保护;全组远离 RF/VBAT;总长 <= 200mm",
+      "keepout": "远离 RF 走线与 VBAT 电源线;CLK↔DATA 之间加地",
+      "severity": "must",
+      "reason": "~4MHz ISO 7816 半双工总线,CLK 对 DATA 串扰会导致卡初始化失败;且 CLK 边沿须 <=40ns(SIM7600 §3.5.1),不耐额外容性负载"
+    },
+    "SIM_VDD_RAIL": {
+      "nets": ["SIM_VDD"],
+      "type": "analog_sensitive",
+      "route": "短而宽,>=0.5mm,与 GND 同等对待",
+      "keepout": "远离 RF/VBAT",
+      "severity": "must",
+      "reason": "模组 LDO 输出且仅 ~10mA 余量,线阻/噪声直接影响卡供电稳定(EC20 §3.9 要求 >=0.5mm 保持同电位)"
+    }
+  },
+  "silk": {
+    "J": {
+      "label": "SIM",
+      "note": "标卡片方向(缺角/芯片面朝向)——SIM 卡插反是最高频的现场装配错误,卡座本体不带方向提示时必须靠丝印",
+      "clearance": "outside-body",
+      "severity": "must"
+    }
+  },
+  "bom_note": "共 14 件:1× 6P SIM 卡座 + 3× 22R 0402(串阻)+ 1× 10k 0402(DATA 上拉,可 DNF)+ 1× 100nF 0402 + 4× 33pF 0402 + 4× ESD9B5V0(SOD-923)。全部基础料/已在库,无新增器件。纯 LTE 无 GSM 回落场景可把 3 颗信号 33pF 改 DNF(SIM7600 原本就不贴),BOM 降到 11 件。"
+}

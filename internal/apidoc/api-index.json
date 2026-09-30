@@ -1,0 +1,5418 @@
+{
+"source": "@jlceda/pro-api-types",
+"namespaceCount": 95,
+"methodCount": 773,
+"records": [
+{
+"ns": "eda.dmt_Board",
+"method": "createBoard",
+"sig": "public createBoard(schematicUuid?: string, pcbUuid?: string): Promise<string | undefined>;",
+"summary": "创建板子",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Board",
+"method": "modifyBoardName",
+"sig": "public modifyBoardName(originalBoardName: string, boardName: string): Promise<boolean>;",
+"summary": "修改板子名称",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Board",
+"method": "copyBoard",
+"sig": "public copyBoard(sourceBoardName: string): Promise<string | undefined>;",
+"summary": "复制板子",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Board",
+"method": "getBoardInfo",
+"sig": "public getBoardInfo(boardName: string): Promise<IDMT_BoardItem | undefined>;",
+"summary": "获取板子的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Board",
+"method": "getAllBoardsInfo",
+"sig": "public getAllBoardsInfo(): Promise<Array<IDMT_BoardItem>>;",
+"summary": "获取工程内所有板子的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Board",
+"method": "getCurrentBoardInfo",
+"sig": "public getCurrentBoardInfo(): Promise<IDMT_BoardItem | undefined>;",
+"summary": "获取当前板子的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Board",
+"method": "deleteBoard",
+"sig": "public deleteBoard(boardName: string): Promise<boolean>;",
+"summary": "删除板子",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "openDocument",
+"sig": "public openDocument(documentUuid: string, splitScreenId?: string): Promise<string | undefined>;",
+"summary": "打开文档",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "openLibraryDocument",
+"sig": "public openLibraryDocument(libraryUuid: string, libraryType: ELIB_LibraryType.SYMBOL | ELIB_LibraryType.FOOTPRINT, uuid: string, splitScreenId?: string): Promise<string | undefined>;",
+"summary": "打开库符号、封装文档",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "closeDocument",
+"sig": "public closeDocument(tabId: string): Promise<boolean>;",
+"summary": "关闭文档",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "getSplitScreenTree",
+"sig": "public getSplitScreenTree(): Promise<IDMT_EditorSplitScreenItem | undefined>;",
+"summary": "获取编辑器分屏属性树",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "getSplitScreenIdByTabId",
+"sig": "public getSplitScreenIdByTabId(tabId: string): Promise<string | undefined>;",
+"summary": "使用标签页 ID 获取分屏 ID",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "getTabsBySplitScreenId",
+"sig": "public getTabsBySplitScreenId(splitScreenId: string): Promise<Array<IDMT_EditorTabItem>>;",
+"summary": "获取指定分屏 ID 下的所有标签页",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "createSplitScreen",
+"sig": "public createSplitScreen(splitScreenType: EDMT_EditorSplitScreenDirection, tabId: string): Promise<{ sourceSplitScreenId: string; newSplitScreenId: string } | undefined>;",
+"summary": "创建分屏",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "moveDocumentToSplitScreen",
+"sig": "public moveDocumentToSplitScreen(tabId: string, splitScreenId: string): Promise<boolean>;",
+"summary": "将文档移动到指定分屏",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "activateDocument",
+"sig": "public activateDocument(tabId: string): Promise<boolean>;",
+"summary": "激活文档",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "activateSplitScreen",
+"sig": "public activateSplitScreen(splitScreenId: string): Promise<boolean>;",
+"summary": "激活分屏",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "tileAllDocumentToSplitScreen",
+"sig": "public tileAllDocumentToSplitScreen(): Promise<boolean>;",
+"summary": "平铺所有文档",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "mergeAllDocumentFromSplitScreen",
+"sig": "public mergeAllDocumentFromSplitScreen(): Promise<boolean>;",
+"summary": "合并所有分屏",
+"stability": ""
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "getCurrentRenderedAreaImage",
+"sig": "public getCurrentRenderedAreaImage(tabId?: string): Promise<Blob | undefined>;",
+"summary": "获取画布渲染区域图像",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "zoomToRegion",
+"sig": "public zoomToRegion(left: number, right: number, top: number, bottom: number, tabId?: string): Promise<boolean>;",
+"summary": "缩放到区域",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "zoomTo",
+"sig": "public zoomTo(x?: number, y?: number, scaleRatio?: number, tabId?: string): Promise<{ left: number; right: number; top: number; bottom: number } | false>;",
+"summary": "缩放到坐标",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "zoomToAllPrimitives",
+"sig": "public zoomToAllPrimitives(tabId?: string): Promise<{ left: number; right: number; top: number; bottom: number } | false>;",
+"summary": "缩放到所有图元（适应全部）",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "zoomToSelectedPrimitives",
+"sig": "public zoomToSelectedPrimitives(tabId?: string): Promise<{ left: number; right: number; top: number; bottom: number } | false>;",
+"summary": "缩放到已选中图元（适应选中）",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "zoom",
+"sig": "public zoom(percent: number, tabId?: string): { left: number; right: number; top: number; bottom: number } | false;",
+"summary": "设置缩放比例",
+"stability": "alpha"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "generateIndicatorMarkers",
+"sig": "public generateIndicatorMarkers(markers: Array<IDMT_IndicatorMarkerShape>, color?: { r: number; g: number; b: number; alpha: number }, lineWidth?: number, zoom?: boolean, tabId?: string): Promise<boolean>;",
+"summary": "生成指示标记",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_EditorControl",
+"method": "removeIndicatorMarkers",
+"sig": "public removeIndicatorMarkers(tabId?: string): Promise<boolean>;",
+"summary": "移除指示标记",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Event",
+"method": "addEditorTabEventListener",
+"sig": "public addEditorTabEventListener(id: string, eventType: 'all' | EDMT_EditorTabEventType, callFn: (eventType: EDMT_EditorTabEventType, props: { documentType: EDMT_EditorDocumentType; title: string; tabId: string }) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增编辑器标签页事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Event",
+"method": "removeEventListener",
+"sig": "public removeEventListener(id: string): boolean;",
+"summary": "移除事件监听",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Event",
+"method": "isEventListenerAlreadyExist",
+"sig": "public isEventListenerAlreadyExist(id: string): boolean;",
+"summary": "查询事件监听是否存在",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "createFolder",
+"sig": "public createFolder(folderName: string, teamUuid: string, parentFolderUuid?: string, description?: string): Promise<string | undefined>;",
+"summary": "创建文件夹",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "modifyFolderName",
+"sig": "public modifyFolderName(teamUuid: string, folderUuid: string, folderName: string): Promise<boolean>;",
+"summary": "修改文件夹名称",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "modifyFolderDescription",
+"sig": "public modifyFolderDescription(teamUuid: string, folderUuid: string, description?: string): Promise<boolean>;",
+"summary": "修改文件夹描述",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "moveFolderToFolder",
+"sig": "public moveFolderToFolder(teamUuid: string, folderUuid: string, parentFolderUuid?: string): Promise<boolean>;",
+"summary": "移动文件夹",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "getAllFoldersUuid",
+"sig": "public getAllFoldersUuid(teamUuid: string): Promise<Array<string>>;",
+"summary": "获取所有文件夹的 UUID",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "getFolderInfo",
+"sig": "public getFolderInfo(teamUuid: string, folderUuid: string): Promise<IDMT_FolderItem | undefined>;",
+"summary": "获取文件夹详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Folder",
+"method": "deleteFolder",
+"sig": "public deleteFolder(teamUuid: string, folderUuid: string): Promise<boolean>;",
+"summary": "删除文件夹",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "createPanel",
+"sig": "public createPanel(): Promise<string | undefined>;",
+"summary": "创建面板",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "modifyPanelName",
+"sig": "public modifyPanelName(panelUuid: string, panelName: string): Promise<boolean>;",
+"summary": "修改面板名称",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "copyPanel",
+"sig": "public copyPanel(panelUuid: string): Promise<string | undefined>;",
+"summary": "复制面板",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "getPanelInfo",
+"sig": "public getPanelInfo(panelUuid: string): Promise<IDMT_PanelItem | undefined>;",
+"summary": "获取面板的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "getAllPanelsInfo",
+"sig": "public getAllPanelsInfo(): Promise<Array<IDMT_PanelItem>>;",
+"summary": "获取工程内所有面板的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "getCurrentPanelInfo",
+"sig": "public getCurrentPanelInfo(): Promise<IDMT_PanelItem | undefined>;",
+"summary": "获取当前面板的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Panel",
+"method": "deletePanel",
+"sig": "public deletePanel(panelUuid: string): Promise<boolean>;",
+"summary": "删除面板",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "createPcb",
+"sig": "public createPcb(boardName?: string): Promise<string | undefined>;",
+"summary": "创建 PCB",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "modifyPcbName",
+"sig": "public modifyPcbName(pcbUuid: string, pcbName: string): Promise<boolean>;",
+"summary": "修改 PCB 名称",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "copyPcb",
+"sig": "public copyPcb(pcbUuid: string, boardName?: string): Promise<string | undefined>;",
+"summary": "复制 PCB",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "getPcbInfo",
+"sig": "public getPcbInfo(pcbUuid: string): Promise<IDMT_PcbItem | undefined>;",
+"summary": "获取 PCB 的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "getAllPcbsInfo",
+"sig": "public getAllPcbsInfo(): Promise<Array<IDMT_PcbItem>>;",
+"summary": "获取工程内所有 PCB 的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "getCurrentPcbInfo",
+"sig": "public getCurrentPcbInfo(): Promise<IDMT_PcbItem | undefined>;",
+"summary": "获取当前 PCB 的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Pcb",
+"method": "deletePcb",
+"sig": "public deletePcb(pcbUuid: string): Promise<boolean>;",
+"summary": "删除 PCB",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Project",
+"method": "openProject",
+"sig": "public openProject(projectUuid: string): Promise<boolean>;",
+"summary": "打开工程",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Project",
+"method": "createProject",
+"sig": "public createProject(projectFriendlyName: string, projectName?: string, teamUuid?: string, folderUuid?: string, description?: string, collaborationMode?: EDMT_ProjectCollaborationMode): Promise<string | undefined>;",
+"summary": "创建工程",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Project",
+"method": "modifyProjectFriendlyName",
+"sig": "public modifyProjectFriendlyName(projectUuid: string, projectFriendlyName: string): boolean;",
+"summary": "修改工程友好名称",
+"stability": "internal"
+},
+{
+"ns": "eda.dmt_Project",
+"method": "modifyProjectDescription",
+"sig": "public modifyProjectDescription(projectUuid: string, description?: string): boolean;",
+"summary": "修改工程描述",
+"stability": "internal"
+},
+{
+"ns": "eda.dmt_Project",
+"method": "modifyProjectCollaborationMode",
+"sig": "public modifyProjectCollaborationMode(projectUuid: string, collaborationMode: EDMT_ProjectCollaborationMode): boolean;",
+"summary": "修改工程协作模式",
+"stability": "internal"
+},
+{
+"ns": "eda.dmt_Project",
+"method": "moveProject",
+"sig": "public moveProject(projectUuid: string, teamUuid: string, folderUuid?: string): boolean;",
+"summary": "移动工程",
+"stability": "internal"
+},
+{
+"ns": "eda.dmt_Project",
+"method": "moveProjectToFolder",
+"sig": "public moveProjectToFolder(projectUuid: string, folderUuid?: string): Promise<boolean>;",
+"summary": "移动工程到文件夹",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Project",
+"method": "copyProject",
+"sig": "public copyProject(sourceProjectUuid: string, targetTeamUuid?: string, targetFolderUuid?: string, newProjectFriendlyName?: string, newProjectName?: string): string | undefined;",
+"summary": "复制工程",
+"stability": "internal"
+},
+{
+"ns": "eda.dmt_Project",
+"method": "getAllProjectsUuid",
+"sig": "public getAllProjectsUuid(teamUuid?: string, folderUuid?: string, workspaceUuid?: string): Promise<Array<string>>;",
+"summary": "获取所有工程的 UUID",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Project",
+"method": "getProjectInfo",
+"sig": "public getProjectInfo(projectUuid: string): Promise<IDMT_BriefProjectItem | undefined>;",
+"summary": "获取工程属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Project",
+"method": "getCurrentProjectInfo",
+"sig": "public getCurrentProjectInfo(): Promise<IDMT_ProjectItem | undefined>;",
+"summary": "获取当前工程的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Project",
+"method": "deleteProject",
+"sig": "public deleteProject(projectUuid: string): boolean;",
+"summary": "删除工程",
+"stability": "internal"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "createSchematic",
+"sig": "public createSchematic(boardName?: string): Promise<string | undefined>;",
+"summary": "创建原理图",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "createSchematicPage",
+"sig": "public createSchematicPage(schematicUuid: string): Promise<string | undefined>;",
+"summary": "创建原理图图页",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "modifySchematicName",
+"sig": "public modifySchematicName(schematicUuid: string, schematicName: string): Promise<boolean>;",
+"summary": "修改原理图名称",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "modifySchematicPageName",
+"sig": "public modifySchematicPageName(schematicPageUuid: string, schematicPageName: string): Promise<boolean>;",
+"summary": "修改原理图图页名称",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "modifySchematicPageTitleBlock",
+"sig": "public modifySchematicPageTitleBlock(showTitleBlock?: boolean, titleBlockData?: { [key: string]: { showTitle?: boolean; showValue?: boolean; value?: any } }): Promise<boolean>;",
+"summary": "修改原理图图页明细表",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "copySchematic",
+"sig": "public copySchematic(schematicUuid: string, boardName?: string): Promise<string | undefined>;",
+"summary": "复制原理图",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "copySchematicPage",
+"sig": "public copySchematicPage(schematicPageUuid: string, schematicUuid?: string): Promise<string | undefined>;",
+"summary": "复制原理图图页",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getSchematicInfo",
+"sig": "public getSchematicInfo(schematicUuid: string): Promise<IDMT_SchematicItem | undefined>;",
+"summary": "获取原理图的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getSchematicPageInfo",
+"sig": "public getSchematicPageInfo(schematicPageUuid: string): Promise<IDMT_SchematicPageItem | undefined>;",
+"summary": "获取原理图图页的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getAllSchematicsInfo",
+"sig": "public getAllSchematicsInfo(): Promise<Array<IDMT_SchematicItem>>;",
+"summary": "获取工程内所有原理图的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getAllSchematicPagesInfo",
+"sig": "public getAllSchematicPagesInfo(): Promise<Array<IDMT_SchematicPageItem>>;",
+"summary": "获取工程内所有原理图图页的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getCurrentSchematicAllSchematicPagesInfo",
+"sig": "public getCurrentSchematicAllSchematicPagesInfo(): Promise<Array<IDMT_SchematicPageItem>>;",
+"summary": "获取当前原理图内所有原理图图页的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getCurrentSchematicInfo",
+"sig": "public getCurrentSchematicInfo(): Promise<IDMT_SchematicItem | undefined>;",
+"summary": "获取当前原理图的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "getCurrentSchematicPageInfo",
+"sig": "public getCurrentSchematicPageInfo(): Promise<IDMT_SchematicPageItem | undefined>;",
+"summary": "获取当前原理图图页的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "reorderSchematicPages",
+"sig": "public reorderSchematicPages(schematicUuid: string, schematicPageItemsArray: Array<IDMT_SchematicPageItem>): Promise<boolean>;",
+"summary": "重新排序原理图图页",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "deleteSchematic",
+"sig": "public deleteSchematic(schematicUuid: string): Promise<boolean>;",
+"summary": "删除原理图",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Schematic",
+"method": "deleteSchematicPage",
+"sig": "public deleteSchematicPage(schematicPageUuid: string): Promise<boolean>;",
+"summary": "删除原理图图页",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_SelectControl",
+"method": "getCurrentDocumentInfo",
+"sig": "public getCurrentDocumentInfo(): Promise<IDMT_EditorDocumentItem | undefined>;",
+"summary": "获取当前文档的属性",
+"stability": "beta"
+},
+{
+"ns": "eda.dmt_Team",
+"method": "getAllTeamsInfo",
+"sig": "public getAllTeamsInfo(): Promise<Array<IDMT_TeamItem>>;",
+"summary": "获取所有直接团队的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Team",
+"method": "getAllInvolvedTeamInfo",
+"sig": "public getAllInvolvedTeamInfo(): Promise<Array<IDMT_TeamItem>>;",
+"summary": "获取所有参与的团队的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Team",
+"method": "getCurrentTeamInfo",
+"sig": "public getCurrentTeamInfo(): Promise<IDMT_TeamItem | undefined>;",
+"summary": "获取当前团队的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Workspace",
+"method": "getAllWorkspacesInfo",
+"sig": "public getAllWorkspacesInfo(): Promise<Array<IDMT_WorkspaceItem>>;",
+"summary": "获取所有工作区的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Workspace",
+"method": "toggleToWorkspace",
+"sig": "public toggleToWorkspace(workspaceUuid?: string): Promise<boolean>;",
+"summary": "切换到工作区",
+"stability": ""
+},
+{
+"ns": "eda.dmt_Workspace",
+"method": "getCurrentWorkspaceInfo",
+"sig": "public getCurrentWorkspaceInfo(): Promise<IDMT_WorkspaceItem | undefined>;",
+"summary": "获取当前工作区的详细属性",
+"stability": ""
+},
+{
+"ns": "eda.lib_3DModel",
+"method": "create",
+"sig": "public create(libraryUuid: string, modelFile: Blob, classification?: ILIB_ClassificationIndex | Array<string>, unit?: ESYS_Unit.MILLIMETER | ESYS_Unit.CENTIMETER | ESYS_Unit.METER | ESYS_Unit.MIL | ESYS_Unit.INCH): Promise<Array<string> | undefined>;",
+"summary": "创建 3D 模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_3DModel",
+"method": "delete",
+"sig": "public delete(modelUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除 3D 模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_3DModel",
+"method": "modify",
+"sig": "public modify(modelUuid: string, libraryUuid: string, modelName?: string, classification?: ILIB_ClassificationIndex | Array<string> | null, description?: string | null): Promise<boolean>;",
+"summary": "修改 3D 模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_3DModel",
+"method": "get",
+"sig": "public get(modelUuid: string, libraryUuid?: string): Promise<ILIB_3DModelItem | undefined>;",
+"summary": "获取 3D 模型的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_3DModel",
+"method": "copy",
+"sig": "public copy(modelUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: ILIB_ClassificationIndex | Array<string>, newModelName?: string): Promise<string | undefined>;",
+"summary": "复制 3D 模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_3DModel",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: ILIB_ClassificationIndex | Array<string>, itemsOfPage?: number, page?: number): Promise<Array<ILIB_3DModelSearchItem>>;",
+"summary": "搜索 3D 模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "create",
+"sig": "public create(libraryUuid: string, cbbName: string, classification?: ILIB_ClassificationIndex | Array<string>, description?: string): Promise<string | undefined>;",
+"summary": "创建复用模块",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "delete",
+"sig": "public delete(cbbUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除复用模块",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "modify",
+"sig": "public modify(cbbUuid: string, libraryUuid: string, cbbName?: string, classification?: ILIB_ClassificationIndex | Array<string> | null, description?: string | null): Promise<boolean>;",
+"summary": "修改复用模块",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "get",
+"sig": "public get(cbbUuid: string, libraryUuid?: string): Promise<ILIB_CbbItem | undefined>;",
+"summary": "获取复用模块的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "copy",
+"sig": "public copy(cbbUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: ILIB_ClassificationIndex | Array<string>, newCbbName?: string): Promise<string | undefined>;",
+"summary": "复制复用模块",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: ILIB_ClassificationIndex | Array<string>, itemsOfPage?: number, page?: number): Promise<Array<ILIB_CbbSearchItem>>;",
+"summary": "搜索复用模块",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "openProjectInEditor",
+"sig": "public openProjectInEditor(cbbUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "在编辑器打开复用模块工程",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Cbb",
+"method": "openSymbolInEditor",
+"sig": "public openSymbolInEditor(cbbUuid: string, libraryUuid: string, splitScreenId?: string): Promise<string | undefined>;",
+"summary": "在编辑器打开复用模块符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "createPrimary",
+"sig": "public createPrimary(libraryUuid: string, libraryType: ELIB_LibraryType, primaryClassificationName: string): Promise<ILIB_ClassificationIndex | undefined>;",
+"summary": "创建一级分类",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "createSecondary",
+"sig": "public createSecondary(libraryUuid: string, libraryType: ELIB_LibraryType, primaryClassificationUuid: string, secondaryClassificationName: string): Promise<ILIB_ClassificationIndex | undefined>;",
+"summary": "创建二级分类",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "getIndexByName",
+"sig": "public getIndexByName(libraryUuid: string, libraryType: ELIB_LibraryType, primaryClassificationName: string, secondaryClassificationName?: string): Promise<ILIB_ClassificationIndex | undefined>;",
+"summary": "获取指定名称的分类的分类索引",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "getNameByUuid",
+"sig": "public getNameByUuid(libraryUuid: string, libraryType: ELIB_LibraryType, primaryClassificationUuid: string, secondaryClassificationUuid?: string): Promise<{ primaryClassificationName: string; secondaryClassificationName?: string | undefined } | undefined>;",
+"summary": "获取指定 UUID 的分类的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "getNameByIndex",
+"sig": "public getNameByIndex(classificationIndex: ILIB_ClassificationIndex): Promise<{ primaryClassificationName: string; secondaryClassificationName?: string | undefined } | undefined>;",
+"summary": "获取指定索引的分类的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "getAllClassificationTree",
+"sig": "public getAllClassificationTree(libraryUuid: string, libraryType: ELIB_LibraryType): Promise<Array<{ name: string; uuid: string; children?: Array<{ name: string; uuid: string }> | undefined }>>;",
+"summary": "获取所有分类信息组成的树",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "deleteByUuid",
+"sig": "public deleteByUuid(libraryUuid: string, classificationUuid: string): Promise<boolean>;",
+"summary": "删除指定 UUID 的分类",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Classification",
+"method": "deleteByIndex",
+"sig": "public deleteByIndex(classificationIndex: ILIB_ClassificationIndex): Promise<boolean>;",
+"summary": "删除指定索引的分类",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "create",
+"sig": "public create(libraryUuid: string, deviceName: string, classification?: ILIB_ClassificationIndex | Array<string>, association?: { symbolType?: ELIB_SymbolType; symbolUuid?: string; symbol?: { uuid: string; libraryUuid: string }; footprintUuid?: string; footprint?: { uuid: string; libraryUuid: string }; model3D?: { uuid: string; libraryUuid: string }; imageData?: File | Blob }, description?: string, property?: ILIB_DeviceExtendPropertyItem): Promise<string | undefined>;",
+"summary": "创建器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "delete",
+"sig": "public delete(deviceUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "modify",
+"sig": "public modify(deviceUuid: string, libraryUuid: string, deviceName?: string, classification?: ILIB_ClassificationIndex | Array<string> | null, association?: { symbolUuid?: string; symbol?: { uuid: string; libraryUuid: string }; footprintUuid?: string | null; footprint?: { uuid: string; libraryUuid: string } | null; model3D?: { uuid: string; libraryUuid: string } | null; imageData?: File | Blob | null }, description?: string | null, property?: { name?: string | null; designator?: string; addIntoBom?: boolean; addIntoPcb?: boolean; net?: string; manufacturer?: string | null; manufacturerId?: string | null; supplier?: string | null; supplierId?: string | null; otherProperty?: { [key: string]: boolean | number | string | undefined | null } }): Promise<boolean>;",
+"summary": "修改器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "get",
+"sig": "public get(deviceUuid: string, libraryUuid?: string): Promise<ILIB_DeviceItem | undefined>;",
+"summary": "获取器件的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "copy",
+"sig": "public copy(deviceUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: ILIB_ClassificationIndex | Array<string>, newDeviceName?: string): Promise<string | undefined>;",
+"summary": "复制器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: ILIB_ClassificationIndex | Array<string>, symbolType?: ELIB_SymbolType, itemsOfPage?: number, page?: number): Promise<Array<ILIB_DeviceSearchItem>>;",
+"summary": "搜索器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "searchByProperties",
+"sig": "public searchByProperties(properties: ILIB_DevicePropertiesForSearch, libraryUuid?: string, classification?: Array<string>, symbolType?: ELIB_SymbolType, itemsOfPage?: number, page?: number): Promise<Array<ILIB_DeviceSearchItem>>;",
+"summary": "使用属性精确搜索器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Device",
+"method": "getByLcscIds",
+"sig": "public getByLcscIds(lcscIds: Array<string>, libraryUuid?: string, allowMultiMatch?: boolean): Promise<Array<ILIB_DeviceSearchItem>>;",
+"summary": "使用立创 C 编号批量获取器件",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "create",
+"sig": "public create(libraryUuid: string, footprintName: string, classification?: ILIB_ClassificationIndex | Array<string>, description?: string, otherProperty?: Record<string, boolean | number | string | undefined>): Promise<string | undefined>;",
+"summary": "创建封装",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "delete",
+"sig": "public delete(footprintUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除封装",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "modify",
+"sig": "public modify(footprintUuid: string, libraryUuid: string, footprintName?: string, classification?: ILIB_ClassificationIndex | Array<string> | null, description?: string | null, otherProperty?: Record<string, boolean | number | string | undefined | null>): Promise<boolean>;",
+"summary": "修改封装",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "updateDocumentSource",
+"sig": "public updateDocumentSource(footprintUuid: string, libraryUuid: string, documentSource: string): Promise<boolean | undefined>;",
+"summary": "更新封装的文档源码",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "get",
+"sig": "public get(footprintUuid: string, libraryUuid?: string): Promise<ILIB_FootprintItem | undefined>;",
+"summary": "获取封装的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "copy",
+"sig": "public copy(footprintUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: ILIB_ClassificationIndex | Array<string>, newFootprintName?: string): Promise<string | undefined>;",
+"summary": "复制封装",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: ILIB_ClassificationIndex | Array<string>, itemsOfPage?: number, page?: number): Promise<Array<ILIB_FootprintSearchItem>>;",
+"summary": "搜索封装",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "searchByProperties",
+"sig": "public searchByProperties(properties: ILIB_FootprintPropertiesForSearch, libraryUuid?: string): Promise<Array<ILIB_FootprintSearchItem>>;",
+"summary": "使用属性精确搜索封装",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "openInEditor",
+"sig": "public openInEditor(footprintUuid: string, libraryUuid: string, splitScreenId?: string): Promise<string | undefined>;",
+"summary": "在编辑器打开文档",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Footprint",
+"method": "getRenderImage",
+"sig": "public getRenderImage(source: { footprintUuid: string; libraryUuid: string }): Promise<Blob | undefined>;",
+"summary": "获取封装渲染图",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_LibrariesList",
+"method": "getSystemLibraryUuid",
+"sig": "public getSystemLibraryUuid(): Promise<string | undefined>;",
+"summary": "获取系统库的 UUID",
+"stability": ""
+},
+{
+"ns": "eda.lib_LibrariesList",
+"method": "getPersonalLibraryUuid",
+"sig": "public getPersonalLibraryUuid(): Promise<string | undefined>;",
+"summary": "获取个人库的 UUID",
+"stability": ""
+},
+{
+"ns": "eda.lib_LibrariesList",
+"method": "getProjectLibraryUuid",
+"sig": "public getProjectLibraryUuid(): Promise<string | undefined>;",
+"summary": "获取工程库的 UUID",
+"stability": ""
+},
+{
+"ns": "eda.lib_LibrariesList",
+"method": "getFavoriteLibraryUuid",
+"sig": "public getFavoriteLibraryUuid(): Promise<string | undefined>;",
+"summary": "获取收藏库的 UUID",
+"stability": ""
+},
+{
+"ns": "eda.lib_LibrariesList",
+"method": "getAllLibrariesList",
+"sig": "public getAllLibrariesList(): Promise<Array<ILIB_LibraryInfo>>;",
+"summary": "获取所有库的列表",
+"stability": ""
+},
+{
+"ns": "eda.lib_LibrariesList",
+"method": "registerExtendLibrary",
+"sig": "public registerExtendLibrary(title: string, libraryFunctions: { device?: ILIB_ExtendLibraryDeviceFunctions; symbol?: ILIB_ExtendLibrarySymbolFunctions; footprint?: ILIB_ExtendLibraryFootprintFunctions; cbb?: ILIB_ExtendLibraryCbbFunctions; model3d?: ILIB_ExtendLibrary3DModelFunctions }): Promise<string | undefined>;",
+"summary": "注册外部库",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "create",
+"sig": "public create(libraryUuid: string, panelLibraryName: string, classification?: ILIB_ClassificationIndex | Array<string>, description?: string): Promise<string | undefined>;",
+"summary": "创建面板库",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "delete",
+"sig": "public delete(panelLibraryUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除面板库",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "modify",
+"sig": "public modify(panelLibraryUuid: string, libraryUuid: string, panelLibraryName?: string, classification?: ILIB_ClassificationIndex | Array<string> | null, description?: string | null): Promise<boolean>;",
+"summary": "修改面板库",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "get",
+"sig": "public get(panelLibraryUuid: string, libraryUuid?: string): Promise<ILIB_PanelLibraryItem | undefined>;",
+"summary": "获取面板库的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "copy",
+"sig": "public copy(panelLibraryUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: ILIB_ClassificationIndex | Array<string>, newPanelLibraryName?: string): Promise<string | undefined>;",
+"summary": "复制面板库",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: ILIB_ClassificationIndex | Array<string>, itemsOfPage?: number, page?: number): Promise<Array<ILIB_PanelLibrarySearchItem>>;",
+"summary": "搜索面板库",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_PanelLibrary",
+"method": "openInEditor",
+"sig": "public openInEditor(panelLibraryUuid: string, libraryUuid: string, splitScreenId?: string): Promise<string | undefined>;",
+"summary": "在编辑器打开文档",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SelectControl",
+"method": "getSelectedLibraryRowInfo",
+"sig": "public getSelectedLibraryRowInfo(): Promise<ILIB_LibraryItem | undefined>;",
+"summary": "获取当前底部库选中行的信息",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SimulationModel",
+"method": "create",
+"sig": "public create(libraryUuid: string, model: { modelType: 'Ngspice' } & ({ modelFile: Blob; modelName?: string; modelCategory?: string; modelPin?: string } | { modelData: string; modelName?: string; modelCategory?: string; modelPin?: string }), classification?: Array<string>, description?: string): Promise<string | undefined>;",
+"summary": "创建仿真模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SimulationModel",
+"method": "delete",
+"sig": "public delete(simulationModelUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除仿真模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SimulationModel",
+"method": "modify",
+"sig": "public modify(simulationModelUuid: string, libraryUuid: string, modelProps?: { modelName?: string; modelCategory?: string; modelPin?: string }, classification?: Array<string> | null, description?: string | null): Promise<boolean>;",
+"summary": "修改仿真模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SimulationModel",
+"method": "get",
+"sig": "public get(simulationModelUuid: string, libraryUuid?: string): Promise<ILIB_SimulationModelItem | undefined>;",
+"summary": "获取仿真模型的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SimulationModel",
+"method": "copy",
+"sig": "public copy(simulationModelUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: Array<string>, newSimulationModelName?: string): Promise<string | undefined>;",
+"summary": "复制仿真模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_SimulationModel",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: Array<string>, simulationModelType?: ELIB_SimulationModelType, itemsOfPage?: number, page?: number): Promise<Array<ILIB_SimulationModelSearchItem>>;",
+"summary": "搜索仿真模型",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "create",
+"sig": "public create(libraryUuid: string, symbolName: string, classification?: ILIB_ClassificationIndex | Array<string>, symbolType?: ELIB_SymbolType, description?: string, otherProperty?: Record<string, boolean | number | string | undefined>): Promise<string | undefined>;",
+"summary": "创建符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "delete",
+"sig": "public delete(symbolUuid: string, libraryUuid: string): Promise<boolean>;",
+"summary": "删除符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "modify",
+"sig": "public modify(symbolUuid: string, libraryUuid: string, symbolName?: string, classification?: ILIB_ClassificationIndex | Array<string> | null, description?: string | null, otherProperty?: Record<string, boolean | number | string | undefined | null>): Promise<boolean>;",
+"summary": "修改符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "updateDocumentSource",
+"sig": "public updateDocumentSource(symbolUuid: string, libraryUuid: string, documentSource: string): Promise<boolean | undefined>;",
+"summary": "更新符号的文档源码",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "get",
+"sig": "public get(symbolUuid: string, libraryUuid?: string): Promise<ILIB_SymbolItem | undefined>;",
+"summary": "获取符号的所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "copy",
+"sig": "public copy(symbolUuid: string, libraryUuid: string, targetLibraryUuid: string, targetClassification?: ILIB_ClassificationIndex | Array<string>, newSymbolName?: string): Promise<string | undefined>;",
+"summary": "复制符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "search",
+"sig": "public search(key: string, libraryUuid?: string, classification?: ILIB_ClassificationIndex | Array<string>, symbolType?: ELIB_SymbolType, itemsOfPage?: number, page?: number): Promise<Array<ILIB_SymbolSearchItem>>;",
+"summary": "搜索符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "searchByProperties",
+"sig": "public searchByProperties(properties: ILIB_SymbolPropertiesForSearch, libraryUuid?: string): Promise<Array<ILIB_SymbolSearchItem>>;",
+"summary": "使用属性精确搜索符号",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "openInEditor",
+"sig": "public openInEditor(symbolUuid: string, libraryUuid: string, splitScreenId?: string): Promise<string | undefined>;",
+"summary": "在编辑器打开文档",
+"stability": "beta"
+},
+{
+"ns": "eda.lib_Symbol",
+"method": "getRenderImage",
+"sig": "public getRenderImage(source: { symbolUuid: string; libraryUuid: string; subPartName?: string }): Promise<Blob | undefined>;",
+"summary": "获取符号渲染图",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "importChanges",
+"sig": "public importChanges(uuid?: string): Promise<boolean>;",
+"summary": "从原理图导入变更",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "importAutoRouteJsonFile",
+"sig": "public importAutoRouteJsonFile(autoRouteFile: File): Promise<boolean>;",
+"summary": "导入自动布线文件（JSON）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "importAutoRouteSesFile",
+"sig": "public importAutoRouteSesFile(autoRouteFile: File): Promise<boolean>;",
+"summary": "导入自动布线文件（SES）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "importAutoLayoutJsonFile",
+"sig": "public importAutoLayoutJsonFile(autoLayoutFile: File): Promise<boolean>;",
+"summary": "导入自动布局文件（JSON）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "save",
+"sig": "public save(): Promise<boolean>;",
+"summary": "保存文档",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "getCalculatingRatlineStatus",
+"sig": "public getCalculatingRatlineStatus(): Promise<EPCB_DocumentRatlineCalculatingActiveStatus>;",
+"summary": "获取当前飞线计算功能状态",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "startCalculatingRatline",
+"sig": "public startCalculatingRatline(): Promise<boolean>;",
+"summary": "启动飞线计算功能",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "stopCalculatingRatline",
+"sig": "public stopCalculatingRatline(): Promise<boolean>;",
+"summary": "停止飞线计算功能",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "convertCanvasOriginToDataOrigin",
+"sig": "public convertCanvasOriginToDataOrigin(x: number, y: number): Promise<{ x: number; y: number }>;",
+"summary": "输入画布坐标返回该坐标对应的数据坐标",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "convertDataOriginToCanvasOrigin",
+"sig": "public convertDataOriginToCanvasOrigin(x: number, y: number): Promise<{ x: number; y: number }>;",
+"summary": "输入数据坐标返回该坐标对应的画布坐标",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "getCanvasOrigin",
+"sig": "public getCanvasOrigin(): Promise<{ offsetX: number; offsetY: number }>;",
+"summary": "获取画布原点相对于数据原点的偏移坐标",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "setCanvasOrigin",
+"sig": "public setCanvasOrigin(offsetX: number, offsetY: number): Promise<boolean>;",
+"summary": "设置画布原点相对于数据原点的偏移坐标",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "navigateToCoordinates",
+"sig": "public navigateToCoordinates(x: number, y: number): Promise<boolean>;",
+"summary": "定位到画布坐标",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Document",
+"method": "navigateToRegion",
+"sig": "public navigateToRegion(left: number, right: number, top: number, bottom: number): Promise<boolean>;",
+"summary": "定位到画布区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "getPrimitiveAtPoint",
+"sig": "public getPrimitiveAtPoint(x: number, y: number): Promise<IPCB_Primitive | undefined>;",
+"summary": "获取坐标点的图元",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "getPrimitivesInRegion",
+"sig": "public getPrimitivesInRegion(left: number, right: number, top: number, bottom: number, leftToRight?: boolean): Promise<Array<IPCB_Primitive>>;",
+"summary": "获取区域内所有图元",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "zoomToBoardOutline",
+"sig": "public zoomToBoardOutline(): Promise<boolean>;",
+"summary": "缩放到板框（适应板框）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "getCurrentFilterConfiguration",
+"sig": "public getCurrentFilterConfiguration(): Promise<{ [key: string]: any } | undefined>;",
+"summary": "获取当前画布过滤器配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "clearRouting",
+"sig": "public clearRouting(type?: 'all' | 'net' | 'connection'): Promise<boolean>;",
+"summary": "清除布线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "autoRouting",
+"sig": "public autoRouting(props?: IPCB_AutoRoutingProps): Promise<IPCB_AutoRoutingResult>;",
+"summary": "自动布线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Document",
+"method": "autoLayout",
+"sig": "public autoLayout(): Promise<IPCB_AutoLayoutResult>;",
+"summary": "自动布局",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "check",
+"sig": "public check(strict: boolean, userInterface: boolean, includeVerboseError: false): Promise<boolean>;",
+"summary": "检查 DRC",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "check",
+"sig": "public check(strict: boolean, userInterface: boolean, includeVerboseError: true): Promise<Array<any>>;",
+"summary": "检查 DRC",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getRealTimeDrcStatus",
+"sig": "public getRealTimeDrcStatus(): boolean;",
+"summary": "获取实时 DRC 检查状态",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "startRealTimeDrc",
+"sig": "public startRealTimeDrc(): boolean;",
+"summary": "开始实时 DRC 检查",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "stopRealTimeDrc",
+"sig": "public stopRealTimeDrc(): boolean;",
+"summary": "停止实时 DRC 检查",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getCurrentRuleConfigurationName",
+"sig": "public getCurrentRuleConfigurationName(): Promise<string | undefined>;",
+"summary": "获取当前设计规则配置名称",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getCurrentRuleConfiguration",
+"sig": "public getCurrentRuleConfiguration(): Promise<{ [key: string]: any } | undefined>;",
+"summary": "获取当前设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getRuleConfiguration",
+"sig": "public getRuleConfiguration(configurationName: string): Promise<{ [key: string]: any } | undefined>;",
+"summary": "获取指定设计规则配置",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getAllRuleConfigurations",
+"sig": "public getAllRuleConfigurations(includeSystem?: boolean): Promise<Array<{ [key: string]: any }>>;",
+"summary": "获取所有设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "saveRuleConfiguration",
+"sig": "public saveRuleConfiguration(ruleConfiguration: { [key: string]: any }, configurationName: string, allowOverwrite?: boolean): Promise<boolean>;",
+"summary": "保存设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "renameRuleConfiguration",
+"sig": "public renameRuleConfiguration(originalConfigurationName: string, configurationName: string): Promise<boolean>;",
+"summary": "重命名设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "deleteRuleConfiguration",
+"sig": "public deleteRuleConfiguration(configurationName: string): Promise<boolean>;",
+"summary": "删除设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getDefaultRuleConfigurationName",
+"sig": "public getDefaultRuleConfigurationName(): Promise<string | undefined>;",
+"summary": "获取新建 PCB 默认设计规则配置的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "setAsDefaultRuleConfiguration",
+"sig": "public setAsDefaultRuleConfiguration(configurationName: string): Promise<boolean>;",
+"summary": "设置为新建 PCB 默认设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "overwriteCurrentRuleConfiguration",
+"sig": "public overwriteCurrentRuleConfiguration(ruleConfiguration: { [key: string]: any }): Promise<boolean>;",
+"summary": "覆写当前设计规则配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getNetRules",
+"sig": "public getNetRules(): Promise<Array<{ [key: string]: any }>>;",
+"summary": "获取网络规则",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "overwriteNetRules",
+"sig": "public overwriteNetRules(netRules: Array<{ [key: string]: any }>): Promise<boolean>;",
+"summary": "覆写网络规则",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getNetByNetRules",
+"sig": "public getNetByNetRules(): Promise<{ [key: string]: any }>;",
+"summary": "获取网络-网络规则",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "overwriteNetByNetRules",
+"sig": "public overwriteNetByNetRules(netByNetRules: { [key: string]: any }): Promise<boolean>;",
+"summary": "覆写网络-网络规则",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getRegionRules",
+"sig": "public getRegionRules(): Promise<Array<{ [key: string]: any }>>;",
+"summary": "获取区域规则",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "overwriteRegionRules",
+"sig": "public overwriteRegionRules(regionRules: Array<{ [key: string]: any }>): Promise<boolean>;",
+"summary": "覆写区域规则",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "createNetClass",
+"sig": "public createNetClass(netClassName: string, nets: Array<string>, color: IPCB_EqualLengthNetGroupItem['color']): Promise<boolean>;",
+"summary": "创建网络类",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "deleteNetClass",
+"sig": "public deleteNetClass(netClassName: string): Promise<boolean>;",
+"summary": "删除网络类",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "modifyNetClassName",
+"sig": "public modifyNetClassName(originalNetClassName: string, netClassName: string): Promise<boolean>;",
+"summary": "修改网络类的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "addNetToNetClass",
+"sig": "public addNetToNetClass(netClassName: string, net: string | Array<string>): Promise<boolean>;",
+"summary": "将网络添加到网络类",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "removeNetFromNetClass",
+"sig": "public removeNetFromNetClass(netClassName: string, net: string | Array<string>): Promise<boolean>;",
+"summary": "从网络类中移除网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getAllNetClasses",
+"sig": "public getAllNetClasses(): Promise<Array<IPCB_NetClassItem>>;",
+"summary": "获取所有网络类的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "createDifferentialPair",
+"sig": "public createDifferentialPair(differentialPairName: string, positiveNet: string, negativeNet: string): Promise<boolean>;",
+"summary": "创建差分对",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "deleteDifferentialPair",
+"sig": "public deleteDifferentialPair(differentialPairName: string): Promise<boolean>;",
+"summary": "删除差分对",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "modifyDifferentialPairName",
+"sig": "public modifyDifferentialPairName(originalDifferentialPairName: string, differentialPairName: string): Promise<boolean>;",
+"summary": "修改差分对的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "modifyDifferentialPairPositiveNet",
+"sig": "public modifyDifferentialPairPositiveNet(differentialPairName: string, positiveNet: string): Promise<boolean>;",
+"summary": "修改差分对正网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "modifyDifferentialPairNegativeNet",
+"sig": "public modifyDifferentialPairNegativeNet(differentialPairName: string, negativeNet: string): Promise<boolean>;",
+"summary": "修改差分对负网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getAllDifferentialPairs",
+"sig": "public getAllDifferentialPairs(): Promise<Array<IPCB_DifferentialPairItem> | { [key: string]: any }>;",
+"summary": "获取所有差分对的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "createEqualLengthNetGroup",
+"sig": "public createEqualLengthNetGroup(equalLengthNetGroupName: string, nets: Array<string>, color: IPCB_EqualLengthNetGroupItem['color']): Promise<boolean>;",
+"summary": "创建等长网络组",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "deleteEqualLengthNetGroup",
+"sig": "public deleteEqualLengthNetGroup(equalLengthNetGroupName: string): Promise<boolean>;",
+"summary": "删除等长网络组",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "modifyEqualLengthNetGroupName",
+"sig": "public modifyEqualLengthNetGroupName(originalEqualLengthNetGroupName: string, equalLengthNetGroupName: string): Promise<boolean>;",
+"summary": "修改等长网络组的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "addNetToEqualLengthNetGroup",
+"sig": "public addNetToEqualLengthNetGroup(equalLengthNetGroupName: string, net: string | Array<string>): Promise<boolean>;",
+"summary": "将网络添加到等长网络组",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "removeNetFromEqualLengthNetGroup",
+"sig": "public removeNetFromEqualLengthNetGroup(equalLengthNetGroupName: string, net: string | Array<string>): Promise<boolean>;",
+"summary": "从等长网络组中移除网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getAllEqualLengthNetGroups",
+"sig": "public getAllEqualLengthNetGroups(): Promise<Array<IPCB_EqualLengthNetGroupItem>>;",
+"summary": "获取所有等长网络组的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "createPadPairGroup",
+"sig": "public createPadPairGroup(padPairGroupName: string, padPairs: Array<[string, string]>): Promise<boolean>;",
+"summary": "创建焊盘对组",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "deletePadPairGroup",
+"sig": "public deletePadPairGroup(padPairGroupName: string): Promise<boolean>;",
+"summary": "删除焊盘对组",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "modifyPadPairGroupName",
+"sig": "public modifyPadPairGroupName(originalPadPairGroupName: string, padPairGroupName: string): Promise<boolean>;",
+"summary": "修改焊盘对组的名称",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "addPadPairToPadPairGroup",
+"sig": "public addPadPairToPadPairGroup(padPairGroupName: string, padPair: [string, string] | Array<[string, string]>): Promise<boolean>;",
+"summary": "将焊盘对添加到焊盘对组",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "removePadPairFromPadPairGroup",
+"sig": "public removePadPairFromPadPairGroup(padPairGroupName: string, padPair: [string, string] | Array<[string, string]>): Promise<boolean>;",
+"summary": "从焊盘对组中移除焊盘对",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getAllPadPairGroups",
+"sig": "public getAllPadPairGroups(): Promise<Array<IPCB_PadPairGroupItem>>;",
+"summary": "获取所有焊盘对组的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Drc",
+"method": "getPadPairGroupMinWireLength",
+"sig": "public getPadPairGroupMinWireLength(padPairGroupName: string): Promise<Array<IPCB_PadPairMinWireLengthItem>>;",
+"summary": "获取焊盘对组最短导线长度",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addMouseEventListener",
+"sig": "public addMouseEventListener(id: string, eventType: 'all' | EPCB_MouseEventType, callFn: (eventType: EPCB_MouseEventType, props: [{ primitiveId: string; primitiveType: EPCB_PrimitiveType; net?: string; designator?: string; parentComponentPrimitiveId?: string; parentComponentDesignator?: string }]) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增鼠标事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addPrimitiveEventListener",
+"sig": "public addPrimitiveEventListener(id: string, eventType: 'all' | EPCB_PrimitiveEventType, callFn: (eventType: EPCB_PrimitiveEventType, props: [{ primitiveId: string; primitiveType: EPCB_PrimitiveType; net?: string; designator?: string; parentComponentPrimitiveId?: string; parentComponentDesignator?: string }]) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增图元事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addNetEventListener",
+"sig": "public addNetEventListener(id: string, eventType: 'all' | EPCB_NetEventType, callFn: (eventType: EPCB_NetEventType, props: [{ net: string }]) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增网络事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addCrossProbeSelectEventListener",
+"sig": "public addCrossProbeSelectEventListener(id: string, callFn: (props: any) => void | Promise<void>): void;",
+"summary": "新增交叉选择事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addRealTimeDrcResultEventListener",
+"sig": "public addRealTimeDrcResultEventListener(id: string, eventType: 'all', callFn: (eventType: undefined, props: [{ drcResult: any }]) => void | Promise<void>): void;",
+"summary": "新增实时 DRC 结果事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addRayTracerEngine3DViewClickMaterialEventListener",
+"sig": "public addRayTracerEngine3DViewClickMaterialEventListener(id: string, callFn: (props: { materialId: number; material: any }) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增光线追踪引擎 3D 预览点击材质事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "addRayTracerEngine3DViewCameraChangeEventListener",
+"sig": "public addRayTracerEngine3DViewCameraChangeEventListener(id: string, callFn: (props: { position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number }; focalLength: number }) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增光线追踪引擎 3D 预览相机变动（拖动 3D 模型）事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Event",
+"method": "removeEventListener",
+"sig": "public removeEventListener(id: string): boolean;",
+"summary": "移除事件监听",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Event",
+"method": "isEventListenerAlreadyExist",
+"sig": "public isEventListenerAlreadyExist(id: string): boolean;",
+"summary": "查询事件监听是否存在",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getCurrentLayer",
+"sig": "public getCurrentLayer(): IPCB_LayerItem | undefined;",
+"summary": "获取当前图层的详细属性",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "selectLayer",
+"sig": "public selectLayer(layer: TPCB_LayersInTheSelectable): Promise<boolean>;",
+"summary": "选中图层",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setLayerVisible",
+"sig": "public setLayerVisible(layer?: TPCB_LayersInTheSelectable | Array<TPCB_LayersInTheSelectable>, setOtherLayerInvisible?: boolean): Promise<boolean>;",
+"summary": "将层设置为可见",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setLayerInvisible",
+"sig": "public setLayerInvisible(layer?: TPCB_LayersInTheSelectable | Array<TPCB_LayersInTheSelectable>, setOtherLayerVisible?: boolean): Promise<boolean>;",
+"summary": "将层设置为不可见",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "lockLayer",
+"sig": "public lockLayer(layer?: TPCB_LayersInTheSelectable | Array<TPCB_LayersInTheSelectable>): Promise<boolean>;",
+"summary": "锁定层",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "unlockLayer",
+"sig": "public unlockLayer(layer?: TPCB_LayersInTheSelectable | Array<TPCB_LayersInTheSelectable>): Promise<boolean>;",
+"summary": "取消锁定层",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setTheNumberOfCopperLayers",
+"sig": "public setTheNumberOfCopperLayers(numberOfLayers: 2 | 4 | 6 | 8 | 10 | 12 | 14 | 16 | 18 | 20 | 22 | 24 | 26 | 28 | 30 | 32): Promise<boolean>;",
+"summary": "设置铜箔层数",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getTheNumberOfCopperLayers",
+"sig": "public getTheNumberOfCopperLayers(): Promise<number>;",
+"summary": "获取铜箔层数",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setLayerColorConfiguration",
+"sig": "public setLayerColorConfiguration(colorConfiguration: EPCB_LayerColorConfiguration): Promise<boolean>;",
+"summary": "设置层颜色配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setInactiveLayerTransparency",
+"sig": "public setInactiveLayerTransparency(transparency: number): Promise<boolean>;",
+"summary": "设置非激活层透明度",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setPcbType",
+"sig": "public setPcbType(pcbType: EPCB_PcbPlateType): Promise<boolean>;",
+"summary": "设置 PCB 类型",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "addCustomLayer",
+"sig": "public addCustomLayer(): Promise<TPCB_LayersOfCustom | undefined>;",
+"summary": "新增自定义层",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "removeLayer",
+"sig": "public removeLayer(layer: TPCB_LayersOfCustom): Promise<boolean>;",
+"summary": "移除层",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "modifyLayer",
+"sig": "public modifyLayer(layer: TPCB_LayersInTheSelectable, property: { name?: string; type?: TPCB_LayerTypesOfInnerLayer; color?: string; transparency?: number }): Promise<boolean>;",
+"summary": "修改图层属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getAllLayers",
+"sig": "public getAllLayers(): Promise<Array<IPCB_LayerItem>>;",
+"summary": "获取所有图层的详细属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setInactiveLayerDisplayMode",
+"sig": "public setInactiveLayerDisplayMode(displayMode?: EPCB_InactiveLayerDisplayMode): Promise<boolean>;",
+"summary": "设置非激活层展示模式",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getCurrentPhysicalStackingConfigurationName",
+"sig": "public getCurrentPhysicalStackingConfigurationName(): Promise<string | undefined>;",
+"summary": "获取当前物理叠层配置名称",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getCurrentPhysicalStackingConfiguration",
+"sig": "public getCurrentPhysicalStackingConfiguration(): { [key: string]: any } | undefined;",
+"summary": "获取当前物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getPhysicalStackingConfiguration",
+"sig": "public getPhysicalStackingConfiguration(configurationName: string): Promise<{ [key: string]: any } | undefined>;",
+"summary": "获取指定物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getAllPhysicalStackingConfigurations",
+"sig": "public getAllPhysicalStackingConfigurations(): Promise<Array<{ [key: string]: any }>>;",
+"summary": "获取所有物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "savePhysicalStackingConfiguration",
+"sig": "public savePhysicalStackingConfiguration(physicalStackingConfiguration: { [key: string]: any }, configurationName: string, allowOverwrite?: boolean): Promise<boolean>;",
+"summary": "保存物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "renamePhysicalStackingConfiguration",
+"sig": "public renamePhysicalStackingConfiguration(originalConfigurationName: string, configurationName: string): Promise<boolean>;",
+"summary": "重命名物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "deletePhysicalStackingConfiguration",
+"sig": "public deletePhysicalStackingConfiguration(configurationName: string): Promise<boolean>;",
+"summary": "删除物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "getDefaultPhysicalStackingConfigurationName",
+"sig": "public getDefaultPhysicalStackingConfigurationName(): Promise<string | undefined>;",
+"summary": "获取新建 PCB 默认物理叠层配置的名称",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "setAsDefaultPhysicalStackingConfiguration",
+"sig": "public setAsDefaultPhysicalStackingConfiguration(configurationName: string): Promise<boolean>;",
+"summary": "设置为新建 PCB 默认物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Layer",
+"method": "overwriteCurrentPhysicalStackingConfiguration",
+"sig": "public overwriteCurrentPhysicalStackingConfiguration(physicalStackingConfiguration: { [key: string]: any }): boolean;",
+"summary": "覆写当前物理叠层配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getGerberFile",
+"sig": "public getGerberFile(fileName?: string, colorSilkscreen?: boolean, unit?: ESYS_Unit.MILLIMETER | ESYS_Unit.INCH, digitalFormat?: { integerNumber: number; decimalNumber: number }, other?: { metallicDrillingInformation: boolean; nonMetallicDrillingInformation: boolean; drillTable: boolean; flyingProbeTestingFile: boolean }, layers?: Array<{ layerId: EPCB_LayerId; isMirror: boolean }>, objects?: Array<'Pad' | 'Via' | 'Track' | 'Text' | 'Image' | 'Dimension' | 'BoardOutline' | 'BoardCutout' | 'CopperFilled' | 'SolidRegion' | 'FPCStiffener' | 'Line' | 'PlaneZone' | 'ComponentProperty' | 'ComponentSilkscreen' | 'TearDrop'>): Promise<File | undefined>;",
+"summary": "获取 PCB 制版文件（Gerber）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "get3DFile",
+"sig": "public get3DFile(fileName?: string, fileType?: 'step' | 'obj', element?: Array<'Component Model' | 'Via' | 'Silkscreen' | 'Wire In Signal Layer'>, modelMode?: 'Outfit' | 'Parts', autoGenerateModels?: boolean): Promise<File | undefined>;",
+"summary": "获取 3D 模型文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "get3DShellFile",
+"sig": "public get3DShellFile(fileName?: string, fileType?: 'stl' | 'step' | 'obj'): Promise<File | undefined>;",
+"summary": "获取 3D 外壳文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getPickAndPlaceFile",
+"sig": "public getPickAndPlaceFile(fileName?: string, fileType?: 'xlsx' | 'csv', unit?: ESYS_Unit.MILLIMETER | ESYS_Unit.MIL): Promise<File | undefined>;",
+"summary": "获取坐标文件（PickAndPlace）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getFlyingProbeTestFile",
+"sig": "public getFlyingProbeTestFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取飞针测试文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getBomTemplates",
+"sig": "public getBomTemplates(): Promise<Array<string>>;",
+"summary": "获取 BOM 模板列表",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "uploadBomTemplateFile",
+"sig": "public uploadBomTemplateFile(templateFile: File, template?: string): Promise<string | undefined>;",
+"summary": "上传 BOM 模板文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getBomTemplateFile",
+"sig": "public getBomTemplateFile(template: string): Promise<File | undefined>;",
+"summary": "获取 BOM 模板文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "deleteBomTemplate",
+"sig": "public deleteBomTemplate(template: string): Promise<boolean>;",
+"summary": "删除 BOM 模板",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getBomFile",
+"sig": "public getBomFile(fileName?: string, fileType?: 'xlsx' | 'csv', template?: string, filterOptions?: Array<{ property: string; includeValue: boolean | string }>, statistics?: Array<string>, property?: Array<string>, columns?: Array<IPCB_BomPropertiesTableColumns>): Promise<File | undefined>;",
+"summary": "获取 BOM 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getTestPointFile",
+"sig": "public getTestPointFile(fileName?: string, fileType?: 'xlsx' | 'csv'): Promise<File | undefined>;",
+"summary": "获取测试点报告文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getNetlistFile",
+"sig": "public getNetlistFile(fileName?: string, netlistType?: ESYS_NetlistType): Promise<File | undefined>;",
+"summary": "获取网表文件（Netlist）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getDxfFile",
+"sig": "public getDxfFile(fileName?: string, layers?: Array<{ layerId: EPCB_LayerId; mirror: boolean }>, objects?: Array<string>): Promise<File | undefined>;",
+"summary": "获取 DXF 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getPdfFile",
+"sig": "public getPdfFile(fileName?: string, outputMethod?: EPCB_PdfOutputMethod, contentConfig?: { displayAttributesAsMenu: boolean; showOutlineOnly: boolean }, watermark?: { show?: boolean; content?: string; styleConfig?: { color: string; transparency: 'Opaque' | '75%' | '50%' | '25%'; font: string; fontSize: string; style: { blood: boolean; italic: boolean; underline: boolean }; slope: 0 | 45 | 90; denseness: 'Single' | 'Sparse' | 'Std' | 'Dense' } }, graphPageConfig?: Array<{ [key: string]: any }>): Promise<File | undefined>;",
+"summary": "获取 PDF 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getIpcD356AFile",
+"sig": "public getIpcD356AFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 IPC-D-356A 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getIpc2581CFile",
+"sig": "public getIpc2581CFile(fileName?: string, fileType?: 'xml' | 'cvg' | '2581', unit?: ESYS_Unit.INCH | ESYS_Unit.MILLIMETER, oemNumber?: 'Device' | 'Manufacturer Part' | 'Supplier Part' | 'Comment'): Promise<File | undefined>;",
+"summary": "获取 IPC-2581C 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getOpenDatabaseDoublePlusFile",
+"sig": "public getOpenDatabaseDoublePlusFile(fileName?: string, unit?: ESYS_Unit.INCH, otherData?: { metallizedDrilledHoles?: boolean; nonMetallizedDrilledHoles?: boolean; drillTable?: boolean; flyingProbeTestFile?: boolean }, layers?: Array<{ layerId: EPCB_LayerId; mirror: boolean }>, objects?: Array<{ objectName: string }>): Promise<File | undefined>;",
+"summary": "获取 ODB++ 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getInteractiveBomFile",
+"sig": "public getInteractiveBomFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取交互式 BOM 文件",
+"stability": "internal"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getDsnFile",
+"sig": "public getDsnFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取自动布线文件（DSN）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getAutoRouteJsonFile",
+"sig": "public getAutoRouteJsonFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取自动布线文件（JSON）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getAutoRouteJsonFileForJRouter",
+"sig": "public getAutoRouteJsonFileForJRouter(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 JRouter 专用自动布线文件（JSON）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getAutoLayoutJsonFile",
+"sig": "public getAutoLayoutJsonFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取自动布局文件（JSON）",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getAltiumDesignerFile",
+"sig": "public getAltiumDesignerFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 Altium Designer 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getPadsFile",
+"sig": "public getPadsFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 PADS 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getPcbInfoFile",
+"sig": "public getPcbInfoFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 PCB 信息文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getIdxFile",
+"sig": "public getIdxFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 IDX 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "placeComponentsOrder",
+"sig": "public placeComponentsOrder(interactive?: boolean, ignoreWarning?: boolean): Promise<boolean>;",
+"summary": "元件下单",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "placeSmtComponentsOrder",
+"sig": "public placeSmtComponentsOrder(interactive?: boolean, ignoreWarning?: boolean): Promise<boolean>;",
+"summary": "SMT 元件下单",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "placePcbOrder",
+"sig": "public placePcbOrder(interactive?: boolean, ignoreWarning?: boolean): Promise<boolean>;",
+"summary": "PCB 下单",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "place3DShellOrder",
+"sig": "public place3DShellOrder(interactive?: boolean, ignoreWarning?: boolean): Promise<boolean>;",
+"summary": "3D 外壳下单",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_ManufactureData",
+"method": "getManufactureData",
+"sig": "public getManufactureData(): Promise<File | undefined>;",
+"summary": "导出制造文件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "createPolygon",
+"sig": "public createPolygon(polygon: TPCB_PolygonSourceArray): IPCB_Polygon | undefined;",
+"summary": "创建单多边形",
+"stability": ""
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "createComplexPolygon",
+"sig": "public createComplexPolygon(complexPolygon: TPCB_PolygonSourceArray | Array<TPCB_PolygonSourceArray> | IPCB_Polygon | Array<IPCB_Polygon>): IPCB_ComplexPolygon | undefined;",
+"summary": "创建复杂多边形",
+"stability": ""
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "splitPolygon",
+"sig": "public splitPolygon(...complexPolygons: Array<IPCB_ComplexPolygon>): Array<IPCB_Polygon>;",
+"summary": "拆分单多边形",
+"stability": ""
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "discretize",
+"sig": "public discretize(polygon: IPCB_Polygon | TPCB_PolygonSourceArray, options?: IPCB_DiscretizeOptions): Array<IPCB_DiscretizedPoint>;",
+"summary": "将单多边形离散化为点数据",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "calculateWidth",
+"sig": "public calculateWidth(complexPolygon: TPCB_PolygonSourceArray | Array<TPCB_PolygonSourceArray> | IPCB_Polygon | IPCB_ComplexPolygon): number;",
+"summary": "计算复杂多边形 BBox 宽度",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "calculateHeight",
+"sig": "public calculateHeight(complexPolygon: TPCB_PolygonSourceArray | Array<TPCB_PolygonSourceArray> | IPCB_Polygon | IPCB_ComplexPolygon): number;",
+"summary": "计算复杂多边形 BBox 高度",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "calculateBBoxHeight",
+"sig": "public calculateBBoxHeight(complexPolygon: TPCB_PolygonSourceArray | Array<TPCB_PolygonSourceArray>): number;",
+"summary": "",
+"stability": ""
+},
+{
+"ns": "eda.pcb_MathPolygon",
+"method": "convertImageToComplexPolygon",
+"sig": "public convertImageToComplexPolygon(imageBlob: Blob, imageWidth: number, imageHeight: number, tolerance?: number, simplification?: number, smoothing?: number, despeckling?: number, whiteAsBackgroundColor?: boolean, inversion?: boolean): Promise<IPCB_ComplexPolygon | undefined>;",
+"summary": "将图像转换为复杂多边形对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getAllNets",
+"sig": "public getAllNets(): Promise<Array<IPCB_NetInfo>>;",
+"summary": "获取所有网络的详细信息",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getNet",
+"sig": "public getNet(net: string): Promise<IPCB_NetInfo | undefined>;",
+"summary": "获取指定网络的详细信息",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getAllNetsName",
+"sig": "public getAllNetsName(): Promise<Array<string>>;",
+"summary": "获取所有网络的网络名称",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getAllNetName",
+"sig": "public getAllNetName(): Promise<Array<string>>;",
+"summary": "获取所有网络的网络名称",
+"stability": "deprecated"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getNetLength",
+"sig": "public getNetLength(net: string): Promise<number | undefined>;",
+"summary": "获取指定网络的长度",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getNetColor",
+"sig": "public getNetColor(net: string): Promise<IPCB_NetInfo['color'] | undefined>;",
+"summary": "获取指定网络的颜色",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "setNetColor",
+"sig": "public setNetColor(net: string, color: IPCB_NetInfo['color']): Promise<boolean>;",
+"summary": "设置指定网络的颜色",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getAllPrimitivesByNet",
+"sig": "public getAllPrimitivesByNet(net: string, primitiveTypes?: Array<EPCB_PrimitiveType>): Promise<Array<IPCB_Primitive>>;",
+"summary": "获取关联指定网络的所有图元",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "selectNet",
+"sig": "public selectNet(net: string): Promise<boolean>;",
+"summary": "选中网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "unselectNet",
+"sig": "public unselectNet(net: string): Promise<boolean>;",
+"summary": "取消选中网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "unselectAllNets",
+"sig": "public unselectAllNets(): Promise<boolean>;",
+"summary": "取消选中所有网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "highlightNet",
+"sig": "public highlightNet(net: string): Promise<boolean>;",
+"summary": "高亮网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "unhighlightNet",
+"sig": "public unhighlightNet(net: string): Promise<boolean>;",
+"summary": "取消高亮网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "unhighlightAllNets",
+"sig": "public unhighlightAllNets(): Promise<boolean>;",
+"summary": "取消高亮所有网络",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Net",
+"method": "getNetlist",
+"sig": "public getNetlist(type?: ESYS_NetlistType): Promise<string>;",
+"summary": "获取网表",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Net",
+"method": "setNetlist",
+"sig": "public setNetlist(type: ESYS_NetlistType | undefined, netlist: string): Promise<boolean>;",
+"summary": "更新网表",
+"stability": ""
+},
+{
+"ns": "eda.pcb_Primitive",
+"method": "getPrimitiveTypeByPrimitiveId",
+"sig": "public getPrimitiveTypeByPrimitiveId(id: string): Promise<EPCB_PrimitiveType | undefined>;",
+"summary": "获取指定 ID 的图元的图元类型",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Primitive",
+"method": "getPrimitiveByPrimitiveId",
+"sig": "public getPrimitiveByPrimitiveId(id: string): Promise<IPCB_Primitive | undefined>;",
+"summary": "获取指定 ID 的图元的所有属性",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Primitive",
+"method": "getPrimitivesByPrimitiveId",
+"sig": "public getPrimitivesByPrimitiveId(ids: Array<string>): Promise<Array<IPCB_Primitive>>;",
+"summary": "获取指定所有 ID 的图元的所有属性",
+"stability": "alpha"
+},
+{
+"ns": "eda.pcb_Primitive",
+"method": "getPrimitivesBBox",
+"sig": "public getPrimitivesBBox(primitiveIds: Array<string | IPCB_Primitive>): Promise<{ minX: number; minY: number; maxX: number; maxY: number } | undefined>;",
+"summary": "获取图元的 BBox",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_Primitive",
+"method": "getPrimitiveBoardLine",
+"sig": "public getPrimitiveBoardLine(primitiveId: string, layers?: Array<EPCB_LayerId>): IPCB_ComplexPolygon | undefined;",
+"summary": "获取图元的边框线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "create",
+"sig": "public create(net: string, layer: TPCB_LayersOfLine, startX: number, startY: number, endX: number, endY: number, arcAngle: number, lineWidth?: number, interactiveMode?: EPCB_PrimitiveArcInteractiveMode, primitiveLock?: boolean): Promise<IPCB_PrimitiveArc | undefined>;",
+"summary": "创建圆弧线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveArc | Array<string> | Array<IPCB_PrimitiveArc>): Promise<boolean>;",
+"summary": "删除圆弧线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveArc, property: { net?: string; layer?: TPCB_LayersOfLine; startX?: number; startY?: number; endX?: number; endY?: number; arcAngle?: number; lineWidth?: number; interactiveMode?: EPCB_PrimitiveArcInteractiveMode; primitiveLock?: boolean }): Promise<IPCB_PrimitiveArc | undefined>;",
+"summary": "修改圆弧线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveArc | undefined>;",
+"summary": "获取圆弧线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveArc>>;",
+"summary": "获取圆弧线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(net?: string, layer?: TPCB_LayersOfLine, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有圆弧线的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveArc",
+"method": "getAll",
+"sig": "public getAll(net?: string, layer?: TPCB_LayersOfLine, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveArc>>;",
+"summary": "获取所有圆弧线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "create",
+"sig": "public create(): undefined;",
+"summary": "创建属性",
+"stability": "internal"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveAttribute | Array<string> | Array<IPCB_PrimitiveAttribute>): Promise<boolean>;",
+"summary": "删除属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveAttribute, property: { layer?: TPCB_LayersOfImage; x?: number; y?: number; key?: string; value?: string; keyVisible?: boolean; valueVisible?: boolean; fontFamily?: string; fontSize?: number; lineWidth?: number; alignMode?: EPCB_PrimitiveStringAlignMode; rotation?: number; reverse?: boolean; expansion?: number; mirror?: boolean; primitiveLock?: boolean }): Promise<IPCB_PrimitiveAttribute | undefined>;",
+"summary": "修改文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveAttribute | undefined>;",
+"summary": "获取属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveAttribute>>;",
+"summary": "获取属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(parentPrimitiveId?: string, layer?: TPCB_LayersOfImage, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有属性的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveAttribute",
+"method": "getAll",
+"sig": "public getAll(parentPrimitiveId?: string, layer?: TPCB_LayersOfImage, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveAttribute>>;",
+"summary": "获取所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "create",
+"sig": "public create(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem | { libraryType: ELIB_LibraryType.FOOTPRINT; libraryUuid: string; uuid: string } | ILIB_FootprintItem | ILIB_FootprintSearchItem, layer: TPCB_LayersOfComponent, x: number, y: number, rotation?: number, primitiveLock?: boolean): Promise<IPCB_PrimitiveComponent | undefined>;",
+"summary": "创建器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveComponent | Array<string> | Array<IPCB_PrimitiveComponent>): Promise<boolean>;",
+"summary": "删除器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveComponent, property: { layer?: TPCB_LayersOfComponent; x?: number; y?: number; rotation?: number; primitiveLock?: boolean; addIntoBom?: boolean; designator?: string | null; name?: string | null; uniqueId?: string | null; manufacturer?: string | null; manufacturerId?: string | null; supplier?: string | null; supplierId?: string | null; otherProperty?: { [key: string]: any } }): Promise<IPCB_PrimitiveComponent | undefined>;",
+"summary": "修改器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveComponent | undefined>;",
+"summary": "获取器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveComponent>>;",
+"summary": "获取器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfComponent, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有器件的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfComponent, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveComponent>>;",
+"summary": "获取所有器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "getAllPinsByPrimitiveId",
+"sig": "public getAllPinsByPrimitiveId(primitiveId: string): Promise<Array<IPCB_PrimitiveComponentPad> | undefined>;",
+"summary": "获取器件关联的所有焊盘",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "placeComponentWithMouse",
+"sig": "public placeComponentWithMouse(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "使用鼠标放置器件",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "placeFootprintWithMouse",
+"sig": "public placeFootprintWithMouse(footprint: { libraryUuid: string; uuid: string } | ILIB_FootprintItem | ILIB_FootprintSearchItem, properties?: { [key: string]: boolean | number | string | undefined }): Promise<boolean>;",
+"summary": "使用鼠标放置封装",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveComponent",
+"method": "getAllPropertyNames",
+"sig": "public getAllPropertyNames(): Promise<Array<string>>;",
+"summary": "获取所有器件的所有属性名称集合",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "create",
+"sig": "public create(dimensionType: EPCB_PrimitiveDimensionType, coordinateSet: TPCB_PrimitiveDimensionCoordinateSet, layer?: TPCB_LayersOfDimension, unit?: ESYS_Unit.MILLIMETER | ESYS_Unit.CENTIMETER | ESYS_Unit.INCH | ESYS_Unit.MIL, lineWidth?: number, precision?: number, primitiveLock?: boolean): Promise<IPCB_PrimitiveDimension | undefined>;",
+"summary": "创建尺寸标注",
+"stability": ""
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveDimension | Array<string> | Array<IPCB_PrimitiveDimension>): Promise<boolean>;",
+"summary": "删除尺寸标注",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveDimension, property: { dimensionType?: EPCB_PrimitiveDimensionType; coordinateSet?: TPCB_PrimitiveDimensionCoordinateSet; layer?: TPCB_LayersOfDimension; unit?: ESYS_Unit.MILLIMETER | ESYS_Unit.CENTIMETER | ESYS_Unit.INCH | ESYS_Unit.MIL; lineWidth?: number; precision?: number; primitiveLock?: boolean }): Promise<IPCB_PrimitiveDimension | undefined>;",
+"summary": "修改尺寸标注",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveDimension | undefined>;",
+"summary": "获取尺寸标注",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveDimension>>;",
+"summary": "获取尺寸标注",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfDimension, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有尺寸标注的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveDimension",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfDimension, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveDimension>>;",
+"summary": "获取所有尺寸标注",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "create",
+"sig": "public create(layer: TPCB_LayersOfFill, complexPolygon: IPCB_Polygon, net?: string, fillMode?: EPCB_PrimitiveFillMode, lineWidth?: number, primitiveLock?: boolean): Promise<IPCB_PrimitiveFill | undefined>;",
+"summary": "创建填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveFill | Array<string> | Array<IPCB_PrimitiveFill>): Promise<boolean>;",
+"summary": "删除填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveFill, property: { layer?: TPCB_LayersOfFill; complexPolygon?: IPCB_Polygon; net?: string; fillMode?: EPCB_PrimitiveFillMode; lineWidth?: number; primitiveLock?: boolean }): Promise<IPCB_PrimitiveFill | undefined>;",
+"summary": "修改填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveFill | undefined>;",
+"summary": "获取填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveFill>>;",
+"summary": "获取填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfFill, net?: string, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有填充的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveFill",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfFill, net?: string, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveFill>>;",
+"summary": "获取所有填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "create",
+"sig": "public create(x: number, y: number, complexPolygon: TPCB_PolygonSourceArray | Array<TPCB_PolygonSourceArray> | IPCB_Polygon | IPCB_ComplexPolygon, layer: TPCB_LayersOfImage, width?: number, height?: number, rotation?: number, horizonMirror?: boolean, primitiveLock?: boolean): Promise<IPCB_PrimitiveImage | undefined>;",
+"summary": "创建图像",
+"stability": ""
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveImage | Array<string> | Array<IPCB_PrimitiveImage>): Promise<boolean>;",
+"summary": "删除图像",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveImage, property: { x?: number; y?: number; layer?: TPCB_LayersOfImage; width?: number; height?: number; rotation?: number; horizonMirror?: boolean; primitiveLock?: boolean }): Promise<IPCB_PrimitiveImage | undefined>;",
+"summary": "修改图像",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveImage | undefined>;",
+"summary": "获取图像",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveImage>>;",
+"summary": "获取图像",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfImage, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有图像的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveImage",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfImage, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveImage>>;",
+"summary": "获取所有图像",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "create",
+"sig": "public create(net: string, layer: TPCB_LayersOfLine, startX: number, startY: number, endX: number, endY: number, lineWidth?: number, primitiveLock?: boolean): Promise<IPCB_PrimitiveLine | undefined>;",
+"summary": "创建直线",
+"stability": ""
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveLine | Array<string> | Array<IPCB_PrimitiveLine>): Promise<boolean>;",
+"summary": "删除直线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveLine, property: { net?: string; layer?: TPCB_LayersOfLine; startX?: number; startY?: number; endX?: number; endY?: number; lineWidth?: number; primitiveLock?: boolean }): Promise<IPCB_PrimitiveLine | undefined>;",
+"summary": "修改直线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveLine | undefined>;",
+"summary": "获取直线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveLine>>;",
+"summary": "获取直线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(net?: string, layer?: TPCB_LayersOfLine, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有直线的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveLine",
+"method": "getAll",
+"sig": "public getAll(net?: string, layer?: TPCB_LayersOfLine, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveLine>>;",
+"summary": "获取所有直线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "create",
+"sig": "public create(layer: TPCB_LayersOfObject, topLeftX: number, topLeftY: number, binaryData: string, width: number, height: number, rotation?: number, mirror?: boolean, fileName?: string, primitiveLock?: boolean): Promise<IPCB_PrimitiveObject | undefined>;",
+"summary": "创建二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveObject | Array<string> | Array<IPCB_PrimitiveObject>): Promise<boolean>;",
+"summary": "删除二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveObject, property: { layer?: TPCB_LayersOfObject; topLeftX?: number; topLeftY?: number; binaryData?: string; width?: number; height?: number; rotation?: number; mirror?: boolean; fileName?: string; primitiveLock?: boolean }): Promise<IPCB_PrimitiveObject | undefined>;",
+"summary": "修改二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveObject | undefined>;",
+"summary": "获取二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveObject>>;",
+"summary": "获取二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfObject, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有二进制内嵌对象的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveObject",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfObject, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveObject>>;",
+"summary": "获取所有二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "create",
+"sig": "public create(layer: TPCB_LayersOfPad, padNumber: string, x: number, y: number, rotation?: number, pad?: TPCB_PrimitivePadShape, net?: string, hole?: TPCB_PrimitivePadHole | null, holeOffsetX?: number, holeOffsetY?: number, holeRotation?: number, metallization?: boolean, padType?: EPCB_PrimitivePadType, specialPad?: TPCB_PrimitiveSpecialPadShape, solderMaskAndPasteMaskExpansion?: IPCB_PrimitiveSolderMaskAndPasteMaskExpansion | null, heatWelding?: IPCB_PrimitivePadHeatWelding | null, primitiveLock?: boolean): Promise<IPCB_PrimitivePad | undefined>;",
+"summary": "创建焊盘",
+"stability": ""
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitivePad | Array<string> | Array<IPCB_PrimitivePad>): Promise<boolean>;",
+"summary": "删除焊盘",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitivePad, property: { layer?: TPCB_LayersOfPad; padNumber?: string; x?: number; y?: number; rotation?: number; pad?: TPCB_PrimitivePadShape; net?: string; hole?: TPCB_PrimitivePadHole | null; holeOffsetX?: number; holeOffsetY?: number; holeRotation?: number; metallization?: boolean; specialPad?: TPCB_PrimitiveSpecialPadShape; solderMaskAndPasteMaskExpansion?: IPCB_PrimitiveSolderMaskAndPasteMaskExpansion | null; heatWelding?: IPCB_PrimitivePadHeatWelding | null; primitiveLock?: boolean }): Promise<IPCB_PrimitivePad | undefined>;",
+"summary": "修改焊盘",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitivePad | undefined>;",
+"summary": "获取焊盘",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitivePad>>;",
+"summary": "获取焊盘",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfPad, net?: string, primitiveLock?: boolean, padType?: EPCB_PrimitivePadType): Promise<Array<string>>;",
+"summary": "获取所有焊盘的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePad",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfPad, net?: string, primitiveLock?: boolean, padType?: EPCB_PrimitivePadType): Promise<Array<IPCB_PrimitivePad>>;",
+"summary": "获取所有焊盘",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "create",
+"sig": "public create(net: string, layer: TPCB_LayersOfLine, polygon: IPCB_Polygon, lineWidth?: number, primitiveLock?: boolean): Promise<IPCB_PrimitivePolyline | undefined>;",
+"summary": "创建折线",
+"stability": ""
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitivePolyline | Array<string> | Array<IPCB_PrimitivePolyline>): Promise<boolean>;",
+"summary": "删除折线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitivePolyline, property: { net?: string; layer?: TPCB_LayersOfLine; polygon?: IPCB_Polygon; lineWidth?: number; primitiveLock?: boolean }): Promise<IPCB_PrimitivePolyline | undefined>;",
+"summary": "修改折线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitivePolyline | undefined>;",
+"summary": "获取折线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitivePolyline>>;",
+"summary": "获取折线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(net?: string, layer?: TPCB_LayersOfLine, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有折线的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePolyline",
+"method": "getAll",
+"sig": "public getAll(net?: string, layer?: TPCB_LayersOfLine, primitiveLock?: boolean): Promise<Array<IPCB_PrimitivePolyline>>;",
+"summary": "获取所有折线",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "create",
+"sig": "public create(net: string, layer: TPCB_LayersOfCopper, complexPolygon: IPCB_Polygon, pourFillMethod?: EPCB_PrimitivePourFillMethod, preserveSilos?: boolean, pourName?: string, pourPriority?: number, lineWidth?: number, primitiveLock?: boolean): Promise<IPCB_PrimitivePour | undefined>;",
+"summary": "创建覆铜边框",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitivePour | Array<string> | Array<IPCB_PrimitivePour>): Promise<boolean>;",
+"summary": "删除覆铜边框",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitivePour, property: { net?: string; layer?: TPCB_LayersOfCopper; complexPolygon?: IPCB_Polygon; pourFillMethod?: EPCB_PrimitivePourFillMethod; preserveSilos?: boolean; pourName?: string; pourPriority?: number; lineWidth?: number; primitiveLock?: boolean }): Promise<IPCB_PrimitivePour | undefined>;",
+"summary": "修改覆铜边框",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitivePour | undefined>;",
+"summary": "获取覆铜边框",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitivePour>>;",
+"summary": "获取覆铜边框",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(net?: string, layer?: TPCB_LayersOfCopper, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有覆铜边框的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePour",
+"method": "getAll",
+"sig": "public getAll(net?: string, layer?: TPCB_LayersOfCopper, primitiveLock?: boolean): Promise<Array<IPCB_PrimitivePour>>;",
+"summary": "获取所有覆铜边框图元",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "create",
+"sig": "public create(): undefined;",
+"summary": "创建覆铜填充",
+"stability": "internal"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitivePoured | Array<string> | Array<IPCB_PrimitivePoured>): Promise<boolean>;",
+"summary": "删除覆铜填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "modify",
+"sig": "public modify(): undefined;",
+"summary": "修改覆铜填充",
+"stability": "internal"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitivePoured | undefined>;",
+"summary": "获取覆铜填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitivePoured>>;",
+"summary": "获取覆铜填充",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有覆铜填充的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitivePoured",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<IPCB_PrimitivePoured>>;",
+"summary": "获取所有覆铜填充图元",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "create",
+"sig": "public create(layer: TPCB_LayersOfRegion, complexPolygon: IPCB_Polygon, ruleType?: Array<EPCB_PrimitiveRegionRuleType>, regionName?: string, lineWidth?: number, primitiveLock?: boolean): Promise<IPCB_PrimitiveRegion | undefined>;",
+"summary": "创建区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveRegion | Array<string> | Array<IPCB_PrimitiveRegion>): Promise<boolean>;",
+"summary": "删除区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveRegion, property: { layer?: TPCB_LayersOfRegion; complexPolygon?: IPCB_Polygon; ruleType?: Array<EPCB_PrimitiveRegionRuleType>; regionName?: string; lineWidth?: number; primitiveLock?: boolean }): Promise<IPCB_PrimitiveRegion | undefined>;",
+"summary": "修改区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveRegion | undefined>;",
+"summary": "获取区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveRegion>>;",
+"summary": "获取区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfRegion, ruleType?: Array<EPCB_PrimitiveRegionRuleType>, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有区域的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveRegion",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfRegion, ruleType?: Array<EPCB_PrimitiveRegionRuleType>, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveRegion>>;",
+"summary": "获取所有区域",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "create",
+"sig": "public create(layer: TPCB_LayersOfImage, x: number, y: number, text: string, fontFamily: string, fontSize: number, lineWidth: number, alignMode: EPCB_PrimitiveStringAlignMode, rotation: number, reverse: boolean, expansion: number, mirror: boolean, primitiveLock: boolean): Promise<IPCB_PrimitiveString | undefined>;",
+"summary": "创建文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveString | Array<string> | Array<IPCB_PrimitiveString>): Promise<boolean>;",
+"summary": "删除文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveString, property: { layer?: TPCB_LayersOfImage; x?: number; y?: number; text?: string; fontFamily?: string; fontSize?: number; lineWidth?: number; alignMode?: EPCB_PrimitiveStringAlignMode; rotation?: number; reverse?: boolean; expansion?: number; mirror?: boolean; primitiveLock?: boolean }): Promise<IPCB_PrimitiveString | undefined>;",
+"summary": "修改文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveString | undefined>;",
+"summary": "获取文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveString>>;",
+"summary": "获取文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(layer?: TPCB_LayersOfImage, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有文本的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveString",
+"method": "getAll",
+"sig": "public getAll(layer?: TPCB_LayersOfImage, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveString>>;",
+"summary": "获取所有文本",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "create",
+"sig": "public create(net: string, x: number, y: number, holeDiameter: number, diameter: number, viaType?: EPCB_PrimitiveViaType, designRuleBlindViaName?: string | null, solderMaskExpansion?: IPCB_PrimitiveSolderMaskAndPasteMaskExpansion | null, primitiveLock?: boolean): Promise<IPCB_PrimitiveVia | undefined>;",
+"summary": "创建过孔",
+"stability": ""
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | IPCB_PrimitiveVia | Array<string> | Array<IPCB_PrimitiveVia>): Promise<boolean>;",
+"summary": "删除过孔",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "modify",
+"sig": "public modify(primitiveId: string | IPCB_PrimitiveVia, property: { net?: string; x?: number; y?: number; holeDiameter?: number; diameter?: number; viaType?: EPCB_PrimitiveViaType; designRuleBlindViaName?: string | null; solderMaskExpansion?: IPCB_PrimitiveSolderMaskAndPasteMaskExpansion | null; primitiveLock?: boolean }): Promise<IPCB_PrimitiveVia | undefined>;",
+"summary": "修改过孔",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<IPCB_PrimitiveVia | undefined>;",
+"summary": "获取过孔",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<IPCB_PrimitiveVia>>;",
+"summary": "获取过孔",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(net?: string, primitiveLock?: boolean): Promise<Array<string>>;",
+"summary": "获取所有过孔图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_PrimitiveVia",
+"method": "getAll",
+"sig": "public getAll(net?: string, primitiveLock?: boolean): Promise<Array<IPCB_PrimitiveVia>>;",
+"summary": "获取所有过孔",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_RayTracerEngine",
+"method": "init",
+"sig": "public init(): Promise<void>;",
+"summary": "初始化光线追踪引擎",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_RayTracerEngine",
+"method": "dispose",
+"sig": "public dispose(): Promise<void>;",
+"summary": "停止光线追踪引擎",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_RayTracerEngine",
+"method": "setRenderConfigurations",
+"sig": "public setRenderConfigurations(configurations: any): Promise<void>;",
+"summary": "设置光线追踪渲染配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_RayTracerEngine",
+"method": "getRenderConfigurations",
+"sig": "public getRenderConfigurations(): Promise<any>;",
+"summary": "获取光线追踪渲染配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_RayTracerEngine",
+"method": "getLightConfigurations",
+"sig": "public getLightConfigurations(lightName: string): Promise<any>;",
+"summary": "获取光线追踪光源配置",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "getAllSelectedPrimitives_PrimitiveId",
+"sig": "public getAllSelectedPrimitives_PrimitiveId(): Promise<Array<string>>;",
+"summary": "查询所有已选中图元的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "getAllSelectedPrimitives",
+"sig": "public getAllSelectedPrimitives(): Promise<Array<IPCB_Primitive>>;",
+"summary": "查询所有已选中图元的图元对象",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "getSelectedPrimitives",
+"sig": "public getSelectedPrimitives(): Promise<Array<object>>;",
+"summary": "查询选中图元的所有参数",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "doSelectPrimitives",
+"sig": "public doSelectPrimitives(primitiveIds: string | Array<string>): Promise<boolean>;",
+"summary": "使用图元 ID 选中图元",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "doCrossProbeSelect",
+"sig": "public doCrossProbeSelect(components?: Array<string>, pins?: Array<string>, nets?: Array<string>, highlight?: boolean, select?: boolean): Promise<boolean>;",
+"summary": "进行交叉选择",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "doCrossProbeSelectByObject",
+"sig": "public doCrossProbeSelectByObject(components?: Array<string>, pins?: Array<string>, nets?: Array<string>): Promise<boolean>;",
+"summary": "进行交叉选择",
+"stability": "internal"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "clearSelected",
+"sig": "public clearSelected(): Promise<boolean>;",
+"summary": "清除选中",
+"stability": "beta"
+},
+{
+"ns": "eda.pcb_SelectControl",
+"method": "getCurrentMousePosition",
+"sig": "public getCurrentMousePosition(): Promise<{ x: number; y: number } | undefined>;",
+"summary": "获取当前鼠标在画布上的位置",
+"stability": "beta"
+},
+{
+"ns": "eda.pnl_Document",
+"method": "save",
+"sig": "public save(): Promise<boolean>;",
+"summary": "保存文档",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Document",
+"method": "importChanges",
+"sig": "public importChanges(): Promise<boolean>;",
+"summary": "从 PCB 导入变更",
+"stability": ""
+},
+{
+"ns": "eda.sch_Document",
+"method": "save",
+"sig": "public save(): Promise<boolean>;",
+"summary": "保存文档",
+"stability": ""
+},
+{
+"ns": "eda.sch_Document",
+"method": "navigateToCoordinates",
+"sig": "public navigateToCoordinates(x: number, y: number): Promise<boolean>;",
+"summary": "定位到画布坐标",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Document",
+"method": "navigateToRegion",
+"sig": "public navigateToRegion(left: number, right: number, top: number, bottom: number): Promise<boolean>;",
+"summary": "定位到画布区域",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Document",
+"method": "getPrimitiveAtPoint",
+"sig": "public getPrimitiveAtPoint(x: number, y: number): ISCH_Primitive | undefined;",
+"summary": "获取坐标点的图元",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Document",
+"method": "getPrimitivesInRegion",
+"sig": "public getPrimitivesInRegion(left: number, right: number, top: number, bottom: number): Array<ISCH_Primitive>;",
+"summary": "获取区域内所有图元",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Document",
+"method": "getCurrentFilterConfiguration",
+"sig": "public getCurrentFilterConfiguration(): Promise<{ [key: string]: any } | undefined>;",
+"summary": "获取当前画布过滤器配置",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Document",
+"method": "autoRouting",
+"sig": "public autoRouting(props?: { uuids?: Array<string>; netlist?: { component: { [uniqueId: string]: { pinInfoMap: { [key: string]: { name: string; number: string; net: string; props: { 'Pin Number': string } } } } } }; designatorDeviceTypeMap?: { [designator: string]: 'resistor' | 'capacitor' | 'inductive' | 'diode' | 'triode' | 'oscillator' | 'chip' | 'otherDevice' } }): Promise<any>;",
+"summary": "自动布线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Document",
+"method": "autoLayout",
+"sig": "public autoLayout(props?: { uuids?: Array<string>; netlist?: { component: { [uniqueId: string]: { pinInfoMap: { [key: string]: { name: string; number: string; net: string; props: { 'Pin Number': string } } } } } }; designatorDeviceTypeMap?: { [designator: string]: 'resistor' | 'capacitor' | 'inductive' | 'diode' | 'triode' | 'oscillator' | 'chip' | 'otherDevice' } }): Promise<any>;",
+"summary": "自动布局",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Drc",
+"method": "check",
+"sig": "public check(strict: boolean, userInterface: boolean, includeVerboseError: false): Promise<boolean>;",
+"summary": "检查 DRC",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Drc",
+"method": "check",
+"sig": "public check(strict: boolean, userInterface: boolean, includeVerboseError: true): Promise<Array<any>>;",
+"summary": "检查 DRC",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Event",
+"method": "addMouseEventListener",
+"sig": "public addMouseEventListener(id: string, eventType: 'all' | ESCH_MouseEventType, callFn: (eventType: ESCH_MouseEventType) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增鼠标事件监听",
+"stability": ""
+},
+{
+"ns": "eda.sch_Event",
+"method": "addPrimitiveEventListener",
+"sig": "public addPrimitiveEventListener(id: string, eventType: 'all' | ESCH_PrimitiveEventType, callFn: (eventType: ESCH_PrimitiveEventType, props: { primitiveIds: Array<string> }) => void | Promise<void>, onlyOnce?: boolean): void;",
+"summary": "新增图元事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Event",
+"method": "addSimulationEnginePullEventListener",
+"sig": "public addSimulationEnginePullEventListener(id: string, eventType: 'all', callFn: (eventType: ESCH_DynamicSimulationEnginePullEventType | ESCH_SpiceSimulationEnginePullEventType, props: { [key: string]: any }) => void | Promise<void>): void;",
+"summary": "注册仿真引擎拉取事件监听",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Event",
+"method": "removeEventListener",
+"sig": "public removeEventListener(id: string): boolean;",
+"summary": "移除事件监听",
+"stability": ""
+},
+{
+"ns": "eda.sch_Event",
+"method": "isEventListenerAlreadyExist",
+"sig": "public isEventListenerAlreadyExist(id: string): boolean;",
+"summary": "查询事件监听是否存在",
+"stability": ""
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getAssemblyVariantsConfigs",
+"sig": "public getAssemblyVariantsConfigs(): Promise<Array<{ text: string; value: string }>>;",
+"summary": "获取装配体变量配置列表",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getBomTemplates",
+"sig": "public getBomTemplates(): Promise<Array<string>>;",
+"summary": "获取 BOM 模板列表",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "uploadBomTemplateFile",
+"sig": "public uploadBomTemplateFile(templateFile: File, template?: string): Promise<string | undefined>;",
+"summary": "上传 BOM 模板文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getBomTemplateFile",
+"sig": "public getBomTemplateFile(template: string): Promise<File | undefined>;",
+"summary": "获取 BOM 模板文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "deleteBomTemplate",
+"sig": "public deleteBomTemplate(template: string): Promise<boolean>;",
+"summary": "删除 BOM 模板",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getBomFile",
+"sig": "public getBomFile(fileName?: string, fileType?: 'xlsx' | 'csv', template?: string, filterOptions?: Array<{ property: string; includeValue: boolean | string }>, statistics?: Array<string>, property?: Array<string>, columns?: Array<IPCB_BomPropertiesTableColumns>, assemblyVariantsConfig?: { text: string; value: string }): Promise<File | undefined>;",
+"summary": "获取 BOM 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getNetlistFile",
+"sig": "public getNetlistFile(fileName?: string, netlistType?: ESYS_NetlistType): Promise<File | undefined>;",
+"summary": "获取网表文件（Netlist）",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getSimulationNetlistFile",
+"sig": "public getSimulationNetlistFile(fileName?: string, netlistType?: ESCH_SimulationNetlistType): Promise<File | undefined>;",
+"summary": "获取仿真网表文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getExportDocumentFile",
+"sig": "public getExportDocumentFile(fileName?: string, fileType?: ESCH_ExportDocumentFileType, typeSpecificParams?: { theme?: 'Default' | 'White on Black' | 'Black on White'; lineWidth?: 'Default' | 'Always 1px' | 'Follow the Zoom Change'; displayAttributesAsMenu?: boolean; size?: 'Original Size' | string | { width: number; height: number; unit: ESYS_Unit.INCH | ESYS_Unit.MILLIMETER } }, object?: 'All Schematic' | 'Current Schematic' | 'Current Schematic Page' | string, objectSpecificParams?: { range?: 'All' | [number, number]; outputMethod?: 'Merged sheet' | 'Separated sheet' }): Promise<File | undefined>;",
+"summary": "获取导出文档文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "placeComponentsOrder",
+"sig": "public placeComponentsOrder(interactive?: boolean, ignoreWarning?: boolean): Promise<boolean>;",
+"summary": "元件下单",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "placeSmtComponentsOrder",
+"sig": "public placeSmtComponentsOrder(interactive?: boolean, ignoreWarning?: boolean): Promise<boolean>;",
+"summary": "SMT 元件下单",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getPngFile",
+"sig": "public getPngFile(fileName?: string, resolution?: ISCH_ExportPngResolution): Promise<File | undefined>;",
+"summary": "获取 PNG 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_ManufactureData",
+"method": "getSvgFile",
+"sig": "public getSvgFile(fileName?: string): Promise<File | undefined>;",
+"summary": "获取 SVG 文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Net",
+"method": "getCurrentProjectAllNets",
+"sig": "public getCurrentProjectAllNets(): Promise<Array<ISCH_ProjectNetInfo>>;",
+"summary": "获取当前工程下所有网络的详细信息",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Net",
+"method": "getAllNets",
+"sig": "public getAllNets(): Promise<Array<ISCH_NetInfo>>;",
+"summary": "获取所有网络的详细信息",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Net",
+"method": "getNet",
+"sig": "public getNet(net: string): Promise<ISCH_NetInfo | undefined>;",
+"summary": "获取指定网络的详细信息",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Net",
+"method": "getAllNetsName",
+"sig": "public getAllNetsName(): Promise<Array<string>>;",
+"summary": "获取所有网络的网络名称",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Netlist",
+"method": "getNetlist",
+"sig": "public getNetlist(type?: ESYS_NetlistType): Promise<string>;",
+"summary": "获取网表",
+"stability": "deprecated"
+},
+{
+"ns": "eda.sch_Netlist",
+"method": "setNetlist",
+"sig": "public setNetlist(type: ESYS_NetlistType | undefined, netlist: string): Promise<void>;",
+"summary": "更新网表",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Primitive",
+"method": "getPrimitiveTypeByPrimitiveId",
+"sig": "public getPrimitiveTypeByPrimitiveId(id: string): Promise<ESCH_PrimitiveType | undefined>;",
+"summary": "获取指定 ID 的图元的图元类型",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_Primitive",
+"method": "getPrimitiveByPrimitiveId",
+"sig": "public getPrimitiveByPrimitiveId(id: string): Promise<ISCH_Primitive | undefined>;",
+"summary": "获取指定 ID 的图元的所有属性",
+"stability": ""
+},
+{
+"ns": "eda.sch_Primitive",
+"method": "getPrimitivesByPrimitiveId",
+"sig": "public getPrimitivesByPrimitiveId(ids: Array<string>): Promise<Array<ISCH_Primitive>>;",
+"summary": "获取指定所有 ID 的图元的所有属性",
+"stability": "alpha"
+},
+{
+"ns": "eda.sch_Primitive",
+"method": "getPrimitivesBBox",
+"sig": "public getPrimitivesBBox(primitiveIds: Array<string | ISCH_Primitive>): Promise<{ minX: number; minY: number; maxX: number; maxY: number } | undefined>;",
+"summary": "获取图元的 BBox",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "create",
+"sig": "public create(startX: number, startY: number, referenceX: number, referenceY: number, endX: number, endY: number, color?: string | null, fillColor?: string | null, lineWidth?: number | null, lineType?: ESCH_PrimitiveLineType | null): Promise<ISCH_PrimitiveArc | undefined>;",
+"summary": "创建圆弧",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveArc | Array<string> | Array<ISCH_PrimitiveArc>): Promise<boolean>;",
+"summary": "删除圆弧",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveArc, property: { startX?: number; startY?: number; referenceX?: number; referenceY?: number; endX?: number; endY?: number; color?: string | null; fillColor?: string | null; lineWidth?: number | null; lineType?: ESCH_PrimitiveLineType | null }): Promise<ISCH_PrimitiveArc | undefined>;",
+"summary": "修改圆弧",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveArc | undefined>;",
+"summary": "获取圆弧",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveArc>>;",
+"summary": "获取圆弧",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有圆弧的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveArc",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitiveArc>>;",
+"summary": "获取所有圆弧",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "create",
+"sig": "public create(): undefined;",
+"summary": "创建属性",
+"stability": "internal"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "delete",
+"sig": "public delete(): boolean;",
+"summary": "删除属性",
+"stability": "internal"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveAttribute, property: { x?: number | null; y?: number | null; rotation?: number | null; color?: string | null; fontName?: string | null; fontSize?: number | null; bold?: boolean | null; italic?: boolean | null; underLine?: boolean | null; alignMode?: ESCH_PrimitiveTextAlignMode | null; fillColor?: string | null; key?: string; value?: string; keyVisible?: boolean | null; valueVisible?: boolean | null }): Promise<ISCH_PrimitiveAttribute | undefined>;",
+"summary": "修改属性",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveAttribute | undefined>;",
+"summary": "获取属性",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveAttribute>>;",
+"summary": "获取属性",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(parentPrimitiveId?: string): Promise<Array<string>>;",
+"summary": "获取所有属性的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "getAll",
+"sig": "public getAll(parentPrimitiveId?: string): Promise<Array<ISCH_PrimitiveAttribute>>;",
+"summary": "获取所有属性",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveAttribute",
+"method": "createNetLabel",
+"sig": "public createNetLabel(x: number, y: number, net: string): Promise<ISCH_PrimitiveAttribute | undefined>;",
+"summary": "创建网络标签",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "create",
+"sig": "public create(busName: string, line: Array<number> | Array<Array<number>>, color?: string | null, lineWidth?: number | null, lineType?: ESCH_PrimitiveLineType | null): Promise<ISCH_PrimitiveBus | undefined>;",
+"summary": "创建总线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveBus | Array<string> | Array<ISCH_PrimitiveBus>): Promise<boolean>;",
+"summary": "删除总线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveBus, property: { busName?: string; line?: Array<number> | Array<Array<number>>; color?: string | null; lineWidth?: number | null; lineType?: ESCH_PrimitiveLineType | null }): Promise<ISCH_PrimitiveBus | undefined>;",
+"summary": "修改总线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveBus | undefined>;",
+"summary": "获取总线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveBus>>;",
+"summary": "获取总线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有总线的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveBus",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitiveBus>>;",
+"summary": "获取所有总线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "create",
+"sig": "public create(centerX: number, centerY: number, radius: number, color?: string | null, fillColor?: string | null, lineWidth?: number | null, lineType?: ESCH_PrimitiveLineType | null, fillStyle?: ESCH_PrimitiveFillStyle | null): Promise<ISCH_PrimitiveCircle | undefined>;",
+"summary": "创建圆",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveCircle | Array<string> | Array<ISCH_PrimitiveCircle>): Promise<boolean>;",
+"summary": "删除圆",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveCircle, property: { centerX?: number; centerY?: number; radius?: number; color?: string | null; fillColor?: string | null; lineWidth?: number | null; lineType?: ESCH_PrimitiveLineType | null; fillStyle?: ESCH_PrimitiveFillStyle | null }): Promise<ISCH_PrimitiveCircle | undefined>;",
+"summary": "修改圆",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveCircle | undefined>;",
+"summary": "获取圆",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveCircle>>;",
+"summary": "获取圆",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有圆的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveCircle",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitiveCircle>>;",
+"summary": "获取所有圆",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetFlagComponentUuid_Power",
+"sig": "public setNetFlagComponentUuid_Power(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 Power 网络标识关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetFlagComponentUuid_Ground",
+"sig": "public setNetFlagComponentUuid_Ground(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 Ground 网络标识关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetFlagComponentUuid_AnalogGround",
+"sig": "public setNetFlagComponentUuid_AnalogGround(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 AnalogGround 网络标识关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetFlagComponentUuid_ProtectGround",
+"sig": "public setNetFlagComponentUuid_ProtectGround(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 ProtectGround 网络标识关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetPortComponentUuid_IN",
+"sig": "public setNetPortComponentUuid_IN(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 IN 网络端口关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetPortComponentUuid_OUT",
+"sig": "public setNetPortComponentUuid_OUT(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 OUT 网络端口关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "setNetPortComponentUuid_BI",
+"sig": "public setNetPortComponentUuid_BI(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem): Promise<boolean>;",
+"summary": "设置在扩展 API 中 BI 网络端口关联的器件 UUID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "create",
+"sig": "public create(component: { libraryType?: ELIB_LibraryType.DEVICE; libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem | { libraryType: ELIB_LibraryType.SYMBOL; libraryUuid: string; uuid: string } | ILIB_SymbolItem | ILIB_SymbolSearchItem, x: number, y: number, subPartName?: string, rotation?: number, mirror?: boolean, addIntoBom?: boolean, addIntoPcb?: boolean): Promise<ISCH_PrimitiveComponent | undefined>;",
+"summary": "创建器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "createNetFlag",
+"sig": "public createNetFlag(identification: 'Power' | 'Ground' | 'AnalogGround' | 'ProtectGround', net: string, x: number, y: number, rotation?: number, mirror?: boolean): Promise<ISCH_PrimitiveComponent | undefined>;",
+"summary": "创建网络标识",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "createNetPort",
+"sig": "public createNetPort(direction: 'IN' | 'OUT' | 'BI', net: string, x: number, y: number, rotation?: number, mirror?: boolean): Promise<ISCH_PrimitiveComponent | undefined>;",
+"summary": "创建网络端口",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "createShortCircuitFlag",
+"sig": "public createShortCircuitFlag(x: number, y: number, rotation?: number, mirror?: boolean): Promise<ISCH_PrimitiveComponent | undefined>;",
+"summary": "创建短接标识",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "createCbbSymbol",
+"sig": "public createCbbSymbol(cbbSymbol: { libraryUuid: string; cbbUuid: string; uuid?: string }, x: number, y: number, rotation?: number, mirror?: boolean): Promise<ISCH_PrimitiveCbbSymbolComponent | undefined>;",
+"summary": "创建复用模块符号",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "placeCbbSchematicPage",
+"sig": "public placeCbbSchematicPage(cbbSchematicPage: { libraryUuid: string; cbbUuid: string; uuid: string }, x: number, y: number): Promise<boolean>;",
+"summary": "放置复用模块原理图图页",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveComponent | Array<string> | Array<ISCH_PrimitiveComponent>): Promise<boolean>;",
+"summary": "删除器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveComponent, property: { x?: number; y?: number; rotation?: number; mirror?: boolean; addIntoBom?: boolean; addIntoPcb?: boolean; designator?: string | null; name?: string | null; uniqueId?: string | null; manufacturer?: string | null; manufacturerId?: string | null; supplier?: string | null; supplierId?: string | null; otherProperty?: Record<string, string | number | boolean> }): Promise<ISCH_PrimitiveComponent | undefined>;",
+"summary": "修改器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveComponent | undefined>;",
+"summary": "获取器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveComponent>>;",
+"summary": "获取器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(componentType?: ESCH_PrimitiveComponentType, allSchematicPages?: boolean): Promise<Array<string>>;",
+"summary": "获取所有器件的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "getAll",
+"sig": "public getAll(componentType?: ESCH_PrimitiveComponentType, allSchematicPages?: boolean): Promise<Array<ISCH_PrimitiveComponent>>;",
+"summary": "获取所有器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "getAllPinsByPrimitiveId",
+"sig": "public getAllPinsByPrimitiveId(primitiveId: string): Promise<Array<ISCH_PrimitiveComponentPin> | undefined>;",
+"summary": "获取器件关联的所有引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "placeComponentWithMouse",
+"sig": "public placeComponentWithMouse(component: { libraryUuid: string; uuid: string } | ILIB_DeviceItem | ILIB_DeviceSearchItem, subPartName?: string): Promise<boolean>;",
+"summary": "使用鼠标放置器件",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "placeSymbolWithMouse",
+"sig": "public placeSymbolWithMouse(symbol: { libraryUuid: string; uuid: string } | ILIB_SymbolItem | ILIB_SymbolSearchItem, subPartName?: string, properties?: { [key: string]: boolean | number | string | undefined }): Promise<boolean>;",
+"summary": "使用鼠标放置符号",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveComponent",
+"method": "getAllPropertyNames",
+"sig": "public getAllPropertyNames(): Promise<Array<string>>;",
+"summary": "获取所有器件的所有属性名称集合",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "create",
+"sig": "public create(x: number, y: number, pinNumber: string, pinName?: string, rotation?: number, pinLength?: number, pinColor?: string | null, pinShape?: ESCH_PrimitivePinShape, pinType?: ESCH_PrimitivePinType): Promise<ISCH_PrimitivePin | undefined>;",
+"summary": "创建引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitivePin | Array<string> | Array<ISCH_PrimitivePin>): Promise<boolean>;",
+"summary": "删除引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitivePin | ISCH_PrimitiveComponentPin, property: { x?: number; y?: number; pinNumber?: string; pinName?: string; rotation?: number; pinLength?: number; pinColor?: string | null; pinShape?: ESCH_PrimitivePinShape; pinType?: ESCH_PrimitivePinType; noConnected?: boolean; otherProperty?: Record<string, string | number | boolean> }): Promise<ISCH_PrimitivePin | ISCH_PrimitiveComponentPin | undefined>;",
+"summary": "修改引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitivePin | ISCH_PrimitiveComponentPin | undefined>;",
+"summary": "获取引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitivePin | ISCH_PrimitiveComponentPin>>;",
+"summary": "获取引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有引脚的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePin",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitivePin>>;",
+"summary": "获取所有引脚",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "create",
+"sig": "public create(line: Array<number>, color?: string | null, fillColor?: string | null, lineWidth?: number | null, lineType?: ESCH_PrimitiveLineType | null): Promise<ISCH_PrimitivePolygon | undefined>;",
+"summary": "创建多边形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitivePolygon | Array<string> | Array<ISCH_PrimitivePolygon>): Promise<boolean>;",
+"summary": "删除多边形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitivePolygon, property: { line?: Array<number>; color?: string | null; fillColor?: string | null; lineWidth?: number | null; lineType?: ESCH_PrimitiveLineType | null }): Promise<ISCH_PrimitivePolygon | undefined>;",
+"summary": "修改多边形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitivePolygon | undefined>;",
+"summary": "获取多边形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitivePolygon>>;",
+"summary": "获取多边形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有多边形的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitivePolygon",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitivePolygon>>;",
+"summary": "获取所有多边形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "create",
+"sig": "public create(topLeftX: number, topLeftY: number, width: number, height: number, cornerRadius?: number, rotation?: number, color?: string | null, fillColor?: string | null, lineWidth?: number | null, lineType?: ESCH_PrimitiveLineType | null, fillStyle?: ESCH_PrimitiveFillStyle | null): Promise<ISCH_PrimitiveRectangle | undefined>;",
+"summary": "创建矩形",
+"stability": ""
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveRectangle | Array<string> | Array<ISCH_PrimitiveRectangle>): Promise<boolean>;",
+"summary": "删除矩形",
+"stability": ""
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveRectangle, property: { topLeftX?: number; topLeftY?: number; width?: number; height?: number; cornerRadius?: number; rotation?: number; color?: string | null; fillColor?: string | null; lineWidth?: number | null; lineType?: ESCH_PrimitiveLineType | null; fillStyle?: ESCH_PrimitiveFillStyle | null }): Promise<ISCH_PrimitiveRectangle | undefined>;",
+"summary": "修改矩形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveRectangle | undefined>;",
+"summary": "获取矩形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveRectangle>>;",
+"summary": "获取矩形",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有矩形的图元 ID",
+"stability": ""
+},
+{
+"ns": "eda.sch_PrimitiveRectangle",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitiveRectangle>>;",
+"summary": "获取所有矩形",
+"stability": ""
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "create",
+"sig": "public create(x: number, y: number, content: string, rotation?: number, textColor?: string | null, fontName?: string | null, fontSize?: number | null, bold?: boolean, italic?: boolean, underLine?: boolean, alignMode?: ESCH_PrimitiveTextAlignMode): Promise<ISCH_PrimitiveText | undefined>;",
+"summary": "创建文本",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveText | Array<string> | Array<ISCH_PrimitiveText>): Promise<boolean>;",
+"summary": "删除文本",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveText, property: { x?: number; y?: number; content?: string; rotation?: number; textColor?: string | null; fontName?: string | null; fontSize?: number | null; bold?: boolean; italic?: boolean; underLine?: boolean; alignMode?: ESCH_PrimitiveTextAlignMode }): Promise<ISCH_PrimitiveText | undefined>;",
+"summary": "修改文本",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveText | undefined>;",
+"summary": "获取文本",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveText>>;",
+"summary": "获取文本",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有文本的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveText",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitiveText>>;",
+"summary": "获取所有文本",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "create",
+"sig": "public create(line: Array<number> | Array<Array<number>>, net?: string, color?: string | null, lineWidth?: number | null, lineType?: ESCH_PrimitiveLineType | null): Promise<ISCH_PrimitiveWire | undefined>;",
+"summary": "创建导线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveWire | Array<string> | Array<ISCH_PrimitiveWire>): Promise<boolean>;",
+"summary": "删除导线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveWire, property: { line?: Array<number> | Array<Array<number>>; net?: string; color?: string | null; lineWidth?: number | null; lineType?: ESCH_PrimitiveLineType | null }): Promise<ISCH_PrimitiveWire | undefined>;",
+"summary": "修改导线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveWire | undefined>;",
+"summary": "获取导线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveWire>>;",
+"summary": "获取导线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(net?: string | Array<string>): Promise<Array<string>>;",
+"summary": "获取所有导线的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveWire",
+"method": "getAll",
+"sig": "public getAll(net?: string | Array<string>): Promise<Array<ISCH_PrimitiveWire>>;",
+"summary": "获取所有导线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "getAllSelectedPrimitives_PrimitiveId",
+"sig": "public getAllSelectedPrimitives_PrimitiveId(): Promise<Array<string>>;",
+"summary": "查询所有已选中图元的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "getAllSelectedPrimitives",
+"sig": "public getAllSelectedPrimitives(): Promise<Array<ISCH_Primitive>>;",
+"summary": "查询所有已选中图元的图元对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "getSelectedPrimitives_PrimitiveId",
+"sig": "public getSelectedPrimitives_PrimitiveId(): Promise<Array<string>>;",
+"summary": "查询选中图元的图元 ID",
+"stability": "deprecated"
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "getSelectedPrimitives",
+"sig": "public getSelectedPrimitives(): Promise<Array<object>>;",
+"summary": "查询选中图元的所有参数",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "doSelectPrimitives",
+"sig": "public doSelectPrimitives(primitiveIds: string | Array<string>): Promise<boolean>;",
+"summary": "使用图元 ID 选中图元",
+"stability": ""
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "doCrossProbeSelect",
+"sig": "public doCrossProbeSelect(components?: Array<string>, pins?: Array<string>, nets?: Array<string>, highlight?: boolean, select?: boolean): boolean;",
+"summary": "进行交叉选择",
+"stability": ""
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "clearSelected",
+"sig": "public clearSelected(): boolean;",
+"summary": "清除选中",
+"stability": ""
+},
+{
+"ns": "eda.sch_SelectControl",
+"method": "getCurrentMousePosition",
+"sig": "public getCurrentMousePosition(): Promise<{ x: number; y: number } | undefined>;",
+"summary": "获取当前鼠标在画布上的位置",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_SimulationEngine",
+"method": "pushData",
+"sig": "public pushData(eventType: ESCH_DynamicSimulationEnginePushEventType | ESCH_SpiceSimulationEnginePushEventType, props: { [key: string]: any }): void;",
+"summary": "向仿真内核发送数据",
+"stability": ""
+},
+{
+"ns": "eda.sch_Utils",
+"method": "splitLines",
+"sig": "public splitLines(lines: Array<number | Array<number>>): Array<Array<number | Array<number>>> | undefined;",
+"summary": "拆分多段线",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "create",
+"sig": "public create(content: File | string, startX: number, startY: number, width?: number, height?: number, rotation?: number, mirror?: boolean, fileName?: string): Promise<ISCH_PrimitiveObject | undefined>;",
+"summary": "创建二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "delete",
+"sig": "public delete(primitiveIds: string | ISCH_PrimitiveObject | Array<string> | Array<ISCH_PrimitiveObject>): Promise<boolean>;",
+"summary": "删除二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "modify",
+"sig": "public modify(primitiveId: string | ISCH_PrimitiveObject, property: { content?: File | string; startX?: number; startY?: number; width?: number; height?: number; rotation?: number; mirror?: boolean; fileName?: string }): Promise<ISCH_PrimitiveObject | undefined>;",
+"summary": "修改二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "get",
+"sig": "public get(primitiveIds: string): Promise<ISCH_PrimitiveObject | undefined>;",
+"summary": "获取二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "get",
+"sig": "public get(primitiveIds: Array<string>): Promise<Array<ISCH_PrimitiveObject>>;",
+"summary": "获取二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "getAllPrimitiveId",
+"sig": "public getAllPrimitiveId(): Promise<Array<string>>;",
+"summary": "获取所有二进制内嵌对象的图元 ID",
+"stability": "beta"
+},
+{
+"ns": "eda.sch_PrimitiveObject",
+"method": "getAll",
+"sig": "public getAll(): Promise<Array<ISCH_PrimitiveObject>>;",
+"summary": "获取所有二进制内嵌对象",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_ClientUrl",
+"method": "request",
+"sig": "public request(url: string, method?: 'GET' | 'POST' | 'HEAD' | 'PUT' | 'DELETE' | 'PATCH', data?: string | Blob | FormData | URLSearchParams, options?: { headers?: { [header: string]: any }; integrity?: string }, succeedCallFn?: (data: Response) => void | Promise<void>): Promise<Response>;",
+"summary": "发起即时请求",
+"stability": ""
+},
+{
+"ns": "eda.sys_ClientUrl",
+"method": "createComponent",
+"sig": "createComponent(handle: string, type: T, props: ComponentPropsMap[T], eventDispatcher: (ev: any) => void, parent?: string): void;",
+"summary": "",
+"stability": ""
+},
+{
+"ns": "eda.sys_ClientUrl",
+"method": "updateComponent",
+"sig": "updateComponent(handle: string, type: T, props: ComponentPropsMap[T], eventDispatcher: (ev: any) => void): void;",
+"summary": "",
+"stability": ""
+},
+{
+"ns": "eda.sys_ClientUrl",
+"method": "detachComponent",
+"sig": "detachComponent(handle: string): void;",
+"summary": "",
+"stability": ""
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "createDesignPortal",
+"sig": "public createDesignPortal(): IDesignPortal;",
+"summary": "创建组件化弹出窗口的通信入口",
+"stability": ""
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "showInformationMessage",
+"sig": "public showInformationMessage(content: string, title?: string, buttonTitle?: string): void;",
+"summary": "弹出消息窗口",
+"stability": ""
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "showConfirmationMessage",
+"sig": "public showConfirmationMessage(content: string, title?: string, mainButtonTitle?: string, buttonTitle?: string, callbackFn?: (mainButtonClicked: boolean) => void): void;",
+"summary": "弹出确认窗口",
+"stability": ""
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "showInputDialog",
+"sig": "public showInputDialog(beforeContent?: string, afterContent?: string, title?: string, type?: 'color' | 'date' | 'datetime-local' | 'email' | 'mouth' | 'number' | 'password' | 'tel' | 'text' | 'time' | 'url' | 'week', value?: string | number, otherProperty?: { max?: number; maxlength?: number; min?: number; minlength?: number; multiple?: boolean; pattern?: RegExp; placeholder?: string; readonly?: boolean; step?: number }, callbackFn?: (value: any) => void): void;",
+"summary": "弹出输入窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "showSelectDialog",
+"sig": "public showSelectDialog(options: Array<string> | Array<{ value: string; displayContent: string }>, beforeContent?: string, afterContent?: string, title?: string, defaultOption?: string, multiple?: false, callbackFn?: (value: string) => void | Promise<void>): void;",
+"summary": "弹出选择窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "showSelectDialog",
+"sig": "public showSelectDialog(options: Array<string> | Array<{ value: string; displayContent: string }>, beforeContent?: string, afterContent?: string, title?: string, defaultOption?: Array<string>, multiple?: true, callbackFn?: (value: Array<string>) => void | Promise<void>): void;",
+"summary": "弹出多选窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Dialog",
+"method": "insertScriptToDialog",
+"sig": "public insertScriptToDialog(dialogId: string, scriptFunction: (...args: Array<any>) => void | Promise<void>, ...args: Array<any>): void;",
+"summary": "向指定原生弹窗注入函数",
+"stability": "internal"
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isWeb",
+"sig": "public isWeb(): boolean;",
+"summary": "是否处于浏览器环境",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isClient",
+"sig": "public isClient(): boolean;",
+"summary": "是否处于客户端环境",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isEasyEDAProEdition",
+"sig": "public isEasyEDAProEdition(): boolean;",
+"summary": "是否为 EasyEDA Pro 版本",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isJLCEDAProEdition",
+"sig": "public isJLCEDAProEdition(): boolean;",
+"summary": "是否为 嘉立创EDA 专业版本",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isProPrivateEdition",
+"sig": "public isProPrivateEdition(): boolean;",
+"summary": "是否为私有化部署版本",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isOnlineMode",
+"sig": "public isOnlineMode(): boolean;",
+"summary": "是否为在线模式",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isHalfOfflineMode",
+"sig": "public isHalfOfflineMode(): boolean;",
+"summary": "是否为半离线模式",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "isOfflineMode",
+"sig": "public isOfflineMode(): boolean;",
+"summary": "是否为全离线模式",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "getEditorCurrentVersion",
+"sig": "public getEditorCurrentVersion(onlySemantic?: boolean): string;",
+"summary": "获取编辑器当前版本",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "getEditorCompliedDate",
+"sig": "public getEditorCompliedDate(): string;",
+"summary": "获取编辑器编译日期",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "getUserInfo",
+"sig": "public getUserInfo(): { username?: string; nickname?: string; avatar?: string; uuid?: string; customerCode?: string };",
+"summary": "获取用户信息",
+"stability": ""
+},
+{
+"ns": "eda.sys_Environment",
+"method": "setKeepProjectHasOnlyOneBoard",
+"sig": "public setKeepProjectHasOnlyOneBoard(status?: boolean): Promise<void>;",
+"summary": "设置环境：保持工程仅拥有一个板子",
+"stability": "internal"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getProjectFile",
+"sig": "public getProjectFile(fileName?: string, password?: string, fileType?: 'epro' | 'epro2'): Promise<File | undefined>;",
+"summary": "获取工程文件",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getDocumentFile",
+"sig": "public getDocumentFile(fileName?: string, password?: string, fileType?: 'epro' | 'epro2'): Promise<File | undefined>;",
+"summary": "获取文档文件",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getSchematicFile",
+"sig": "public getSchematicFile(fileName?: string, password?: string, fileType?: 'epro' | 'epro2'): Promise<File | undefined>;",
+"summary": "获取原理图文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getDocumentSource",
+"sig": "public getDocumentSource(): Promise<string | undefined>;",
+"summary": "获取文档源码",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getDocumentFootprintSources",
+"sig": "public getDocumentFootprintSources(): Promise<Array<{ footprintUuid: string; documentSource: string }>>;",
+"summary": "获取文档封装源码",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "setDocumentSource",
+"sig": "public setDocumentSource(source: string): Promise<boolean>;",
+"summary": "修改文档源码",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getProjectFileByProjectUuid",
+"sig": "public getProjectFileByProjectUuid(projectUuid: string, fileName?: string, password?: string, fileType?: 'epro' | 'epro2'): Promise<File | undefined>;",
+"summary": "使用工程 UUID 获取工程文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getDeviceFileByDeviceUuid",
+"sig": "public getDeviceFileByDeviceUuid(deviceUuid: string | Array<string>, libraryUuid?: string, fileType?: 'elibz' | 'elibz2'): Promise<File | undefined>;",
+"summary": "使用器件 UUID 获取器件文件",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getSymbolFileBySymbolUuid",
+"sig": "public getSymbolFileBySymbolUuid(symbolUuid: string | Array<string>, libraryUuid?: string, fileType?: 'elibz' | 'elibz2'): Promise<File | undefined>;",
+"summary": "使用符号 UUID 获取符号文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getFootprintFileByFootprintUuid",
+"sig": "public getFootprintFileByFootprintUuid(footprintUuid: string | Array<string>, libraryUuid?: string, fileType?: 'elibz' | 'elibz2'): Promise<File | undefined>;",
+"summary": "使用封装 UUID 获取封装文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getCbbFileByCbbUuid",
+"sig": "public getCbbFileByCbbUuid(cbbUuid: string, libraryUuid?: string, props?: { fileName?: string; password?: string; fileType?: 'epro' | 'epro2'; templateSchematicUuid?: string; templatePcbUuid?: string }): Promise<File | undefined>;",
+"summary": "使用复用模块 UUID 获取复用模块文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "getPanelLibraryFileByPanelLibraryUuid",
+"sig": "public getPanelLibraryFileByPanelLibraryUuid(panelLibraryUuid: string | Array<string>, libraryUuid?: string, fileType?: 'elibz' | 'elibz2'): Promise<File | undefined>;",
+"summary": "使用面板库 UUID 获取面板库文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "importProjectByProjectFile",
+"sig": "public importProjectByProjectFile(projectFile: File, fileType?: 'JLCEDA' | 'JLCEDA Pro' | 'EasyEDA' | 'EasyEDA Pro' | 'Allegro' | 'OrCAD' | 'EAGLE' | 'KiCad' | 'PADS' | 'LTspice', props?: { importOption?: ESYS_ImportProjectImportOption; schematicObjectStyle?: ESYS_ImportProjectSchematicObjectStyle; associateFootprint?: boolean; associate3DModel?: boolean; importFootprintNotesLayer?: boolean }, saveTo?: { operation: 'New Project'; newProjectOwnerTeamUuid: IDMT_TeamItem['uuid']; newProjectOwnerFolderUuid?: IDMT_FolderItem['uuid']; newProjectName?: string; newProjectFriendlyName?: string; newProjectDescription?: string; newProjectCollaborationMode?: EDMT_ProjectCollaborationMode } | { operation: 'Existing Project'; existingProjectUuid: IDMT_BriefProjectItem['uuid'] } | { operation: 'Offline Client Local Path'; folderPath: string }, librariesImportSetting?: { ownerTeamUuid: IDMT_TeamItem['uuid']; deviceClassification?: Array<string>; symbolClassification?: Array<string>; footprintClassification?: Array<string>; createDeviceForSingleSymbol?: boolean; updateExistingLibrariesWithTheSameName?: boolean }): Promise<IDMT_BriefProjectItem | undefined>;",
+"summary": "使用工程文件导入工程",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "importProjectByProjectFile",
+"sig": "public importProjectByProjectFile(projectFile: File, fileType?: 'Altium Designer' | 'Protel', props?: { importOption?: ESYS_ImportProjectImportOption; viaSolderMaskExpansion?: ESYS_ImportProjectViaSolderMaskExpansion; boardOutlineSource?: ESYS_ImportProjectBoardOutlineSource; schematicObjectStyle?: ESYS_ImportProjectSchematicObjectStyle; associateFootprint?: boolean; associate3DModel?: boolean; importFootprintNotesLayer?: boolean }, saveTo?: { operation: 'New Project'; newProjectOwnerTeamUuid: IDMT_TeamItem['uuid']; newProjectOwnerFolderUuid?: IDMT_FolderItem['uuid']; newProjectName?: string; newProjectFriendlyName?: string; newProjectDescription?: string; newProjectCollaborationMode?: EDMT_ProjectCollaborationMode } | { operation: 'Existing Project'; existingProjectUuid: IDMT_BriefProjectItem['uuid'] } | { operation: 'Offline Client Local Path'; folderPath: string }, librariesImportSetting?: { ownerTeamUuid: IDMT_TeamItem['uuid']; deviceClassification?: Array<string>; symbolClassification?: Array<string>; footprintClassification?: Array<string>; createDeviceForSingleSymbol?: boolean; updateExistingLibrariesWithTheSameName?: boolean }): Promise<IDMT_BriefProjectItem | undefined>;",
+"summary": "使用工程文件导入工程",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "extractProjectInfo",
+"sig": "public extractProjectInfo(data: File): Promise<any>;",
+"summary": "提取文件内的工程配置信息",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileManager",
+"method": "extractLibInfo",
+"sig": "public extractLibInfo(data: File | Array<File>): Promise<any>;",
+"summary": "提取文件内的库配置信息",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "getExtensionFile",
+"sig": "public getExtensionFile(uri: string): Promise<File | undefined>;",
+"summary": "获取扩展内的文件",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "openReadFileDialog",
+"sig": "public openReadFileDialog(filenameExtensions?: string | Array<string>, multiFiles?: true): Promise<Array<File> | undefined>;",
+"summary": "打开读入文件窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "openReadFileDialog",
+"sig": "public openReadFileDialog(filenameExtensions?: string | Array<string>, multiFiles?: false): Promise<File | undefined>;",
+"summary": "打开读入文件窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "openReadFolderDialog",
+"sig": "public openReadFolderDialog(): Promise<Array<{ relativePath: string; file: File }>>;",
+"summary": "打开读入文件夹窗口",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "openReadFilePathDialog",
+"sig": "public openReadFilePathDialog(filenameExtensions?: string | Array<string>, multiFiles?: true): Promise<Array<string>>;",
+"summary": "打开读取文件路径窗口",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "openReadFilePathDialog",
+"sig": "public openReadFilePathDialog(filenameExtensions?: string | Array<string>, multiFiles?: false): Promise<string | undefined>;",
+"summary": "打开读取文件路径窗口",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "openReadFolderPathDialog",
+"sig": "public openReadFolderPathDialog(): Promise<string | undefined>;",
+"summary": "打开读取目录路径窗口",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "saveFile",
+"sig": "public saveFile(fileData: File | Blob, fileName?: string): Promise<void>;",
+"summary": "保存文件",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "readFileFromFileSystem",
+"sig": "public readFileFromFileSystem(uri: string): Promise<File | undefined>;",
+"summary": "从文件系统读取文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "saveFileToFileSystem",
+"sig": "public saveFileToFileSystem(uri: string, fileData: File | Blob, fileName?: string, force?: boolean): Promise<boolean>;",
+"summary": "向文件系统写入文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "listFilesOfFileSystem",
+"sig": "public listFilesOfFileSystem(folderPath: string, recursive?: boolean): Promise<Array<ISYS_FileSystemFileList>>;",
+"summary": "查看文件系统路径下的文件列表",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "deleteFileInFileSystem",
+"sig": "public deleteFileInFileSystem(uri: string, force?: boolean): Promise<boolean>;",
+"summary": "删除文件系统内的文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "createDirectoryInFileSystem",
+"sig": "public createDirectoryInFileSystem(folderPath: string): Promise<boolean>;",
+"summary": "在文件系统内创建文件夹",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "existsPathInFileSystem",
+"sig": "public existsPathInFileSystem(uri: string): Promise<boolean>;",
+"summary": "检查文件系统内的文件或目录是否存在",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "getEdaPath",
+"sig": "public getEdaPath(): Promise<string>;",
+"summary": "获取 EDA 文档目录路径",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "getDocumentsPath",
+"sig": "public getDocumentsPath(): Promise<string>;",
+"summary": "获取文档目录路径",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "getLibrariesPaths",
+"sig": "public getLibrariesPaths(): Promise<Array<string>>;",
+"summary": "获取库目录路径",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "getProjectsPaths",
+"sig": "public getProjectsPaths(): Promise<Array<string>>;",
+"summary": "获取工程目录路径",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "createObjectURL",
+"sig": "public createObjectURL(blob: Blob | File): string;",
+"summary": "创建 ObjectURL",
+"stability": ""
+},
+{
+"ns": "eda.sys_FileSystem",
+"method": "revokeObjectURL",
+"sig": "public revokeObjectURL(url: string): void;",
+"summary": "吊销 ObjectURL",
+"stability": ""
+},
+{
+"ns": "eda.sys_FontManager",
+"method": "getFontsList",
+"sig": "public getFontsList(): Promise<Array<string>>;",
+"summary": "获取当前已经配置的字体列表",
+"stability": ""
+},
+{
+"ns": "eda.sys_FontManager",
+"method": "addFont",
+"sig": "public addFont(fontName: string): Promise<boolean>;",
+"summary": "添加字体到字体列表",
+"stability": ""
+},
+{
+"ns": "eda.sys_FontManager",
+"method": "deleteFont",
+"sig": "public deleteFont(fontName: string): Promise<boolean>;",
+"summary": "删除字体列表内的指定字体",
+"stability": ""
+},
+{
+"ns": "eda.sys_FormatConversion",
+"method": "convertAltiumDesignerLibrariesToEasyEDASingleFile",
+"sig": "public convertAltiumDesignerLibrariesToEasyEDASingleFile(file: File | Array<File>): Promise<File | undefined>;",
+"summary": "转换 Altium Designer 库到单个嘉立创库文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FormatConversion",
+"method": "convertAltiumDesignerLibrariesToEasyEDAMultiFiles",
+"sig": "public convertAltiumDesignerLibrariesToEasyEDAMultiFiles(file: File | Array<File>): Promise<Array<File>>;",
+"summary": "转换 Altium Designer 库到多个嘉立创库文件（每个器件一个文件）",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FormatConversion",
+"method": "convertDisaLibrariesToEasyEDASingleFile",
+"sig": "public convertDisaLibrariesToEasyEDASingleFile(file: File | Array<File>): Promise<File | undefined>;",
+"summary": "转换 T/DISA 4001 库到单个嘉立创库文件",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_FormatConversion",
+"method": "convertDisaLibrariesToEasyEDAMultiFiles",
+"sig": "public convertDisaLibrariesToEasyEDAMultiFiles(file: File | Array<File>): Promise<Array<File>>;",
+"summary": "转换 T/DISA 4001 库到多个嘉立创库文件（每个器件一个文件）",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_HeaderMenu",
+"method": "insertHeaderMenus",
+"sig": "public insertHeaderMenus(headerMenus: ISYS_HeaderMenus): Promise<void>;",
+"summary": "导入顶部菜单数据",
+"stability": ""
+},
+{
+"ns": "eda.sys_HeaderMenu",
+"method": "removeHeaderMenus",
+"sig": "public removeHeaderMenus(): void;",
+"summary": "移除顶部菜单数据",
+"stability": ""
+},
+{
+"ns": "eda.sys_HeaderMenu",
+"method": "replaceHeaderMenus",
+"sig": "public replaceHeaderMenus(headerMenus: ISYS_HeaderMenus): Promise<void>;",
+"summary": "替换顶部菜单数据",
+"stability": ""
+},
+{
+"ns": "eda.sys_HeaderMenu",
+"method": "removeSystemHeaderMenuItem",
+"sig": "public removeSystemHeaderMenuItem(id: Array<string>, props?: { removeTheBeforeDivider?: boolean; removeTheAfterDivider?: boolean }): Promise<boolean>;",
+"summary": "移除系统顶部菜单项",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_HeaderMenu",
+"method": "insertSystemHeaderMenuItem",
+"sig": "public insertSystemHeaderMenuItem(env: ESYS_HeaderMenuEnvironment, id: Array<string>, props: { title: string; registerFn?: string; menuItems?: Array<ISYS_HeaderMenuSub1MenuItem | ISYS_HeaderMenuSub2MenuItem | null>; insertDividerBefore?: boolean; insertDividerAfter?: boolean; insertBefore?: string; crossDividerWhenInsert?: boolean }): Promise<string | undefined>;",
+"summary": "在指定位置插入系统顶部菜单项",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_HeaderMenu",
+"method": "insertSystemHeaderMenus",
+"sig": "public insertSystemHeaderMenus(headerMenus: ISYS_HeaderMenus): void;",
+"summary": "导入系统顶部菜单 **暂不开发**",
+"stability": "internal"
+},
+{
+"ns": "eda.sys_I18n",
+"method": "text",
+"sig": "public text(tag: string, namespace?: string, language?: string, ...args: Array<any>): string;",
+"summary": "输出语言文本",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "getCurrentLanguage",
+"sig": "public getCurrentLanguage(): Promise<string>;",
+"summary": "获取当前语言环境",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "getAllSupportedLanguages",
+"sig": "public getAllSupportedLanguages(): Array<string>;",
+"summary": "查询所有支持的语言",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "isLanguageSupported",
+"sig": "public isLanguageSupported(language: string): boolean;",
+"summary": "检查语言是否受支持",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "importMultilingual",
+"sig": "public importMultilingual(language: string, source: ISYS_LanguageKeyValuePairs): boolean;",
+"summary": "导入多语言",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "importMultilingualLanguage",
+"sig": "public importMultilingualLanguage(namespace: string, language: string, source: ISYS_LanguageKeyValuePairs): boolean;",
+"summary": "导入多语言：指定命名空间和语言",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "importMultilingualNamespace",
+"sig": "public importMultilingualNamespace(namespace: string, source: ISYS_MultilingualLanguagesData): boolean;",
+"summary": "导入多语言：指定命名空间",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "addLanguageChangedEventListener",
+"sig": "public addLanguageChangedEventListener(id: string, callFn: (newLanguage: string, lastLanguage: string) => void | Promise<void>, onlyOnce: boolean): void;",
+"summary": "新增语言切换事件监听",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "removeEventListener",
+"sig": "public removeEventListener(id: string): boolean;",
+"summary": "移除事件监听",
+"stability": ""
+},
+{
+"ns": "eda.sys_I18n",
+"method": "isEventListenerAlreadyExist",
+"sig": "public isEventListenerAlreadyExist(id: string): boolean;",
+"summary": "查询事件监听是否存在",
+"stability": ""
+},
+{
+"ns": "eda.sys_IFrame",
+"method": "openIFrame",
+"sig": "public openIFrame(htmlFileName: string, width?: number, height?: number, id?: string, props?: { maximizeButton?: boolean; minimizeButton?: boolean; minimizeStyle?: 'collapsed' | 'constricted'; buttonCallbackFn?: (button: 'close' | 'minimize' | 'maximize') => void | Promise<void>; onBeforeCloseCallFn?: () => boolean | undefined | Promise<boolean | undefined>; grayscaleMask?: boolean; title?: string; x?: number; y?: number }): Promise<boolean>;",
+"summary": "打开内联框架窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_IFrame",
+"method": "closeIFrame",
+"sig": "public closeIFrame(id?: string): Promise<boolean>;",
+"summary": "关闭内联框架窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_IFrame",
+"method": "hideIFrame",
+"sig": "public hideIFrame(id?: string): Promise<boolean>;",
+"summary": "隐藏内联框架窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_IFrame",
+"method": "showIFrame",
+"sig": "public showIFrame(id?: string): Promise<boolean>;",
+"summary": "显示内联框架窗口",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_IFrame",
+"method": "isIFrameAlreadyExist",
+"sig": "public isIFrameAlreadyExist(id: string): Promise<boolean>;",
+"summary": "内联框架是否已存在",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_LoadingAndProgressBar",
+"method": "showProgressBar",
+"sig": "public showProgressBar(progress?: number, title?: string): void;",
+"summary": "显示进度条或设置进度条进度",
+"stability": ""
+},
+{
+"ns": "eda.sys_LoadingAndProgressBar",
+"method": "destroyProgressBar",
+"sig": "public destroyProgressBar(): void;",
+"summary": "销毁进度条",
+"stability": ""
+},
+{
+"ns": "eda.sys_LoadingAndProgressBar",
+"method": "showLoading",
+"sig": "public showLoading(): void;",
+"summary": "显示无进度加载覆盖",
+"stability": ""
+},
+{
+"ns": "eda.sys_LoadingAndProgressBar",
+"method": "destroyLoading",
+"sig": "public destroyLoading(): void;",
+"summary": "销毁无进度加载覆盖",
+"stability": ""
+},
+{
+"ns": "eda.sys_Log",
+"method": "add",
+"sig": "public add(message: string, type?: ESYS_LogType): void;",
+"summary": "添加日志条目",
+"stability": ""
+},
+{
+"ns": "eda.sys_Log",
+"method": "clear",
+"sig": "public clear(): void;",
+"summary": "清空日志",
+"stability": ""
+},
+{
+"ns": "eda.sys_Log",
+"method": "export",
+"sig": "public export(types?: ESYS_LogType | Array<ESYS_LogType>): void;",
+"summary": "导出日志",
+"stability": ""
+},
+{
+"ns": "eda.sys_Log",
+"method": "sort",
+"sig": "public sort(types?: ESYS_LogType | Array<ESYS_LogType>): Promise<Array<ISYS_LogLine>>;",
+"summary": "筛选并获取日志条目",
+"stability": ""
+},
+{
+"ns": "eda.sys_Log",
+"method": "find",
+"sig": "public find(message: string | Array<string | { text: string; attr?: { id?: string; path?: string; sheet?: string; pcbid?: string; type?: string } }>, types?: ESYS_LogType | Array<ESYS_LogType>): Promise<Array<ISYS_LogLine>>;",
+"summary": "查找条目",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "containsPoint",
+"sig": "public containsPoint(polygon: TSYS_MathPolygonInput, point: ISYS_MathPoint): boolean;",
+"summary": "判断点是否在多边形内部",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "distanceToPoint",
+"sig": "public distanceToPoint(polygon: TSYS_MathPolygonInput, point: ISYS_MathPoint): number;",
+"summary": "计算点到多边形边界的最短距离",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "intersects",
+"sig": "public intersects(polygon1: TSYS_MathPolygonInput, polygon2: TSYS_MathPolygonInput): boolean;",
+"summary": "判断两个多边形是否相交",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "contains",
+"sig": "public contains(polygon1: TSYS_MathPolygonInput, polygon2: TSYS_MathPolygonInput): boolean;",
+"summary": "判断 polygon1 是否完全包含 polygon2",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "getBBox",
+"sig": "public getBBox(polygon: TSYS_MathPolygonInput): ISYS_MathBBox;",
+"summary": "获取多边形的最小外接矩形（BBox）",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "bboxIntersects",
+"sig": "public bboxIntersects(bbox1: ISYS_MathBBox, bbox2: ISYS_MathBBox): boolean;",
+"summary": "快速判断两个 BBox 是否相交",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "calculateArea",
+"sig": "public calculateArea(polygon: TSYS_MathPolygonInput): number;",
+"summary": "计算多边形面积",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "calculatePerimeter",
+"sig": "public calculatePerimeter(polygon: TSYS_MathPolygonInput): number;",
+"summary": "计算多边形周长",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "getCentroid",
+"sig": "public getCentroid(polygon: TSYS_MathPolygonInput): ISYS_MathPoint;",
+"summary": "计算多边形质心",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "translate",
+"sig": "public translate(polygon: TSYS_MathPolygonInput, dx: number, dy: number): Array<ISYS_MathPoint>;",
+"summary": "平移多边形",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "rotate",
+"sig": "public rotate(polygon: TSYS_MathPolygonInput, angle: number, centerX?: number, centerY?: number): Array<ISYS_MathPoint>;",
+"summary": "旋转多边形",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "scale",
+"sig": "public scale(polygon: TSYS_MathPolygonInput, scaleX: number, scaleY?: number, centerX?: number, centerY?: number): Array<ISYS_MathPoint>;",
+"summary": "缩放多边形",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "union",
+"sig": "public union(polygon1: TSYS_MathPolygonInput, polygon2: TSYS_MathPolygonInput): TSYS_MathPolygonGroup;",
+"summary": "计算两个多边形的并集",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "subtract",
+"sig": "public subtract(polygon1: TSYS_MathPolygonInput, polygon2: TSYS_MathPolygonInput): TSYS_MathPolygonGroup;",
+"summary": "计算两个多边形的差集（polygon1 - polygon2）",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "intersection",
+"sig": "public intersection(polygon1: TSYS_MathPolygonInput, polygon2: TSYS_MathPolygonInput): TSYS_MathPolygonGroup;",
+"summary": "计算两个多边形的交集",
+"stability": ""
+},
+{
+"ns": "eda.sys_Math",
+"method": "xor",
+"sig": "public xor(polygon1: TSYS_MathPolygonInput, polygon2: TSYS_MathPolygonInput): TSYS_MathPolygonGroup;",
+"summary": "计算两个多边形的对称差集（异或）",
+"stability": ""
+},
+{
+"ns": "eda.sys_Message",
+"method": "showToastMessage",
+"sig": "public showToastMessage(message: string, messageType?: ESYS_ToastMessageType, timer?: number, bottomPanel?: ESYS_BottomPanelTab, buttonTitle?: string, buttonCallbackFn?: string): void;",
+"summary": "显示吐司消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_Message",
+"method": "showFollowMouseTip",
+"sig": "public showFollowMouseTip(tip: string, msTimeout?: number): Promise<void>;",
+"summary": "展示跟随鼠标的提示",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Message",
+"method": "removeFollowMouseTip",
+"sig": "public removeFollowMouseTip(tip?: string): Promise<void>;",
+"summary": "移除跟随鼠标的提示",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_MessageBox",
+"method": "showInformationMessage",
+"sig": "public showInformationMessage(content: string, title?: string, buttonTitle?: string): void;",
+"summary": "显示消息框",
+"stability": "deprecated"
+},
+{
+"ns": "eda.sys_MessageBox",
+"method": "showConfirmationMessage",
+"sig": "public showConfirmationMessage(content: string, title?: string, mainButtonTitle?: string, buttonTitle?: string, callbackFn?: (mainButtonClicked: boolean) => void): void;",
+"summary": "显示确认框",
+"stability": "deprecated"
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "createPrivateMessageBus",
+"sig": "public createPrivateMessageBus(): void;",
+"summary": "创建私有消息总线",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "removePrivateMessageBus",
+"sig": "public removePrivateMessageBus(): void;",
+"summary": "移除私有消息总线",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "push",
+"sig": "public push(topic: string, message: any): void;",
+"summary": "私有消息总线：推消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "pushPublic",
+"sig": "public pushPublic(topic: string, message: any): void;",
+"summary": "公共消息总线：推消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "pull",
+"sig": "public pull(topic: string, callbackFn: (message: any) => void): ISYS_MessageBusTask;",
+"summary": "私有消息总线：拉消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "pullPublic",
+"sig": "public pullPublic(topic: string, callbackFn: (message: any) => void): ISYS_MessageBusTask;",
+"summary": "公共消息总线：拉消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "pullAsync",
+"sig": "public pullAsync(topic: string): Promise<any>;",
+"summary": "私有消息总线：拉消息 Promise 版本",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "pullAsyncPublic",
+"sig": "public pullAsyncPublic(topic: string): Promise<any>;",
+"summary": "公共消息总线：拉消息 Promise 版本",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "publish",
+"sig": "public publish(topic: string, message: any): void;",
+"summary": "私有消息总线：发布消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "publishPublic",
+"sig": "public publishPublic(topic: string, message: any): void;",
+"summary": "公共消息总线：发布消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "subscribe",
+"sig": "public subscribe(topic: string, callbackFn: (message: any) => void): ISYS_MessageBusTask;",
+"summary": "私有消息总线：订阅消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "subscribePublic",
+"sig": "public subscribePublic(topic: string, callbackFn: (message: any) => void): ISYS_MessageBusTask;",
+"summary": "公共消息总线：订阅消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "subscribeOnce",
+"sig": "public subscribeOnce(topic: string, callbackFn: (message: any) => void): ISYS_MessageBusTask;",
+"summary": "私有消息总线：订阅单次消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "subscribeOncePublic",
+"sig": "public subscribeOncePublic(topic: string, callbackFn: (message: any) => void): ISYS_MessageBusTask;",
+"summary": "公共消息总线：订阅单次消息",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "rpcCall",
+"sig": "public rpcCall(topic: string, message?: any, timeout?: number): Promise<any>;",
+"summary": "私有消息总线：调用 RPC 服务",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "rpcCallPublic",
+"sig": "public rpcCallPublic(topic: string, message?: any, timeout?: number): Promise<any>;",
+"summary": "公共消息总线：调用 RPC 服务",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "rpcService",
+"sig": "public rpcService(topic: string, callbackFn: (...args: Array<any>) => any | Promise<any>): void;",
+"summary": "私有消息总线：注册 RPC 服务",
+"stability": ""
+},
+{
+"ns": "eda.sys_MessageBus",
+"method": "rpcServicePublic",
+"sig": "public rpcServicePublic(topic: string, callbackFn: (...args: Array<any>) => any | Promise<any>): void;",
+"summary": "公共消息总线：注册 RPC 服务",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "openLeftPanel",
+"sig": "public openLeftPanel(tab?: ESYS_LeftPanelTab): void;",
+"summary": "打开左侧面板",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "closeLeftPanel",
+"sig": "public closeLeftPanel(): void;",
+"summary": "关闭左侧面板",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "toggleLeftPanelLockState",
+"sig": "public toggleLeftPanelLockState(state?: boolean): void;",
+"summary": "切换左侧面板锁定状态",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "isLeftPanelLocked",
+"sig": "public isLeftPanelLocked(): Promise<boolean>;",
+"summary": "查询左侧面板是否已锁定",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "openRightPanel",
+"sig": "public openRightPanel(tab?: ESYS_RightPanelTab): void;",
+"summary": "打开右侧面板",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "closeRightPanel",
+"sig": "public closeRightPanel(): void;",
+"summary": "关闭右侧面板",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "toggleRightPanelLockState",
+"sig": "public toggleRightPanelLockState(state?: boolean): void;",
+"summary": "切换右侧面板锁定状态",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "isRightPanelLocked",
+"sig": "public isRightPanelLocked(): Promise<boolean>;",
+"summary": "查询右侧面板是否已锁定",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "openBottomPanel",
+"sig": "public openBottomPanel(tab?: ESYS_BottomPanelTab): void;",
+"summary": "打开底部面板",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "closeBottomPanel",
+"sig": "public closeBottomPanel(): void;",
+"summary": "关闭底部面板",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "toggleBottomPanelLockState",
+"sig": "public toggleBottomPanelLockState(state?: boolean): void;",
+"summary": "切换底部面板锁定状态",
+"stability": ""
+},
+{
+"ns": "eda.sys_PanelControl",
+"method": "isBottomPanelLocked",
+"sig": "public isBottomPanelLocked(): Promise<boolean>;",
+"summary": "查询底部面板是否已锁定",
+"stability": ""
+},
+{
+"ns": "eda.sys_RightClickMenu",
+"method": "changeMenu",
+"sig": "public changeMenu(menuId: string, menuItems: Array<ISYS_RightClickMenuItem | null>): Promise<void>;",
+"summary": "修改右键菜单",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Setting",
+"method": "restoreDefault",
+"sig": "public restoreDefault(): Promise<boolean>;",
+"summary": "全局恢复默认设置",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_ShortcutKey",
+"method": "registerShortcutKey",
+"sig": "public registerShortcutKey(shortcutKey: TSYS_ShortcutKeys, title: string, callbackFn: (shortcutKey: TSYS_ShortcutKeys) => void | Promise<void>, documentType?: Array<ESYS_ShortcutKeyEffectiveEditorDocumentType>, scene?: Array<ESYS_ShortcutKeyEffectiveEditorScene>): Promise<boolean>;",
+"summary": "注册快捷键",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_ShortcutKey",
+"method": "unregisterShortcutKey",
+"sig": "public unregisterShortcutKey(shortcutKey: TSYS_ShortcutKeys): Promise<boolean>;",
+"summary": "反注册快捷键",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_ShortcutKey",
+"method": "getShortcutKeys",
+"sig": "public getShortcutKeys(includeSystem?: boolean): Promise<Array<{ shortcutKey: TSYS_ShortcutKeys; title: string; documentType: Array<ESYS_ShortcutKeyEffectiveEditorDocumentType>; scene: Array<ESYS_ShortcutKeyEffectiveEditorScene> }>>;",
+"summary": "查询快捷键列表",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Storage",
+"method": "getExtensionAllUserConfigs",
+"sig": "public getExtensionAllUserConfigs(): { [key: string]: any };",
+"summary": "获取扩展所有用户配置",
+"stability": ""
+},
+{
+"ns": "eda.sys_Storage",
+"method": "setExtensionAllUserConfigs",
+"sig": "public setExtensionAllUserConfigs(configs: { [key: string]: any }): Promise<boolean>;",
+"summary": "设置扩展所有用户配置",
+"stability": ""
+},
+{
+"ns": "eda.sys_Storage",
+"method": "clearExtensionAllUserConfigs",
+"sig": "public clearExtensionAllUserConfigs(): Promise<boolean>;",
+"summary": "清除扩展所有用户配置",
+"stability": ""
+},
+{
+"ns": "eda.sys_Storage",
+"method": "getExtensionUserConfig",
+"sig": "public getExtensionUserConfig(key: string): any | undefined;",
+"summary": "获取扩展用户配置",
+"stability": ""
+},
+{
+"ns": "eda.sys_Storage",
+"method": "setExtensionUserConfig",
+"sig": "public setExtensionUserConfig(key: string, value: any): Promise<boolean>;",
+"summary": "设置扩展用户配置",
+"stability": ""
+},
+{
+"ns": "eda.sys_Storage",
+"method": "deleteExtensionUserConfig",
+"sig": "public deleteExtensionUserConfig(key: string): Promise<boolean>;",
+"summary": "删除扩展用户配置",
+"stability": ""
+},
+{
+"ns": "eda.sys_Timer",
+"method": "setIntervalTimer",
+"sig": "public setIntervalTimer(id: string, timeout: number, callFn: (...args: any) => void, ...args: any): boolean;",
+"summary": "设置循环定时器",
+"stability": ""
+},
+{
+"ns": "eda.sys_Timer",
+"method": "clearIntervalTimer",
+"sig": "public clearIntervalTimer(id: string): boolean;",
+"summary": "清除指定循环定时器",
+"stability": ""
+},
+{
+"ns": "eda.sys_Timer",
+"method": "setTimeoutTimer",
+"sig": "public setTimeoutTimer(id: string, timeout: number, callFn: (...args: any) => void, ...args: any): boolean;",
+"summary": "设置单次定时器",
+"stability": ""
+},
+{
+"ns": "eda.sys_Timer",
+"method": "clearTimeoutTimer",
+"sig": "public clearTimeoutTimer(id: string): boolean;",
+"summary": "清除指定单次定时器",
+"stability": ""
+},
+{
+"ns": "eda.sys_ToastMessage",
+"method": "showMessage",
+"sig": "public showMessage(message: string, messageType?: ESYS_ToastMessageType, timer?: number, bottomPanel?: ESYS_BottomPanelTab, buttonTitle?: string, buttonCallbackFn?: string): void;",
+"summary": "显示吐司消息",
+"stability": "deprecated"
+},
+{
+"ns": "eda.sys_Tool",
+"method": "netlistComparison",
+"sig": "public netlistComparison(netlist1: string | { projectUuid: string; documentUuid: string } | File, netlist2: string | { projectUuid: string; documentUuid: string } | File): Promise<Array<{ type: 'Net' | 'Component'; object: string; netlist1Name: Array<string>; netlist2Name: Array<string> }>>;",
+"summary": "网表对比",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Tool",
+"method": "schematicComparison",
+"sig": "public schematicComparison(schematic1: string | { projectUuid: string; schematicUuid: string } | File, schematic2: string | { projectUuid: string; schematicUuid: string } | File): Promise<any>;",
+"summary": "原理图对比",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_Tool",
+"method": "pcbComparison",
+"sig": "public pcbComparison(pcb1: string | { projectUuid: string; pcbUuid: string } | File, pcb2: string | { projectUuid: string; pcbUuid: string } | File): Promise<any>;",
+"summary": "PCB 对比",
+"stability": "alpha"
+},
+{
+"ns": "eda.sys_Unit",
+"method": "getFrontendDataUnit",
+"sig": "public getFrontendDataUnit(): Promise<ESYS_Unit | undefined>;",
+"summary": "获取 EDA 前端数据单位跨度",
+"stability": "beta"
+},
+{
+"ns": "eda.sys_Unit",
+"method": "milToMm",
+"sig": "public milToMm(mil: number, numberOfDecimals?: number): number;",
+"summary": "单位转换：密尔到毫米",
+"stability": ""
+},
+{
+"ns": "eda.sys_Unit",
+"method": "milToInch",
+"sig": "public milToInch(mil: number, numberOfDecimals?: number): number;",
+"summary": "单位转换：密尔到英寸",
+"stability": ""
+},
+{
+"ns": "eda.sys_Unit",
+"method": "mmToMil",
+"sig": "public mmToMil(mm: number, numberOfDecimals?: number): number;",
+"summary": "单位转换：毫米到密尔",
+"stability": ""
+},
+{
+"ns": "eda.sys_Unit",
+"method": "mmToInch",
+"sig": "public mmToInch(mm: number, numberOfDecimals?: number): number;",
+"summary": "单位转换：毫米到英寸",
+"stability": ""
+},
+{
+"ns": "eda.sys_Unit",
+"method": "inchToMil",
+"sig": "public inchToMil(inch: number, numberOfDecimals?: number): number;",
+"summary": "单位转换：英寸到密尔",
+"stability": ""
+},
+{
+"ns": "eda.sys_Unit",
+"method": "inchToMm",
+"sig": "public inchToMm(inch: number, numberOfDecimals?: number): number;",
+"summary": "单位转换：英寸到毫米",
+"stability": ""
+},
+{
+"ns": "eda.sys_WebSocket",
+"method": "register",
+"sig": "public register(id: string, serviceUri: string, receiveMessageCallFn?: (event: MessageEvent<any>) => void | Promise<void>, connectedCallFn?: () => void | Promise<void>, protocols?: string | Array<string>): void;",
+"summary": "注册 WebSocket 连接",
+"stability": ""
+},
+{
+"ns": "eda.sys_WebSocket",
+"method": "send",
+"sig": "public send(id: string, data: string | Blob | BufferSource, extensionUuid?: string): void;",
+"summary": "向 WebSocket 服务器发送数据",
+"stability": ""
+},
+{
+"ns": "eda.sys_WebSocket",
+"method": "close",
+"sig": "public close(id: string, code?: number, reason?: string, extensionUuid?: string): void;",
+"summary": "关闭 WebSocket 连接",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "open",
+"sig": "public open(url: string, target?: ESYS_WindowOpenTarget): void;",
+"summary": "打开资源窗口",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "addEventListener",
+"sig": "public addEventListener(type: ESYS_WindowEventType, listener: (ev: any) => any, options?: { capture?: boolean; once?: boolean; passive?: boolean; signal?: AbortSignal }): ISYS_WindowEventListenerRemovableObject | undefined;",
+"summary": "新增事件监听",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "removeEventListener",
+"sig": "public removeEventListener(removableObject: ISYS_WindowEventListenerRemovableObject): void;",
+"summary": "移除事件监听",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "openUI",
+"sig": "public openUI(uiName: string, args?: { [key: string]: any }): Promise<void>;",
+"summary": "打开 UI 窗口",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "getCurrentTheme",
+"sig": "public getCurrentTheme(): Promise<ESYS_Theme>;",
+"summary": "获取当前主题",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "getUrlParam",
+"sig": "public getUrlParam(key: string): string | null;",
+"summary": "获取 URL 参数",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "getUrlAnchor",
+"sig": "public getUrlAnchor(): string;",
+"summary": "获取 URL 锚点",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "urlPushState",
+"sig": "public urlPushState(url: string): void;",
+"summary": "追加新的 URL 历史记录栈信息",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "urlReplaceState",
+"sig": "public urlReplaceState(url: string): void;",
+"summary": "修改当前的 URL 历史记录栈信息",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "getViewportSize",
+"sig": "public getViewportSize(): { width: number; height: number };",
+"summary": "获取页面当前视口大小",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "hideStartPageSupportFloatBarItems",
+"sig": "public hideStartPageSupportFloatBarItems(): Promise<boolean>;",
+"summary": "隐藏开始页支持信息悬浮组件",
+"stability": ""
+},
+{
+"ns": "eda.sys_Window",
+"method": "hideStartPageQuickStartItems",
+"sig": "public hideStartPageQuickStartItems(items: Array<ESYS_StartPageQuickStartItem>): Promise<boolean>;",
+"summary": "隐藏开始页快速启动选项",
+"stability": ""
+}
+]
+}

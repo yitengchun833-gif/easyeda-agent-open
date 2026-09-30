@@ -1,0 +1,21 @@
+{
+  "name": "easyeda-agent-open",
+  "version": "1.8.1-open.9.3",
+  "description": "Open EasyEDA Pro control: typed actions, native JavaScript, PCB pad-to-net reports, batched edits, canvas images and official API discovery.",
+  "author": {
+    "name": "yitengchun833-gif; based on zhoushoujianwork/easyeda-agent"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "嘉立创 EDA Open",
+    "shortDescription": "原理图与 PCB 的开放 API、批量操作和图面读取",
+    "longDescription": "以 easyeda-agent 1.8.1 为基础的独立开发版，开放原生 API 和器件库调用；无固定阶段或默认审批流程。",
+    "developerName": "yitengchun833-gif",
+    "category": "Productivity",
+    "capabilities": [
+      "skills"
+    ],
+    "defaultPrompt": "读取当前嘉立创工程，并按我的要求修改原理图或 PCB。"
+  }
+}

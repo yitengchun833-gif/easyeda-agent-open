@@ -1,0 +1,6 @@
+{
+  "schemaVersion":1,"units":"mil",
+  "layout":{"groups":[],"fixedRefs":["AL","AR","BT","BB"],"minGap":0,"maxStates":10,"maxCandidates":1},
+  "routing":{"demands":[{"id":"a","net":"A","from":"AL.1","to":"AR.1","width":4,"layers":[1],"maxVias":0},{"id":"b","net":"B","from":"BT.1","to":"BB.1","width":4,"layers":[1],"maxVias":0}],"step":10,"maxDetour":40,"maxStates":50000},
+  "maxStates":60000,"maxCandidates":1
+}

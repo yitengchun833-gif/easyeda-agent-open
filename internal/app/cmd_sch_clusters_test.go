@@ -1,0 +1,204 @@
+package app
+
+import "testing"
+
+// ── L1 虚拟组(器件 + 它自己的 marker/桩线)────────────────────────────────
+
+func clPart(desig string, minX, minY, maxX, maxY float64, pins ...[2]float64) layoutComp {
+	c := layoutComp{ID: "p-" + desig, Designator: desig, ComponentType: "part",
+		BBox: &layoutBBox{MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY}}
+	for _, p := range pins {
+		c.Pins = append(c.Pins, layoutPin{Number: "1", X: p[0], Y: p[1]})
+	}
+	return c
+}
+
+func clMarker(id string, x, y float64) layoutComp {
+	return layoutComp{ID: id, ComponentType: "netport", X: x, Y: y,
+		BBox: &layoutBBox{MinX: x - 30, MinY: y - 5, MaxX: x, MaxY: y + 5}}
+}
+
+// 归属走导线:marker 顺着自己的桩线找到宿主,**不看距离** —— 第一版按「最近引脚 +
+// 90 半径」判,lane 错开把 marker 推到 248 远时直接判成无主,体积算小、判据失明。
+func TestBuildSchClusters_FollowsTheStubWireNotTheDistance(t *testing.T) {
+	comps := []layoutComp{
+		clPart("U1", 400, 400, 500, 500, [2]float64{400, 450}),
+		clMarker("m-far", 150, 450), // 离 U1 的脚 250 远,但桩线连着它
+	}
+	wires := []schGroupWire{{ID: "w1", Points: []float64{400, 450, 150, 450}}}
+
+	cs, unowned := buildSchClusters(comps, wires)
+	if unowned != 0 {
+		t.Fatalf("沾着导线的 marker 不该算无主: %d", unowned)
+	}
+	if len(cs) != 1 || cs[0].Markers != 1 || cs[0].Wires != 1 {
+		t.Fatalf("marker 与桩线都该归 U1: %+v", cs)
+	}
+	if cs[0].Box.MinX != 120 { // marker 的判定 bbox 左沿 = 150-30
+		t.Errorf("组的体积必须含 marker: MinX=%v want 120", cs[0].Box.MinX)
+	}
+}
+
+// 跨器件的连线是两组之间的走线通道,**不计入任何一组的体积**。
+func TestBuildSchClusters_InterPartWireBelongsToNobody(t *testing.T) {
+	comps := []layoutComp{
+		clPart("U1", 400, 400, 500, 500, [2]float64{400, 450}),
+		clPart("U2", 100, 400, 200, 500, [2]float64{200, 450}),
+	}
+	wires := []schGroupWire{{ID: "w1", Points: []float64{400, 450, 200, 450}}}
+
+	cs, _ := buildSchClusters(comps, wires)
+	for _, c := range cs {
+		if c.Wires != 0 {
+			t.Errorf("%s 不该把跨组走线算进自己的体积: %+v", c.Designator, c)
+		}
+		if c.Box != c.Body {
+			t.Errorf("%s 的体积不该被跨组走线撑大: box=%v body=%v", c.Designator, c.Box, c.Body)
+		}
+	}
+}
+
+func TestBuildSchClusters_LWireEmptyCornerIsNotOccupied(t *testing.T) {
+	comps := []layoutComp{
+		clPart("U1", -20, -5, -10, 5, [2]float64{0, 0}),
+		// Inside the whole L-wire envelope, but outside every real segment.
+		clPart("C7", 20, 5, 25, 10),
+	}
+	wires := []schGroupWire{{
+		ID:     "w-l",
+		Points: []float64{0, 0, 10, 0, 10, 0, 10, 20, 10, 20, 30, 20},
+		ObservedSegments: [][4]float64{
+			{0, 0, 10, 0}, {10, 0, 10, 20}, {10, 20, 30, 20},
+		},
+	}}
+	cs, _ := buildSchClusters(comps, wires)
+	if got := judgeSchClusters(cs, nil, 0); len(got) != 0 {
+		t.Fatalf("empty corner of an L-shaped wire envelope is not occupied: %+v", got)
+	}
+	var u1 *schCluster
+	for i := range cs {
+		if cs[i].Designator == "U1" {
+			u1 = &cs[i]
+		}
+	}
+	if u1 == nil || u1.Box.MaxX < 30 || u1.Box.MaxY < 20 || len(u1.Members) != 4 {
+		t.Fatalf("cluster envelope must still cover the full wire while members stay per-segment: %+v", u1)
+	}
+	wiresTyped := 0
+	wholeWireEnvelope := layoutBBox{MinX: 0, MinY: 0, MaxX: 30, MaxY: 20}
+	for _, item := range u1.Typed {
+		if item.Kind != "wire" {
+			continue
+		}
+		wiresTyped++
+		if item.BBox == wholeWireEnvelope {
+			t.Fatalf("typed collision evidence must not collapse back to the whole polyline envelope: %+v", item)
+		}
+	}
+	if wiresTyped != 3 {
+		t.Fatalf("typed collision evidence must retain all three official flat segments, got %d: %+v", wiresTyped, u1.Typed)
+	}
+}
+
+func TestBuildSchClusters_RealSegmentAndMarkerStillCollide(t *testing.T) {
+	t.Run("real segment", func(t *testing.T) {
+		comps := []layoutComp{
+			clPart("U1", -20, -5, -10, 5, [2]float64{0, 0}),
+			clPart("C7", 9, 5, 11, 10), // crossed by the real vertical segment x=10
+		}
+		wires := []schGroupWire{{
+			ID:               "w-l",
+			Points:           []float64{0, 0, 10, 0, 10, 0, 10, 20},
+			ObservedSegments: [][4]float64{{0, 0, 10, 0}, {10, 0, 10, 20}},
+		}}
+		cs, _ := buildSchClusters(comps, wires)
+		got := judgeSchClusters(cs, nil, 0)
+		if len(got) != 1 || got[0].Type != "overlap" || got[0].Level != "ERROR" {
+			t.Fatalf("a real owned segment crossing another body must remain an error: %+v", got)
+		}
+	})
+
+	t.Run("marker body", func(t *testing.T) {
+		marker := layoutComp{ID: "m1", ComponentType: "netport", X: 30, Y: 0,
+			BBox: &layoutBBox{MinX: 20, MinY: 10, MaxX: 30, MaxY: 20}}
+		comps := []layoutComp{
+			clPart("U1", -20, -5, -10, 5, [2]float64{0, 0}), marker,
+			clPart("C7", 22, 12, 28, 18),
+		}
+		wires := []schGroupWire{{ID: "stub", Points: []float64{0, 0, 30, 0}}}
+		cs, _ := buildSchClusters(comps, wires)
+		got := judgeSchClusters(cs, nil, 0)
+		if len(got) != 1 || got[0].Type != "overlap" || got[0].Level != "ERROR" {
+			t.Fatalf("an owned marker overlapping another body must remain an error: %+v", got)
+		}
+	})
+}
+
+// 判定:体积相交 = ERROR;探出可用区 = ERROR;够不着 min-gap = WARN。
+func TestJudgeSchClusters(t *testing.T) {
+	cs := []schCluster{
+		{Designator: "A", Box: layoutBBox{MinX: 0, MinY: 0, MaxX: 100, MaxY: 100}},
+		{Designator: "B", Box: layoutBBox{MinX: 90, MinY: 0, MaxX: 200, MaxY: 100}},
+		{Designator: "C", Box: layoutBBox{MinX: 205, MinY: 0, MaxX: 300, MaxY: 100}},
+	}
+	usable := &layoutBBox{MinX: 10, MinY: 0, MaxX: 400, MaxY: 400}
+	got := judgeSchClusters(cs, usable, 20)
+
+	var overlap, tight, off int
+	for _, f := range got {
+		switch f.Type {
+		case "overlap":
+			overlap++
+			if f.Level != "ERROR" {
+				t.Errorf("重叠必须是 ERROR: %+v", f)
+			}
+		case "tight":
+			tight++ // B↔C 间隙 5 < 20
+		case "out-of-sheet":
+			off++ // A 左沿 0 < 10
+			if f.A != "A" {
+				t.Errorf("出图纸的该是 A: %+v", f)
+			}
+		}
+	}
+	if overlap != 1 || tight != 1 || off != 1 {
+		t.Fatalf("overlap=%d tight=%d out-of-sheet=%d,期望各 1: %+v", overlap, tight, off, got)
+	}
+	// A↔C 分得很开,不该报任何东西。
+	for _, f := range got {
+		if (f.A == "A" && f.B == "C") || (f.A == "C" && f.B == "A") {
+			t.Errorf("分开的两组不该出判定: %+v", f)
+		}
+	}
+}
+
+// 同组豁免的两条边界:紧贴豁免、压叠不豁免。
+func TestJudgeSchClustersWith_SameGroupExemptFromTightOnly(t *testing.T) {
+	// 两个组挨着(间隙 5 < 20)但不重叠。
+	near := []schCluster{
+		{Designator: "U3", Box: layoutBBox{MinX: 0, MinY: 0, MaxX: 100, MaxY: 100},
+			Members: []layoutBBox{{MinX: 0, MinY: 0, MaxX: 100, MaxY: 100}}},
+		{Designator: "C8", Box: layoutBBox{MinX: 105, MinY: 0, MaxX: 125, MaxY: 40},
+			Members: []layoutBBox{{MinX: 105, MinY: 0, MaxX: 125, MaxY: 40}}},
+	}
+	same := func(a, b string) bool { return true }
+
+	if got := judgeSchClustersWith(near, nil, 20, nil); len(got) != 1 || got[0].Type != "tight" {
+		t.Fatalf("不知道分组时该照报 tight,得到 %+v", got)
+	}
+	if got := judgeSchClustersWith(near, nil, 20, same); len(got) != 0 {
+		t.Errorf("同组紧贴是设计要求(去耦贴电源脚),不该报:%+v", got)
+	}
+
+	// 压叠:同组也必须报 —— 那是真几何缺陷,不是"贴得紧"。
+	over := []schCluster{
+		{Designator: "U3", Box: layoutBBox{MinX: 0, MinY: 0, MaxX: 100, MaxY: 100},
+			Members: []layoutBBox{{MinX: 0, MinY: 0, MaxX: 100, MaxY: 100}}},
+		{Designator: "C8", Box: layoutBBox{MinX: 50, MinY: 50, MaxX: 150, MaxY: 150},
+			Members: []layoutBBox{{MinX: 50, MinY: 50, MaxX: 150, MaxY: 150}}},
+	}
+	got := judgeSchClustersWith(over, nil, 20, same)
+	if len(got) != 1 || got[0].Type != "overlap" || got[0].Level != "ERROR" {
+		t.Errorf("同组压叠必须仍报 ERROR,得到 %+v", got)
+	}
+}

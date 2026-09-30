@@ -1,0 +1,12 @@
+{
+  "schemaVersion":1,"units":"mil","semanticHash":"fixed-route-order-v1",
+  "outline":{"bbox":{"minX":0,"minY":0,"maxX":300,"maxY":200},"points":[[0,0],[300,0],[300,200],[0,200]],"source":"polygon"},
+  "stackup":{"copper":[{"id":1,"name":"TOP","role":"signal"},{"id":2,"name":"BOTTOM","role":"signal"}]},
+  "rules":{"clearance":5,"trackTrack":5,"copperToEdge":5,"trackWidthMinimum":4,"viaDiameter":16,"viaDrill":8,"source":"fixture"},
+  "components":[
+    {"ref":"AL","side":1,"anchor":[30,100],"locked":true,"bbox":{"minX":25,"minY":95,"maxX":35,"maxY":105},"pads":[{"padNumber":"1","net":"A","layer":1,"center":[30,100],"width":6,"height":6,"shape":"circle"}]},
+    {"ref":"AR","side":1,"anchor":[270,100],"locked":true,"bbox":{"minX":265,"minY":95,"maxX":275,"maxY":105},"pads":[{"padNumber":"1","net":"A","layer":1,"center":[270,100],"width":6,"height":6,"shape":"circle"}]},
+    {"ref":"BT","side":1,"anchor":[150,115],"locked":true,"bbox":{"minX":145,"minY":110,"maxX":155,"maxY":120},"pads":[{"padNumber":"1","net":"B","layer":1,"center":[150,115],"width":6,"height":6,"shape":"circle"}]},
+    {"ref":"BB","side":1,"anchor":[150,85],"locked":true,"bbox":{"minX":145,"minY":80,"maxX":155,"maxY":90},"pads":[{"padNumber":"1","net":"B","layer":1,"center":[150,85],"width":6,"height":6,"shape":"circle"}]}
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion":1,"units":"mil",
+  "layout":{"groups":[],"fixedRefs":["U1","J1"],"minGap":5,"maxStates":10,"maxCandidates":1},
+  "routing":{"demands":[{"id":"a","net":"A","from":"U1.1","to":"J1.1","width":4,"layers":[1,2],"maxVias":2}],"step":10,"maxDetour":30,"maxStates":100000},
+  "maxStates":150000,"maxCandidates":1
+}

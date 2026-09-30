@@ -1,0 +1,188 @@
+{
+  "_doc": [
+    "STANDARD CIRCUIT BLOCKS (电路块库) — the topology tier above standard-parts.json.",
+    "A block is a KNOWN-GOOD peripheral subcircuit (CH340 USB-serial, ESP32 auto-download,",
+    "ESP32-S3 module, button, USB-hub, buck) whose INTERNAL wiring is fixed and can be copied",
+    "verbatim; only the boundary nets (ports) get rebound to the host design and RefDes get",
+    "reallocated.",
+    "",
+    "Three-tier library model:",
+    "  standard-parts.json    → 器件级 (which part / LCSC C-number)",
+    "  internal/blocks/data/*.json → 电路块级 (how those parts connect + layout constraints)  ← HERE",
+    "  design-flow.md         → 流程级 (S0–S6 / P0–P10)",
+    "",
+    "FILE LAYOUT — one block per file (internal/blocks/data/<id-without-block-prefix>.json).",
+    "The filename is the block id minus the `block.` prefix (ch340c_usb_serial.json →",
+    "block.ch340c_usb_serial). This file (`_schema.json`, underscore-prefixed) holds the",
+    "shared _doc/_schema/libraryUuid and is NOT a block. `easyeda blocks` (go:embed) compiles this dir into the binary,",
+    "skips `_`-prefixed files, and assembles the library — it is the single loader seam, so",
+    "consumers (agent, sch block apply) never care that the library is many files. Why per",
+    "block: the community model is one-block-per-PR, so a file boundary per block means zero",
+    "merge conflicts + clean per-file git-blame attribution. `category` stays a FIELD (filter",
+    "with `easyeda blocks ls --category`), never a directory boundary.",
+    "",
+    "MACHINE SCHEMA — `_block.schema.json` is the executable JSON Schema for stable fields; this file remains the human-readable field guide.",
+    "HARD RULE — a block only enters the library as READY after structured verification marks every production gate passed",
+    "(`verification.schematic/component_selection/pcb_drc/bringup` all passed) with evidence. Until then",
+    "it is verified or draft, not production-ready. NEVER hand-write a topology from memory — harvest it from a validated oshwhub",
+    "board or an official reference design (see oshwhub training loop). A draft block MAY carry",
+    "a proposed `internal_nets` sourced from an official ref, but stays draft until proven; use",
+    "the string `pending` when the topology itself is not yet settled.",
+    "",
+    "Pin references use FUNCTIONAL PIN NAMES (\"CH340.TXD\"), never pin numbers — names are",
+    "symbol-stable, so reuse needs zero pin-renumbering. VERIFY names with `sch read` at",
+    "validation time (guessed names bite: CH340 is D+/D-/DTR#/RTS#, not UDP/UDM/DTR). `parts`",
+    "values point back into standard-parts.json by role key so BOM/LCSC stays single-sourced.",
+    "",
+    "COMMUNITY-BUILT & CREDITED — this is an open, co-built asset. Every block carries its",
+    "`author` / `contributors` (GitHub @handles, never removed) so a one-time contribution",
+    "earns permanent, traceable credit. Contribution standard, PR checklist, split trigger, and",
+    "the validation gate live in references/standard-blocks-contributing.md. Blocks are",
+    "versioned (`added`/`updated`) and evolve as parts/footprints change.",
+    "",
+    "CONSTRAINT MAPS (可拓展的约束维度) — beyond wiring, a block carries a family of optional",
+    "constraint maps describing how it must be laid out. Each is a top-level key; adding a new",
+    "dimension = adding a new map (no restructure). Current dimensions:",
+    "  pcb_layout — general layout rules (LIST of {rule,target,constraint,value,severity}).",
+    "  placement  — 结构件摆放 (MAP <ROLE>→{board_edge,edge,side,orientation,severity,reason}):",
+    "               connectors/terminals/USB/antenna/buttons/LEDs that must sit at a board edge",
+    "               and on a chosen copper side. THIS is where '此件要不要靠板边、放哪一面' lives.",
+    "  signals    — 信号特性 (MAP <name>→{nets,type,impedance,length_match,track_width_mil,net_class,route,keepout,severity}):",
+    "               diff-pair / high-speed / RF / analog-sensitive net routing needs (USB D±, RS-485 A/B, RF).",
+    "               track_width_mil / net_class (可选) 声明该组网的规范铜宽 / 角色,覆盖 daemon 的 netRole 启发式(消费待 block-apply)。",
+    "  silk       — 丝印标记 (MAP <ROLE>→{label,pins,note,clearance,severity}): 引脚级/极性丝印——",
+    "               per-pin 标记(电源 +/−、总线 A/B/G、UART RX/TX、极性阴极 K)+ 功能名 label + 警示 note。",
+    "               铁律 clearance=outside-body:每个标记须落在器件本体/courtyard 之外,装配后不被元件或连接器塑料遮住。",
+    "Future maps (thermal, emc, clearance-zones…) follow the same shape: a top-level map keyed by",
+    "role/net/signal, each record carrying `severity` + `reason`. The go:embed loader keeps the full",
+    "JSON (Raw) so unknown maps pass through untouched (forward-compatible) and `easyeda blocks show`",
+    "prints them; `go test ./internal/blocks/` validates the known maps (placement roles exist in",
+    "parts; signals carry a type + nets; silk roles exist in parts; severity ∈ {must,should})."
+  ],
+  "libraryUuid": "0819f05c4eef4c71ace90d822a990e87",
+  "_schema": {
+    "<id-without-block-prefix>.json": {
+      "schema_version": "integer; v2 adds structured verification while retaining legacy validated during migration",
+      "revision": "monotonic per-block data revision",
+      "id": "block.<id> — MUST match the filename (minus block.) — `go test ./internal/blocks/` checks this",
+      "desc": "one-line 中文 what-it-is",
+      "category": "button | comms | indicator | mcu | mcu-support | power | protection | rf | sensing | storage | usb | usb-serial",
+      "author": "original contributor — GitHub @handle;署名不删,让贡献可追、有归属",
+      "contributors": [
+        "@handle of anyone who later fixed/updated this block"
+      ],
+      "added": "version this block first entered the library, e.g. v0.6.0",
+      "updated": "version of the last change (bump when parts/topology/rules change)",
+      "source": "provenance — oshwhub:<url> | datasheet:<mpn> | official-ref:<vendor>",
+      "validated": "legacy evidence string; retained for migration compatibility, superseded by verification when present",
+      "verification": {
+        "schematic": "{status,evidence?,issues?}",
+        "component_selection": "{status,evidence?,issues?}",
+        "pcb_drc": "{status,evidence?,issues?}",
+        "bringup": "{status,evidence?,issues?}",
+        "production_ready": "true only when all four stages are passed"
+      },
+      "parts": {
+        "<ROLE>": {
+          "part": "<key into standard-parts.json>",
+          "alt": [
+            "<alternative standard-parts keys, functionally interchangeable>"
+          ],
+          "qty": 1,
+          "value_override": "optional — override the part's default value for this role",
+          "note": "选型注意 / why this part / substitution caveat"
+        }
+      },
+      "internal_nets": [
+        [
+          "<ROLE>.<pinName>",
+          "<ROLE>.<pinName>",
+          "PORT:<PORTNAME>",
+          "..."
+        ]
+      ],
+      "ports": {
+        "<PORTNAME>": {
+          "dir": "in | out | bidir",
+          "at": "<ROLE>.<pinName>  — the internal pin exposed",
+          "desc": "what the host binds here",
+          "default_net": "suggested net name if host has no preference"
+        }
+      },
+      "schematic_notes": [
+        "原理图链接注意 — netflag-needs-real-wire, decoupling adjacency in-sheet, net-label",
+        "conventions, pins that MUST be tied/pulled, do-not-float pins, etc."
+      ],
+      "pcb_layout": [
+        {
+          "rule": "short slug e.g. decap-adjacency | keepout | trace-width",
+          "target": "<ROLE>.<pin> | <net> | <PORT>",
+          "constraint": "human-readable electrical constraint",
+          "value": "quantified spec if any (<=2mm / >=0.5mm width / etc)",
+          "severity": "must | should"
+        }
+      ],
+      "placement": {
+        "_doc": "CONSTRAINT MAP『结构件摆放』——按 <ROLE> 键。结构元器件(连接器/端子/USB/天线/按键/指示灯/屏蔽罩)常须靠板边、并指定放哪个铜面。非结构件(电阻电容)不必列。",
+        "<ROLE>": {
+          "board_edge": true,
+          "anchor": "bool(可选)——非板边件的『刻意归位』标记。true=place-constrained 必须把它钉在原位(锚定档,不甩到板角),用于 JP701 这类电气上属某处(总线末端)却因位号前缀会被误判为普通卫星的件。board_edge=false 但只是普通建议(如去耦电容放顶面)时 **不要** 设,以免被冻结在坏位。",
+          "edge": "any | user-facing | top | bottom | left | right — 靠哪条板边(user-facing=面向用户操作/插拔的那条边)",
+          "side": "top | bottom | either — 放哪个铜面(双面板:如矮件/SD 卡座常放底面)",
+          "orientation": "自由文本,如 开口朝板外 / 天线端伸出板外 / 长边贴板边",
+          "severity": "must | should",
+          "reason": "为什么须这样摆(如 USB-C 需插拔)"
+        }
+      },
+      "keepout": {
+        "_doc": "RF/天线禁铜区(可选,仅带 PCB 天线的模组/器件才列)。由 `easyeda pcb antenna-keepout` 消费:在天线器件长轴上无焊盘的一端(几何确定)生成覆盖全铜层的 no-copper region;深度取本条 end_frac 上限并被无焊盘区裁剪,绝不压到接地焊盘。",
+        "role": "antenna",
+        "match": "器件名子串(小写包含匹配,如 wroom)——把已放置件按 manufacturerId 映射到本条",
+        "end_frac": "0..1 —— 禁铜深度占模组长轴的比例(如 0.3);实际深度 = min(end_frac×长轴, 无焊盘条带)",
+        "layers": "all —— 目前仅支持全铜层",
+        "reason": "为什么(如 模组 PCB 天线下方全层需净空避免失谐)"
+      },
+      "openings": [
+        {
+          "_doc": "连接器接线口/插面方向(可选,数组)。焊盘对称的端子(KF301 螺钉端子/排针)其开口是塑料本体功能面,不在 PCB 几何里 → 声明于此,place-constrained 据此把开口自动转向板外(而非只提醒手调)。按 manufacturerId 子串匹配已放置件。",
+          "match": "器件名子串(小写包含,如 kf301)",
+          "local": "+x | -x | +y | -y —— 开口在封装本地(rotation 0)坐标系的朝向;真机标定:某取向下看开口指向反推",
+          "reason": "为什么/如何标定的"
+        }
+      ],
+      "signals": {
+        "_doc": "CONSTRAINT MAP『信号特性』——按 <信号组名> 键。高速/差分/敏感/大电流网络的布线特性需求(差分阻抗、等长、隔离、线宽…)。普通信号不必列。",
+        "<信号组名>": {
+          "nets": [
+            "<internal net 或 PORT 名>",
+            "..."
+          ],
+          "type": "diff_pair | single_high_speed | analog_sensitive | high_current | clock | rf",
+          "impedance_ohm": 90,
+          "impedance_kind": "differential | single-ended",
+          "length_match_mm": 0.15,
+          "track_width_mil": 20,
+          "net_class": "high-current | power-trunk | power-branch | signal | gnd (可选;覆盖 netRole 启发式)",
+          "max_via": 2,
+          "route": "布线要求自由文本(等长/紧耦合/尽量短/少过孔/线宽)",
+          "keepout": "隔离/护地/远离开关电源与时钟",
+          "severity": "must | should",
+          "reason": "为什么(如 USB2.0 高速差分 / RS-485 差分 / RF 50Ω)"
+        }
+      },
+      "silk": {
+        "_doc": "CONSTRAINT MAP『丝印标记』——按 <ROLE> 键。为需现场辨识/防接反的元件声明:label(whole-part 功能名)、pins(引脚级标记:pin 引用→丝印文字,pin 引用与 internal_nets 一致,端子用号 1/2/3、LED 用 +/-)、note(警示)。铁律 clearance=outside-body:每个标记必须落在该件本体/courtyard 之外、对应引脚外侧,装配后不被元件本体或连接器塑料遮住(否则等于没标)。只列需辨识的件(电源端子/总线端子/极性件/按键/接口),普通无源不列。",
+        "<ROLE>": {
+          "label": "whole-part 功能名丝印(可选),如 USB-C / microSD / BOOT / +12V IN",
+          "pins": {
+            "<pin 引用>": "该引脚丝印文字——如 1→\"+\" 2→\"−\" / 1→\"A\" 2→\"B\" 3→\"G\" / -→\"K\"(阴极)。pin 引用同 internal_nets 的写法"
+          },
+          "note": "警示自由文本(可选),如 A/B=IC:芯片定义与 Modbus 规范相反,勿接反",
+          "clearance": "outside-body — 每个标记置于对应 pad 本体外侧,装配后可见(强制不变式,值恒为此串)",
+          "severity": "must | should"
+        }
+      },
+      "bom_note": "quantity/cost note across the block (e.g. all 0402, 1 extended part)"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "multi-group-clearance",
+  "groups": [
+    {"id": "blocker", "refs": ["M1", "C1"], "maxDisplacement": 80},
+    {"id": "dependent", "refs": ["M2", "C2"], "maxDisplacement": 60}
+  ],
+  "fixedRefs": ["U1", "J1"],
+  "externalDemand": {"id": "external", "from": "U1.3", "to": "M1.3", "layer": 2},
+  "demandCount": 3,
+  "maxTotalDisplacement": 140,
+  "maxStates": 200000
+}

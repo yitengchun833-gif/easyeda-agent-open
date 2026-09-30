@@ -1,0 +1,359 @@
+{
+  "name": "AS07-M1101D-SMA",
+  "description": "CC1101 387-464 MHz SPI transceiver module; 28x15 mm carrier with SMA connector. Manufacturer identity unverified. Footprint calculated from user-supplied mechanical drawing and standard 2.54 mm header practice.",
+  "libraryUUID": "REPLACE_WITH_YOUR_PERSONAL_LIBRARY_UUID",
+  "designator": "U",
+  "evidence": {
+    "manufacturer": "AS-series vendor (unverified)",
+    "mpn": "AS07-M1101D-SMA",
+    "packageVariant": "28x15 mm module, SMA, 2x4 P2.54 through-hole header",
+    "datasheet": {
+      "title": "AS07-M1101D-SMA mechanical and pin drawing supplied by user",
+      "locator": "docs/examples/as07-m1101d-sma/mechanical-pin-drawing.png",
+      "revision": "undated",
+      "sha256": "b1308570d9bd52524bcf5b0607df91da9ede4a0fa01447815f6732db1ddcce8e"
+    },
+    "pinoutPages": [
+      1
+    ],
+    "packageDrawingPages": [
+      1
+    ],
+    "landPattern": {
+      "basis": "calculated",
+      "pages": [],
+      "note": "2x4 grid uses the drawing's 2.54 mm pitch. Host-PCB pad diameter 1.70 mm and finished hole 1.00 mm follow standard 2.54 mm square-pin header practice; these values are not a manufacturer-recommended land pattern. Body/header offsets without explicit dimensions are inferred from the drawing: first column center 1.27 mm from the board edge. Verify against one physical module before production."
+    }
+  },
+  "pinMapping": {
+    "footprintOnly": [],
+    "symbolOnly": []
+  },
+  "symbol": {
+    "name": "AS07-M1101D-SMA",
+    "description": "CC1101 SPI radio module; pin order verified against the supplied drawing and an independent E07/AS07 module reference.",
+    "geometry": {
+      "outline": [
+        -70,
+        -50,
+        70,
+        -50,
+        70,
+        50,
+        -70,
+        50,
+        -70,
+        -50
+      ],
+      "pins": [
+        {
+          "number": "1",
+          "name": "GND",
+          "x": -90,
+          "y": 30,
+          "rotation": 180,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "2",
+          "name": "VCC",
+          "x": 90,
+          "y": 30,
+          "rotation": 0,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "4",
+          "name": "CSN",
+          "x": 90,
+          "y": 10,
+          "rotation": 0,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "5",
+          "name": "SCK",
+          "x": -90,
+          "y": -10,
+          "rotation": 180,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "3",
+          "name": "GDO0",
+          "x": -90,
+          "y": 10,
+          "rotation": 180,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "6",
+          "name": "MOSI",
+          "x": 90,
+          "y": -10,
+          "rotation": 0,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "7",
+          "name": "MISO/GDO1",
+          "x": -90,
+          "y": -30,
+          "rotation": 180,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        },
+        {
+          "number": "8",
+          "name": "GDO2",
+          "x": 90,
+          "y": -30,
+          "rotation": 0,
+          "length": 20,
+          "shape": "None",
+          "pinType": "Undefined"
+        }
+      ],
+      "circles": [
+        {
+          "centerX": -60,
+          "centerY": 42,
+          "radius": 3,
+          "lineWidth": 1
+        }
+      ]
+    }
+  },
+  "footprint": {
+    "name": "MODULE_AS07-M1101D-SMA",
+    "description": "28x15 mm module, SMA to the right; 2x4 P2.54 TH header. Units are mil. Calculated land pattern; verify against a physical module.",
+    "geometry": {
+      "pads": [
+        {
+          "number": "1",
+          "layer": 12,
+          "x": -50,
+          "y": 150,
+          "rotation": 0,
+          "shape": [
+            "RECT",
+            66.9291,
+            66.9291,
+            0
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "2",
+          "layer": 12,
+          "x": 50,
+          "y": 150,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "3",
+          "layer": 12,
+          "x": -50,
+          "y": 50,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "4",
+          "layer": 12,
+          "x": 50,
+          "y": 50,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "5",
+          "layer": 12,
+          "x": -50,
+          "y": -50,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "6",
+          "layer": 12,
+          "x": 50,
+          "y": -50,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "7",
+          "layer": 12,
+          "x": -50,
+          "y": -150,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        },
+        {
+          "number": "8",
+          "layer": 12,
+          "x": 50,
+          "y": -150,
+          "rotation": 0,
+          "shape": [
+            "ELLIPSE",
+            66.9291,
+            66.9291
+          ],
+          "hole": [
+            "ROUND",
+            39.3701
+          ],
+          "metallization": true
+        }
+      ],
+      "lines": [
+        {
+          "layer": 3,
+          "startX": -100,
+          "startY": 295.2756,
+          "endX": 1002.3622,
+          "endY": 295.2756,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": 1002.3622,
+          "startY": 295.2756,
+          "endX": 1002.3622,
+          "endY": -295.2756,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": 1002.3622,
+          "startY": -295.2756,
+          "endX": -100,
+          "endY": -295.2756,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": -100,
+          "startY": -295.2756,
+          "endX": -100,
+          "endY": 295.2756,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": 1067.3228,
+          "startY": 192.9134,
+          "endX": 1382.2835,
+          "endY": 192.9134,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": 1382.2835,
+          "startY": 192.9134,
+          "endX": 1382.2835,
+          "endY": -192.9134,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": 1382.2835,
+          "startY": -192.9134,
+          "endX": 1067.3228,
+          "endY": -192.9134,
+          "width": 6
+        },
+        {
+          "layer": 3,
+          "startX": 1067.3228,
+          "startY": -192.9134,
+          "endX": 1067.3228,
+          "endY": 192.9134,
+          "width": 6
+        }
+      ]
+    }
+  },
+  "properties": {
+    "Manufacturer": "AS-series vendor (unverified)",
+    "Manufacturer Part": "AS07-M1101D-SMA",
+    "Value": "CC1101 387-464MHz SPI Module",
+    "Voltage Rating": "1.8-3.6V",
+    "Datasheet": "User-supplied mechanical drawing",
+    "Evidence Note": "Pinout cross-checked with E07-M1101D/AS07-M1101D independent reference; footprint dimensions require physical-module verification before production."
+  }
+}

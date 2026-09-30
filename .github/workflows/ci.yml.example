@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pcb-solvers:
+    name: PCB solver packages (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Verify public solver packages and file cases
+        run: make pcb-solver-test
+
+  test:
+    name: CLI, connector and Skill
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            extension/package-lock.json
+            mcp/package-lock.json
+      - name: Test and build CLI
+        run: |
+          make test
+          make mcp-test
+      - name: Validate Skill, Agent collaboration and release helpers
+        run: |
+          make lint-test
+          make modules-audit
+          make release-script-test
+          make agent-check
+          make skill-check
+          npx --yes skills-ref@latest validate .agents/skills/easyeda-agent
+      - name: Test and build connector
+        run: |
+          npm --prefix extension ci --ignore-scripts
+          npm --prefix extension run typecheck
+          npm --prefix extension test
+          npm --prefix extension run build
+
+  native-release-smoke:
+    name: Native install surface (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify DSH bundle file paths and native Node launch
+        run: node --test scripts/tests/test_dsh_bundle.mjs
+      - name: Verify native download, version check and temporary replacement
+        run: go test ./internal/selfupdate -run '^TestNativeDownloadedBinaryVerificationAndReplacement$' -count=1 -v
+      - name: Verify component patch files and legacy PowerShell argument passing
+        run: go test ./internal/app -run '^TestModifyPatch' -count=1 -v
+      - name: Build and smoke a native CLI outside the checkout
+        shell: bash
+        run: |
+          smoke_version="v$(python -c 'import json; print(json.load(open("extension/extension.json"))["version"])')"
+          # Between releases extension.json carries a -dev.N version, which is not a
+          # publishable tag. Tell the smoke test which form to expect, the same way
+          # the Makefile's local-build target does for release-check.py.
+          local_dev=""
+          case "$smoke_version" in *-dev.*) local_dev="--local-dev" ;; esac
+          go build -ldflags "-X github.com/zhoushoujianwork/easyeda-agent/internal/version.Version=$smoke_version" -o "$RUNNER_TEMP/easyeda-smoke.exe" ./cmd/easyeda
+          python -m unittest discover -s scripts/tests -p test_release_smoke.py
+          python scripts/release-smoke.py --version "$smoke_version" $local_dev --binary "$RUNNER_TEMP/easyeda-smoke.exe" --skill-dir .agents/skills/easyeda-agent
