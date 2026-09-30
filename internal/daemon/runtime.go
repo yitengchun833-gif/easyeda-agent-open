@@ -225,6 +225,15 @@ func (s *runtimeStore) start(req protocol.Request, ctx *protocol.Context) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	d := s.document(req.WindowID, ctx)
+	if expected, continuation := req.Payload["_taskRevision"]; continuation {
+		revision := uint64(0)
+		if d != nil && d.Task != nil {
+			revision = d.Task.Revision
+		}
+		if uint64(runtimeNumber(expected)) != revision {
+			return fmt.Errorf("task intent changed before continuation dispatch")
+		}
+	}
 	if expected, finish := req.Payload["_finishGeneration"]; finish {
 		if d == nil || uint64(runtimeNumber(expected)) != d.Generation || s.pendingWrite(req.WindowID, "") {
 			return fmt.Errorf("finish evidence changed or a content write is still pending")
@@ -324,6 +333,7 @@ func (s *runtimeStore) prepare(req *protocol.Request, ctx *protocol.Context, bas
 	delete(req.Payload, "_scope")
 	delete(req.Payload, "_finishGeneration")
 	delete(req.Payload, "_taskParent")
+	delete(req.Payload, "_taskRevision")
 	edit := runtimeMap(req.Payload["_edit"])
 	delete(edit, "baseline")
 	if len(baseline) != 0 && baseline[0] != nil {
@@ -339,6 +349,9 @@ func (s *runtimeStore) prepare(req *protocol.Request, ctx *protocol.Context, bas
 			}
 			if proof.FinishGeneration != nil {
 				req.Payload["_finishGeneration"] = *proof.FinishGeneration
+			}
+			if proof.TaskRevision != nil {
+				req.Payload["_taskRevision"] = *proof.TaskRevision
 			}
 		}
 	}

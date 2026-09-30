@@ -49,7 +49,6 @@ type Options struct {
 type Server struct {
 	opts     Options
 	hub      *hub
-	reqSeq   atomic.Uint64
 	log      io.Writer
 	audit    *auditWriter
 	runtime  *runtimeStore

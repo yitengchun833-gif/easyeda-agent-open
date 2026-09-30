@@ -30,7 +30,7 @@ type ActionSpec struct {
 func AllActions() []ActionSpec {
 	return []ActionSpec{
 		{Name: "view.capture", Domain: DomainArtifact, Phase: 1, NeedsWindow: true, Description: "Capture the actual editor image using official APIs. Does not change engineering content.", Inputs: []string{"fit?"}},
-		{Name: "schematic.attribute.modify", Domain: DomainSchematic, Phase: 1, Mutates: true, NeedsWindow: true, Description: "Modify one existing attribute using official props; local scope/checks use the same execution chain.", Inputs: []string{"primitiveId", "props"}},
+		{Name: "schematic.attribute.modify", Domain: DomainSchematic, Phase: 1, Mutates: true, NeedsWindow: true, Description: "Modify one existing attribute using official props and fresh readback. fontSizeUnit:display converts schematic display units to SDK input; omitted/native keeps legacy input units.", Inputs: []string{"primitiveId", "props", "fontSizeUnit? (native|display)"}},
 		{Name: "debug.control", Domain: DomainDebug, Phase: 1, Mutates: true, NeedsWindow: true, Description: "Inspect runtime receipts, cancel work or supersede an instruction. Running native calls may still finish.", Inputs: []string{"operation?", "clientId?", "requestId?", "revision?"}},
 		{Name: "debug.batch", Domain: DomainDebug, Phase: 1, Mutates: true, NeedsWindow: true, Description: "Execute ordered typed actions in one connector request; per-step results, optional dry-run, stop-on-error, and complete-layout identity/pin-net comparison. No implicit approvals.", Inputs: []string{"steps", "dryRun?", "stopOnError?", "verifyPreservedSchematic?"}},
 		{
@@ -298,6 +298,8 @@ func AllActions() []ActionSpec {
 			Description: "Read the active schematic page's part Designator attributes through per-parent sch_PrimitiveAttribute.getAll(parentId), then measure each visible attribute with sch_Primitive.getPrimitivesBBox([attributeId]). Requires exactly one visible, matching, finite positive bbox per part; missing/duplicate/hidden/invalid evidence fails the whole read. Other attributes are excluded. No arbitrary JavaScript or editor mutation.",
 			Outputs:     []string{"documentId", "count", "designators[] {id,parentId,key,value,visible,bbox,source}"},
 		},
+		{Name: "schematic.wire.labels.apply", Domain: DomainSchematic, Phase: 1, Mutates: true, NeedsWindow: true, Description: "Apply an explicit visible Name-label set within wireIds; hide other Name attributes in that scope without changing net values or recreating wires. Parent-local reads verify every attribute; missing publication returns partial.", Inputs: []string{"wireIds[]", "labels[] {wireId,attributeId?,x?,y?,rotation?}"}},
+		{Name: "schematic.target.check", Domain: DomainSchematic, Phase: 1, NeedsWindow: true, Description: "Fresh full-page comparison against independent semanticTarget: missing/extra parts and pins, stable identities, properties, and pin-to-net membership. Unknown is not pass; does not save or prove visual/physical correctness.", Inputs: []string{"semanticTarget"}, Outputs: []string{"status (pass|fail|unknown)", "verified", "partial", "findings", "counts", "idMap"}},
 		{
 			Name:        "schematic.component.place",
 			Domain:      DomainSchematic,
@@ -305,7 +307,7 @@ func AllActions() []ActionSpec {
 			Mutates:     true,
 			NeedsWindow: true,
 			Description: "Place a device/component from library identity at coordinates. `uuid` must be a device-library uuid (from schematic.library.search), NOT a placed-instance id from schematic.components.list — an instance uuid hangs the EasyEDA API. Two backfills run right after create, both best-effort (placement never fails because a backfill did): supplierId → the device's real LCSC C-number instead of the platform default `<MPN>.1` (#157), and otherProperty VALUES (Value/Tolerance/Voltage Rating/Datasheet/…) which create copies as empty keys (#186) — reported as `supplierIdBackfilled` / `otherPropertyBackfilled`. Projected-state keys (Designator/Name/Supplier Part/…) are never written and identity fields are re-asserted in the same call, because a whole-otherProperty write re-projects them from the library record.",
-			Inputs:      []string{"libraryUuid", "uuid (device-library uuid, not an instance id)", "x", "y", "rotation optional", "mirror optional"},
+			Inputs:      []string{"libraryUuid", "uuid (device-library uuid, not an instance id)", "x", "y", "rotation optional", "rotationMode optional (native|stored; explicit stored adapts create and verifies the persisted rotation)", "mirror optional"},
 			Outputs:     []string{"primitive id", "component state"},
 			VerifyWith:  []string{"schematic.component.get"},
 		},
@@ -316,7 +318,7 @@ func AllActions() []ActionSpec {
 			Mutates:     true,
 			NeedsWindow: true,
 			Description: "Modify component position, designator, name, BOM flags, or custom properties. customAttributes is a compatibility alias for the EasyEDA SDK otherProperty field; unknown patch keys are rejected up front (the SDK silently drops them). Property patches are merged with existing values and verified by readback with tiered semantics (#151): all applied = ok; PARTIAL application = ok with result.{partial,applied,alreadySet,notApplied,addedKeys,propertiesBefore} + warnings — the applied subset stays on canvas and autosaves; the `sch modify` subcommand and playbook replay treat partial as a failure, but raw `easyeda call` users must check result.partial/notApplied themselves. A pure-property patch where nothing provably applied is an error (canvas unchanged). Replaying propertiesBefore restores overwritten values only; keys newly added by the call (addedKeys) cannot be removed via modify.",
-			Inputs:      []string{"primitiveId", "patch", "preserveInstance optional (default false; allows geometry-only patch, retains original native uniqueId/identity/BOM flags/properties in same modify call and verifies exact fresh readback; result.instancePreserved must be true)"},
+			Inputs:      []string{"primitiveId", "patch", "rotationMode optional (native|stored)", "preserveInstance optional (default false; allows geometry-only patch, retains original native uniqueId/identity/BOM flags/properties in same modify call and verifies exact fresh readback; result.instancePreserved must be true)"},
 			Outputs:     []string{"component state"},
 			VerifyWith:  []string{"schematic.component.get"},
 		},

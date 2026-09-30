@@ -1,6 +1,6 @@
 {
   "name": "easyeda-agent-connector",
-  "version": "1.8.1-open.9.4",
+  "version": "1.8.1-open.9.5",
   "description": "EasyEDA Agent Open：通过官方 eda.* API 连接 AI Agent 与嘉立创 EDA 专业版。",
   "author": "yitengchun833-gif; based on zhoushoujianwork/easyeda-agent",
   "license": "(MIT AND Apache-2.0)",

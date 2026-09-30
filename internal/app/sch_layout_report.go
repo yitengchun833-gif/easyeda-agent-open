@@ -21,6 +21,7 @@ type schLayoutReport struct {
 	Zones                     bool                 `json:"zones"`
 	LayoutMode                string               `json:"layoutMode,omitempty"`
 	SourceSHA256              string               `json:"sourceSha256,omitempty"`
+	WireSourceSHA256          string               `json:"wireSourceSha256,omitempty"`
 	Error                     string               `json:"error,omitempty"`
 	FailureClass              string               `json:"failureClass,omitempty"`
 	RoutingDurationMS         int64                `json:"routingDurationMs,omitempty"`
@@ -88,6 +89,12 @@ func writeSchLayoutReport(path string, source []byte, phase string, zones bool, 
 		Scope: "offline-layout-only", Status: "planned", Phase: "complete", Zones: zones, Diagnostics: []any{}}
 	if len(mode) > 0 {
 		r.LayoutMode = mode[0]
+	}
+	if len(mode) > 1 {
+		r.WireSourceSHA256 = mode[1]
+	}
+	if r.LayoutMode == "route-validate" {
+		r.Operation, r.Status = "schematic.route-validate", "validated"
 	}
 	if source != nil {
 		r.SourceSHA256 = sha256Hex(source)

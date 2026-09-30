@@ -3,6 +3,7 @@
  */
 
 import { ActionQueue, isBypassAction } from './action-queue';
+import { runTargetedControl } from './control-target';
 import { armDeadline, sweepDeadlines, type DeadlineHandle } from './deadlines';
 import { buildContextFrame, readEasyEdaVersion } from './eda-context';
 import { runAction } from './actions';
@@ -1087,7 +1088,7 @@ async function handleRequest(request: RequestFrame): Promise<void> {
 		clientId: request.payload?._execution && typeof request.payload._execution === 'object' ? (request.payload._execution as { clientId?: string }).clientId : undefined,
         revision: request.payload?._execution && typeof request.payload._execution === 'object' ? (request.payload._execution as { revision?: number }).revision : undefined,
         run: execution => request.action === 'debug.control'
-            ? Promise.resolve({ result: actionQueue.control(request.payload ?? {}, request.id) })
+            ? runTargetedControl(request.payload ?? {}, () => actionQueue.control(request.payload ?? {}, request.id))
             : (() => {
                 sendFrame({type:'event',payload:{kind:'progress',requestId:request.id,phase:'running'}});
                 return runAction(request.action, request.payload, true, {...execution,progress:value=>{

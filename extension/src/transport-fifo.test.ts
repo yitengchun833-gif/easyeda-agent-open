@@ -116,3 +116,37 @@ test('transport:同 tick 到达的动作按到达顺序串行,响应带顺序证
 
 	transport.stop(false);
 });
+
+test('transport: targeted queue controls validate native identity while bypassing an unfinished write', async () => {
+	const g = globalThis as any, previous = actions.runAction;
+	let release!: () => void;
+	const blocked = new Promise<void>(resolve => { release = resolve; });
+	g.eda.dmt_Project.getCurrentProjectInfo = async () => ({ uuid: 'project' });
+	g.eda.dmt_SelectControl.getCurrentDocumentInfo = async () => ({ uuid: 'page' });
+	actions.runAction = async () => { await blocked; return { result: {} }; };
+	transport.reconnect();
+	try {
+		await sleep(250);
+		assert.ok(capturedOnMessage);
+		capturedOnMessage({ data: JSON.stringify({ type: 'handshake', service: 'easyeda-agent' }) });
+		await sleep(20); sent.length = 0;
+		const send = (id: string, action: string, payload = {}) => capturedOnMessage!({ data: JSON.stringify({ type: 'request', id, action, payload }) });
+		const response = async (id: string): Promise<any> => {
+			for (let i = 0; i < 100; i++) { const r = sent.find(f => f.type === 'response' && f.id === id); if (r) return r; await sleep(10); }
+			throw new Error(`No response for ${id}`);
+		};
+		send('unfinished-write', 'ordinary.write');
+		send('wrong-control', 'debug.control', { operation: 'pause', _target: { projectUuid: 'project', documentUuid: 'wrong' } });
+		const rejected = await response('wrong-control');
+		assert.equal(rejected.ok, false); assert.equal(rejected.error.code, 'PRECONDITION_REFUSED');
+		send('status-before', 'debug.control', { operation: 'status' });
+		assert.equal((await response('status-before')).result.paused, false);
+		send('targeted-pause', 'debug.control', { operation: 'pause', _target: { projectUuid: 'project', documentUuid: 'page' } });
+		const paused = await response('targeted-pause');
+		assert.equal(paused.result.targetChecked, true); assert.equal(paused.result.paused, true);
+		assert.equal(paused.context.documentUuid, 'page'); assert.equal(paused.unordered, true);
+		assert.equal(sent.some(f => f.id === 'unfinished-write' && f.type === 'response'), false, 'target checks must not wait behind the running write');
+		send('resume-control', 'debug.control', { operation: 'resume_queue' });
+		await response('resume-control'); release(); await response('unfinished-write');
+	} finally { release(); actions.runAction = previous; transport.stop(false); }
+});

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { readFile } from 'node:fs/promises';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -15,7 +16,8 @@ import {
   runEasyeda,
   toMcpResult,
 } from './core.mjs';
-import { apiReference, callAction, control, daemonURL, imageResult, snapshotSteps, runtimeRequest } from './open.mjs';
+import { apiReference, callAction, control, daemonURL, imageResult, runtimeRequest } from './open.mjs';
+import { captureSnapshot, planTool } from './plan-tools.mjs';
 
 const catalogExecution = await runEasyeda(['actions'], 30_000);
 if (!catalogExecution.ok || !Array.isArray(catalogExecution.result)) {
@@ -26,7 +28,7 @@ const actions = catalogExecution.result.filter((action) => DOMAIN_NAMES.includes
 const byName = new Map(actions.map((action) => [action.name, action]));
 
 const server = new Server(
-  { name: 'easyeda-agent-open', version: '1.8.1-open.9.4' },
+  { name: 'easyeda-agent-open', version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version },
   {
     capabilities: { tools: {} },
     instructions: 'Control EasyEDA Pro using typed actions or arbitrary eda.* JavaScript. No phase approvals or typed-only policy. Use window from health; optional target UUIDs are checked immediately before execution. Batch independent operations to reduce round trips. Errors and unknown results are not success; inspect before retrying writes.',
@@ -84,9 +86,26 @@ function domainTool(domain) {
 }
 
 const tools = [
-  {name:'easyeda_runtime',description:'Read existing daemon observations without EDA calls; control the shared queue, resume confirmed paused batches, record a current-image visual review, finish a verified task and save, or persist caller-authored task intent with task_update (not execution evidence). Unknown writes are never automatically replayed.',inputSchema:{type:'object',properties:{operation:{type:'string',enum:['state','pause','resume_queue','cancel','resume','retry','visual_review','finish','task_update','restore']},window:commonRouteProperties.window,target:{type:'object',properties:{projectUuid:{type:'string'},documentUuid:{type:'string'}},required:['projectUuid','documentUuid'],additionalProperties:false},sourceWindow:{type:'string',description:'restore: historical source window chosen from state; target identity and current generation are required.'},expectedRevision:{type:'integer',minimum:0,description:'task_update: current task revision, 0 if absent; rejects stale updates.'},task:{type:'object',properties:{goal:{type:'string',minLength:1,maxLength:2000},primitiveIds:{type:'array',items:{type:'string',minLength:1,maxLength:256},maxItems:500},remaining:{type:'array',items:{type:'string',minLength:1,maxLength:1000},maxItems:32},note:{type:'string',maxLength:4000}},required:['goal','primitiveIds','remaining'],additionalProperties:false},includeObjects:{type:'boolean',description:'State only: full cached objects (may be large). Default is a summary; primitiveIds returns a local projection.'},primitiveIds:{type:'array',items:{type:'string'},maxItems:500},requestId:{type:'string'},generation:{type:'integer',minimum:0},screenshotRequestId:{type:'string'},source:{type:'string',enum:['ai','engineer']},timeoutMs:commonRouteProperties.timeoutMs},additionalProperties:false}},
+  {
+    name: 'easyeda_plan',
+    description: 'Prepare a semantic drawing plan and readable Markdown from a full local snapshot, inspect its exact hash/source bindings, check the expected part/pin set, or apply explicit typed steps. Staged plans require stage: geometry reads only affected components; final independently checks the full target. Stage completion is not whole-page delivery. Uses the existing queue; no automatic layout, source approval, replay, or save.',
+    inputSchema: { type: 'object', properties: {
+      operation: { type: 'string', enum: ['prepare', 'render', 'inspect', 'check', 'apply'] },
+      snapshotFile: { type: 'string', description: 'prepare: absolute path to a full identified schematic snapshot.' },
+      outputFile: { type: 'string', description: 'prepare: absolute new plan.json path; derives plan.md beside it.' },
+      planFile: { type: 'string', description: 'render/inspect/check/apply: absolute plan.json path. render refreshes derived Markdown from current JSON without altering the plan.' },
+      expectedHash: { type: 'string', description: 'SHA256 of reviewed plan bytes; required for apply.' },
+      stage: { type: 'string', minLength: 1, description: 'apply only: exact plan.stages id. Required when the plan has stages; executes only this stage. Compile later static steps from actual component IDs/readback.' },
+      sources: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, path: { type: 'string' }, sha256: { type: 'string' }, anchor: { type: 'string' } }, required: ['id', 'path'], additionalProperties: false } },
+      goal: { type: 'string' }, layoutMode: { type: 'string', enum: ['preserve', 'relayout'] },
+      overwrite: { type: 'boolean' }, requireConfirmed: { type: 'boolean', description: 'Optional caller-authored confirmation metadata check; not independent proof of human approval.' },
+      window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs,
+      edit: commonRouteProperties.edit, dryRun: { type: 'boolean' },
+    }, required: ['operation'], additionalProperties: false },
+  },
+  {name:'easyeda_runtime',description:'Read existing daemon observations without EDA calls; control the shared queue, resume confirmed paused batches, record a current-image visual review, finish a verified task and save, or persist caller-authored task intent with task_update, or replace it with task_replace after cancelling old queued work across clients (not execution evidence; remains paused). Unknown writes are never automatically replayed.',inputSchema:{type:'object',properties:{operation:{type:'string',enum:['state','pause','resume_queue','cancel','resume','retry','visual_review','finish','task_update','task_replace','restore']},window:commonRouteProperties.window,target:{type:'object',properties:{projectUuid:{type:'string'},documentUuid:{type:'string'}},required:['projectUuid','documentUuid'],additionalProperties:false},sourceWindow:{type:'string',description:'restore: historical source window chosen from state; target identity and current generation are required.'},expectedRevision:{type:'integer',minimum:0,description:'task_update/task_replace: current task revision, 0 if absent; rejects stale updates.'},task:{type:'object',properties:{goal:{type:'string',minLength:1,maxLength:2000},primitiveIds:{type:'array',items:{type:'string',minLength:1,maxLength:256},maxItems:500},remaining:{type:'array',items:{type:'string',minLength:1,maxLength:1000},maxItems:32},note:{type:'string',maxLength:4000}},required:['goal','primitiveIds','remaining'],additionalProperties:false},includeObjects:{type:'boolean',description:'State only: full cached objects (may be large). Default is a summary; primitiveIds returns a local projection.'},primitiveIds:{type:'array',items:{type:'string'},maxItems:500},requestId:{type:'string'},generation:{type:'integer',minimum:0},screenshotRequestId:{type:'string'},source:{type:'string',enum:['ai','engineer']},timeoutMs:commonRouteProperties.timeoutMs},additionalProperties:false}},
   { name: 'easyeda_control', description: 'Query runtime progress/receipts, cancel requests or supersede this MCP session’s old instruction in a window. Call supersede when the user changes instructions, before new writes. Native calls cannot be forcibly stopped; inFlight lists unresolved calls. No rollback.',
-    inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, operation: { type: 'string', enum: ['status', 'cancel', 'supersede','pause','resume'] }, requestId: { type: 'string' }, allClients: { type: 'boolean', description: 'For status/cancel/pause/resume: inspect or control work from other/restarted MCP sessions too.' } }, required: ['window'], additionalProperties: false } },
+    inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, operation: { type: 'string', enum: ['status', 'cancel', 'supersede','pause','resume'] }, requestId: { type: 'string' }, allClients: { type: 'boolean', description: 'For status/cancel/pause/resume: inspect or control work from other/restarted MCP sessions too.' } }, required: ['window'], additionalProperties: false } },
   {
     name: 'easyeda_project_transfer',
     title: 'Open or export a native EasyEDA project',
@@ -166,7 +185,7 @@ const tools = [
   {
     name: 'easyeda_snapshot',
     description: 'Collect schematic semantic data or PCB components/layers/nets in one request; optionally include PCB routing primitives. Does not infer correctness or run mandatory checks.',
-    inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs, domain: { type: 'string', enum: ['schematic', 'pcb'] }, cacheOnly:{type:'boolean'}, primitiveIds:{type:'array',items:{type:'string'},maxItems:500}, includeTexts:{type:'boolean'}, profile:{type:'string',enum:['full','geometry','electrical'],description:'Schematic only: geometry omits netlist and device hydration; electrical omits drawing geometry. Default full. Geometry cannot prove electrical correctness.'}, routing: { type: 'boolean' }, detail: { type: 'boolean', description: 'Schematic: include attributes, pins, bounding boxes, wires and active-page primitives using the rich reader.' }, allPages: { type: 'boolean' } }, required: ['domain'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs, domain: { type: 'string', enum: ['schematic', 'pcb'] }, outputFile:{type:'string',description:'Absolute snapshot.json path: save full native observations plus Markdown locally and return a compact receipt. Default does not overwrite.'},overwrite:{type:'boolean'},baselineFile:{type:'string',description:'Optional fixed baseline path for a local patch reference; omitted objects are not deletions.'},cacheOnly:{type:'boolean'}, primitiveIds:{type:'array',items:{type:'string'},maxItems:500}, includeTexts:{type:'boolean'}, profile:{type:'string',enum:['full','geometry','electrical'],description:'Schematic only: geometry omits netlist and device hydration; electrical omits drawing geometry. Default full. Geometry cannot prove electrical correctness.'}, routing: { type: 'boolean' }, detail: { type: 'boolean', description: 'Schematic: include attributes, pins, bounding boxes, wires and active-page primitives using the rich reader.' }, allPages: { type: 'boolean' } }, required: ['domain'], additionalProperties: false },
     annotations: { readOnlyHint: true },
   },
   {
@@ -200,8 +219,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const { name, arguments: args = {} } = request.params;
   const input = { ...args, signal: extra.signal };
   try {
+    if (name === 'easyeda_plan') return await planTool(input, byName);
     if (name === 'easyeda_runtime') return runtimeRequest(input);
-    if (name === 'easyeda_snapshot' && input.cacheOnly) return runtimeRequest({...input,operation:'state'});
+    if (name === 'easyeda_snapshot' && input.cacheOnly) {
+      if (input.outputFile) throw new Error('Cached observations cannot be exported as a fresh snapshot');
+      return runtimeRequest({...input,operation:'state'});
+    }
     if (name === 'easyeda_control') {
       if (input.allClients && input.operation === 'supersede') throw new Error('Supersede is scoped to this MCP session; use cancel to stop other clients.');
       return control(input);
@@ -231,8 +254,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     if (name === 'easyeda_execute') {
       return callAction('debug.exec_js', { ...input, payload: { code: input.code } });
     }
-    if (name === 'easyeda_batch' || name === 'easyeda_snapshot') {
-      const steps = name === 'easyeda_snapshot' ? snapshotSteps(input.domain, input.routing, input.detail, input.allPages, input) : input.steps;
+    if (name === 'easyeda_snapshot') return await captureSnapshot(input);
+    if (name === 'easyeda_batch') {
+      const steps = input.steps;
       for (const step of steps || []) if (!byName.has(step.action)) throw new Error(`Unknown action: ${step.action}`);
       return callAction('debug.batch', { ...input, payload: { steps, dryRun: input.dryRun, stopOnError: input.stopOnError, verifyPreservedSchematic: input.verifyPreservedSchematic } });
     }

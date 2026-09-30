@@ -11,6 +11,21 @@ import (
 	"github.com/zhoushoujianwork/easyeda-agent/internal/protocol"
 )
 
+func TestRequestIDsDoNotRepeatAcrossServerRestart(t *testing.T) {
+	// A Connector can retain its duplicate-request history across daemon restarts.
+	seen := map[string]bool{}
+	for restart := range 2 {
+		s := &Server{}
+		for range 3 {
+			id := s.nextRequestID()
+			if id == "" || seen[id] {
+				t.Fatalf("restart %d reused Connector request ID %q", restart, id)
+			}
+			seen[id] = true
+		}
+	}
+}
+
 func TestRequestTimeout(t *testing.T) {
 	cases := []struct {
 		name      string

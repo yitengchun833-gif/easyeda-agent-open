@@ -63,14 +63,15 @@ type powerLayoutFlag struct {
 }
 
 type powerLayoutPlan struct {
-	SchemaVersion   int                    `json:"schemaVersion"`
-	DocumentID      string                 `json:"documentId"`
-	Placements      []powerLayoutPlacement `json:"placements"`
-	Wires           []powerLayoutWire      `json:"wires"`
-	Flags           []powerLayoutFlag      `json:"flags"`
-	ExpectedPinNets map[string]string      `json:"expectedPinNets"`
-	Frames          []schFrameSpec         `json:"frames"`
-	namingBlockers  map[string]bool
+	SchemaVersion    int                    `json:"schemaVersion"`
+	DocumentID       string                 `json:"documentId"`
+	Placements       []powerLayoutPlacement `json:"placements"`
+	Wires            []powerLayoutWire      `json:"wires"`
+	Flags            []powerLayoutFlag      `json:"flags"`
+	ExpectedPinNets  map[string]string      `json:"expectedPinNets"`
+	Frames           []schFrameSpec         `json:"frames"`
+	namingBlockers   map[string]bool
+	measuredTextOnly bool
 }
 
 type powerLayoutSnapshot struct {

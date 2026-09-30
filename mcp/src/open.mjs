@@ -10,7 +10,7 @@ export async function control(input = {}, url = daemonURL) {
   if (!input.window) throw new Error('Control requires an explicit window from health');
   const revision = input.operation === 'supersede' ? (revisions.get(input.window) ?? 0) + 1 : revisions.get(input.window) ?? 0;
   if (input.operation === 'supersede') revisions.set(input.window, revision);
-  return callAction('debug.control', { window: input.window, timeoutMs: 5000,
+  return callAction('debug.control', { window: input.window, target: input.target, timeoutMs: 5000,
     payload: { operation: input.operation ?? 'status', clientId: input.allClients ? undefined : clientId, requestId: input.requestId, revision } }, url);
 }
 

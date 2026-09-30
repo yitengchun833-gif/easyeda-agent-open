@@ -1,6 +1,6 @@
 {
   "name": "easyeda-agent-open",
-  "version": "1.8.1-open.9.4",
+  "version": "1.8.1-open.9.6",
   "upstream": {
     "url": "https://github.com/zhoushoujianwork/easyeda-agent",
     "commit": "65694c3896fa08b640100e819108c30f0e495fb7",
@@ -67,5 +67,5 @@
     "sdkDeclarationsSha256": "33366e9e7bf8abc0b7405de87b888059ac7123d0b4fdde816b46a0c980e753b7"
   },
   "liveEdaValidation": false,
-  "connectorVersion": "1.8.1-open.9.4"
+  "connectorVersion": "1.8.1-open.9.5"
 }

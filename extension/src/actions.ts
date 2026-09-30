@@ -16,6 +16,7 @@ import { exactJSON, preservedInstance } from './preserve-instance';
 import { barePcbRuleConfiguration, pcbRulesEqual, planPcbConfig } from './pcb-config';
 import { pcbNetColorSet } from './pcb-net-color';
 import { documentTypeLabel, readResponseContext } from './eda-context';
+import { checkSchematicTarget } from './schematic-target';
 import { getSchematicNetlistFile, NetlistContextError } from './schematic-netlist-file';
 import { renameSchematicPage } from './schematic-page-rename';
 import { assertSchematicReadinessContext, captureSchematicReadiness, SchematicReadinessError, SchematicReadinessToken, waitForSchematicReady } from './schematic-readiness';
@@ -1630,7 +1631,7 @@ async function backfillSupplierId(
 	};
 }
 
-export const schematicComponentPlace: Handler = async (payload) => {
+const placeSchematicComponent: Handler = async (payload) => {
 	const libraryUuid = requireString(payload, 'libraryUuid');
 	const uuid = requireString(payload, 'uuid');
 	const x = requireNumber(payload, 'x');
@@ -1766,7 +1767,7 @@ function requireSchematicPropertyPatch(
 	return out;
 }
 
-export const schematicComponentModify: Handler = async (payload) => {
+const modifySchematicComponent: Handler = async (payload) => {
 	const primitiveId = requireString(payload, 'primitiveId');
 	const patch = payload.patch;
 	if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
@@ -2002,6 +2003,43 @@ export const schematicComponentModify: Handler = async (payload) => {
 			...(propertiesBefore !== undefined ? { propertiesBefore } : {}),
 		},
 	};
+};
+
+function storedComponentRotation(payload: Payload, value: unknown): number | undefined {
+	if (payload.rotationMode !== undefined && payload.rotationMode !== 'native' && payload.rotationMode !== 'stored') {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'rotationMode must be native or stored.');
+	}
+	if (payload.rotationMode !== 'stored' || value === undefined) return undefined;
+	if (typeof value !== 'number' || !Number.isFinite(value)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Stored rotation must be a finite number.');
+	return ((value % 360) + 360) % 360;
+}
+
+async function verifyStoredComponentRotation(response: ActionResult, primitiveId: string, expected: number): Promise<ActionResult> {
+	try {
+		const fresh = await getComponentOrThrow(primitiveId);
+		const actual = fresh.getState_Rotation();
+		const verified = Number.isFinite(actual) && Math.abs((((actual - expected) % 360) + 540) % 360 - 180) < 1e-6;
+		return { ...response, result: { ...response.result, component: serializeComponent(fresh), rotationVerified: verified,
+			...(!verified ? { partial: true, verified: false, expectedRotation: expected, actualRotation: actual } : {}) } };
+	} catch (error) {
+		return { ...response, result: { ...response.result, partial: true, verified: false, rotationVerified: false, expectedRotation: expected },
+			warnings: [...(response.warnings ?? []), `Stored rotation readback unavailable: ${describeThrown(error)}`] };
+	}
+}
+
+/** Explicit calibration for ordinary component create only; native mode remains unchanged. */
+export const schematicComponentPlace: Handler = async payload => {
+	const expected = storedComponentRotation(payload, payload.rotation);
+	const result = await placeSchematicComponent(expected === undefined ? payload : { ...payload, rotation: -expected });
+	return expected === undefined ? result : verifyStoredComponentRotation(result, String(result.result?.primitiveId), expected);
+};
+
+/** Geometry paths and script helpers share the existing property-preserving modification. */
+export const schematicComponentModify: Handler = async payload => {
+	const patch = payload.patch as Record<string, unknown> | undefined;
+	const expected = storedComponentRotation(payload, patch?.rotation);
+	const result = await modifySchematicComponent(expected === undefined ? payload : { ...payload, patch: { ...patch, rotation: expected } });
+	return expected === undefined ? result : verifyStoredComponentRotation(result, requireString(payload, 'primitiveId'), expected);
 };
 
 // ─── Component-delete cascade (ADR-0004 Decision 5) ──────────────────────
@@ -3205,11 +3243,12 @@ const schematicGroupMove: Handler = async (payload) => {
 	for (const { id, comp } of elements) {
 		const from = { x: comp.getState_X(), y: comp.getState_Y() };
 		const to = { x: from.x + dx, y: from.y + dy };
-		let moved;
-		try { moved = await eda.sch_PrimitiveComponent.modify(id, { x: to.x, y: to.y }); }
-		catch (err) { throw edaError(err, `group-move: failed to translate component ${id}.`); }
-		if (!moved) throw new ActionError(ErrorCodes.EDA_CALL_FAILED, `group-move: modify returned no primitive for component ${id}.`);
-		movedComponents.push({ primitiveId: id, designator: moved.getState_Designator?.() ?? null, from, to });
+		const moved = await schematicComponentModify({ primitiveId: id, patch: { x: to.x, y: to.y } });
+		movedComponents.push({ primitiveId: id, designator: (moved.result?.component as Record<string, unknown>)?.designator ?? null, from, to });
+		if (moved.result?.partial === true || moved.result?.verified === false) {
+			return { result: { dx, dy, movedComponents, movedFlags, movedWires, partial: true, verified: false,
+				failedPrimitiveId: id, readback: moved.result, reason: 'Component property preservation was not confirmed; remaining group members were not moved.' } };
+		}
 	}
 
 	// Flags: delete + recreate at the shifted anchor. Rotation passes through
@@ -3290,6 +3329,10 @@ const NET_PORT_KINDS: Record<string, NetPortDirection> = {
 };
 const NET_LABEL_KIND = 'net_label';
 
+function matchingWireNameParent(wire: Awaited<ReturnType<typeof eda.sch_PrimitiveWire.getAll>>[number] | undefined, parentId: string, net: string): boolean {
+	return !!wire && wire.getState_PrimitiveId() === parentId && wire.getState_Net() === net;
+}
+
 // Web 4.1.60 creates a wire Name attribute but returns undefined. Recover only
 // a unique NEW attribute from a fresh inventory, never the requested input.
 async function createVerifiedNetLabel(x: number, y: number, net: string, expectedParentId?: string): Promise<ActionResult> {
@@ -3327,7 +3370,7 @@ async function createVerifiedNetLabel(x: number, y: number, net: string, expecte
 		const parentId = attribute.getState_ParentPrimitiveId();
 		if (expectedParentId !== undefined && parentId !== expectedParentId) throw new Error(`Label belongs to wire ${parentId}, not the created stub ${expectedParentId}.`);
 		const wire = parentId ? await eda.sch_PrimitiveWire.get(parentId) : undefined;
-		if (!wire || wire.getState_PrimitiveId() !== parentId || wire.getState_Net() !== net || record.ValueVisible !== true) {
+		if (!matchingWireNameParent(wire, parentId, net) || record.ValueVisible !== true) {
 			throw new Error('Label visibility or parent wire network does not match.');
 		}
 		return { result: { primitiveId: attribute.getState_PrimitiveId(), parentPrimitiveId: parentId,
@@ -6273,6 +6316,12 @@ export async function getComponentOrThrow(primitiveId: string): Promise<SchCompo
 	let component: SchComponent | undefined;
 	try {
 		component = await eda.sch_PrimitiveComponent.get(primitiveId);
+		if (!component) {
+			// Publication can lag get(id); keep group-move/create readback on the active page.
+			const published = await eda.sch_PrimitiveComponent.getAll(undefined, false);
+			const matches = published.filter(c => c.getState_PrimitiveId() === primitiveId);
+			if (matches.length === 1) component = matches[0];
+		}
 	}
 	catch (err) {
 		throw edaError(err, `Failed to read component "${primitiveId}".`);
@@ -14492,15 +14541,16 @@ const viewRegion: Handler = async (payload) => {
  * Run arbitrary `eda.*` JavaScript. This is the deliberate escape hatch for
  * operations that have no typed action yet. No workflow or approval gate.
  */
-const debugExecJs: Handler = async (payload, execution) => {
+const debugExecJs = async (payload: Payload, execution?: Execution, inheritedTarget?: Awaited<ReturnType<typeof readResponseContext>>): Promise<ActionResult> => {
 	const code = requireString(payload, 'code');
-	let fn: (eda: unknown, signal?: ExecutionSignal) => Promise<unknown>;
+	type ScriptHelpers = { call(action: string, payload: Payload): Promise<ActionResult> };
+	let fn: (eda: unknown, signal: ExecutionSignal | undefined, helpers: ScriptHelpers) => Promise<unknown>;
 	let value: unknown;
 	try {
 		const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as {
-			new (...args: string[]): (eda: unknown, signal?: ExecutionSignal) => Promise<unknown>;
+			new (...args: string[]): typeof fn;
 		};
-		fn = new AsyncFunction('eda', 'signal', code);
+		fn = new AsyncFunction('eda', 'signal', 'helpers', code);
 	}
 	catch (err) {
 		// Construction has no access to eda and never executes the user's code.
@@ -14510,7 +14560,30 @@ const debugExecJs: Handler = async (payload, execution) => {
 			describeThrown(err));
 	}
 	try {
-		value = await fn(eda, execution?.signal);
+		// Reuse the enclosing checked target; otherwise bind helpers after compile, before script execution.
+		const helperTarget = inheritedTarget ?? await readResponseContext();
+		const helpers: ScriptHelpers = { call: async (action, args) => {
+			const supported: Record<string, Handler> = {
+				'schematic.component.place': schematicComponentPlace,
+				'schematic.component.modify': schematicComponentModify,
+				'schematic.attribute.modify': schematicAttributeModify,
+				'schematic.wire.create': schematicWireCreate,
+				'schematic.wire.labels.apply': schematicWireLabelsApply,
+			};
+			if (!Object.prototype.hasOwnProperty.call(supported, action)) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `No shared script helper for ${action}. Raw eda remains available.`);
+			if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Helper payload must be an object.');
+			execution?.signal.throwIfAborted();
+			if (!helperTarget.projectUuid || !helperTarget.documentUuid) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Shared script helpers require a known project and document at script entry.');
+			if (args._target !== undefined) {
+				if (!args._target || typeof args._target !== 'object' || Array.isArray(args._target)) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Helper _target must match the enclosing script target.');
+				for (const key of ['projectUuid', 'documentUuid'] as const) {
+					const requested = (args._target as Record<string, unknown>)[key];
+					if (requested !== undefined && requested !== helperTarget[key]) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Helper _target cannot replace the enclosing script target.');
+				}
+			}
+			return runAction(action, { ...args, _target: { projectUuid: helperTarget.projectUuid, documentUuid: helperTarget.documentUuid } }, false, execution);
+		} };
+		value = await fn(eda, execution?.signal, helpers);
 	}
 	catch (err) {
 		throw edaError(err, 'exec_js failed.');
@@ -14574,7 +14647,7 @@ export function comparePreservedSchematic(before: Record<string, unknown>, after
 		: { status: 'pass', checkedParts: expected.size, coverage: 'active-page part identity and pin nets' };
 }
 
-const debugBatch = async (payload: Payload, execution?: Execution, reads?: {before: SchematicReadPass; after: SchematicReadPass}): Promise<ActionResult> => {
+const debugBatch = async (payload: Payload, execution?: Execution, reads?: {before: SchematicReadPass; after: SchematicReadPass}, helperTarget?: Awaited<ReturnType<typeof readResponseContext>>): Promise<ActionResult> => {
 	const steps = payload.steps;
 	if (!Array.isArray(steps) || steps.length === 0 || steps.length > 500) {
 		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'steps must contain 1–500 actions.');
@@ -14612,7 +14685,7 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
         const step = steps[index];
         execution?.progress({ completed: results.length, total: steps.length, currentIndex: index, currentAction: step.action });
         try {
-			const response = await runAction(step.action, step.payload, false, execution);
+			const response = await runAction(step.action, step.payload, false, execution, helperTarget);
 			const r = response.result as Record<string, unknown> | undefined;
 			const ok = r?.ok !== false && r?.partial !== true && r?.verified !== false;
 			const { artifacts: stepArtifacts, ...stepResponse } = response;
@@ -14652,21 +14725,42 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
 		...(verification ? { verification } : {}) }, artifacts };
 };
 
-const HANDLERS: Record<string, Handler> = {
-	'view.capture': async payload => {
-		if (payload.fit===true) await eda.dmt_EditorControl.zoomToAllPrimitives();
-		await waitForCanvasSettle();
-		const blob=await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
-		if(!(blob instanceof Blob)||blob.size===0)throw new ActionError(ErrorCodes.EDA_CALL_FAILED,'Editor returned no image.');
-		return {result:{value:{base64:await blobToBase64(blob),mimeType:blob.type,size:blob.size}}};
-	},
-	'schematic.attribute.modify': async payload => {
+export const schematicTargetCheck: Handler = async payload => {
+	const target = (payload.semanticTarget ?? payload.target) as Record<string, unknown> | undefined;
+	if (!target || typeof target !== 'object' || Array.isArray(target) || target.schemaVersion !== 1 || !Array.isArray(target.components)) {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'target must be a schemaVersion 1 semantic target.');
+	}
+	const before = await readResponseContext();
+	try {
+		// Always read the full current page and native pin/net facts; never accept caller snapshots.
+		const response = await schematicComponentsList({ includePins: true, includePinNets: true, includeNetIndex: true, includeDeviceIdentity: true });
+		const context = await readResponseContext();
+		const snapshot = response.result as Record<string, unknown>;
+		if (['projectUuid', 'documentUuid', 'tabId'].some(k => before[k as keyof typeof before] !== context[k as keyof typeof context])) {
+			snapshot.readScope = { ...snapshot.readScope as Record<string, unknown>, concurrentChange: true };
+		}
+		return { context, result: { ...checkSchematicTarget({ result: snapshot, context }, target),
+			_readback: [{ action: 'schematic.components.list', result: snapshot }] } };
+	} catch (error) {
+		return { context: before, result: { ...checkSchematicTarget({ result: {}, context: before }, target), readError: describeThrown(error) } };
+	}
+};
+
+export const schematicAttributeModify: Handler = async payload => {
 		const id=requireString(payload,'primitiveId');
 		if(!payload.props||typeof payload.props!=='object'||Array.isArray(payload.props))throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD,'props must contain official attribute fields.');
+		if (payload.fontSizeUnit !== undefined && payload.fontSizeUnit !== 'native' && payload.fontSizeUnit !== 'display') throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'fontSizeUnit must be native or display.');
+		const props = { ...payload.props as Record<string, unknown> };
+		if (payload.fontSizeUnit === 'display' && props.fontSize !== undefined && props.fontSize !== null) {
+			if (typeof props.fontSize !== 'number' || !Number.isFinite(props.fontSize) || props.fontSize <= 0) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Display fontSize must be a positive finite number or null.');
+			// Attribute.modify's explicit display adapter: observed 6.75 writes as 675.
+			// Do not apply this calibration to Text.create, PCB, or the default native mode.
+			props.fontSize /= 100;
+		}
 		const original=await eda.sch_PrimitiveAttribute.get(id);
 		if(!original||original.getState_PrimitiveId()!==id)throw new ActionError(ErrorCodes.EDA_CALL_FAILED,'Attribute is unavailable; no modification executed.');
 		const identity=[id,original.getState_ParentPrimitiveId(),original.getState_Key(),original.getState_Value()];
-		const changed=await eda.sch_PrimitiveAttribute.modify(id,payload.props as Parameters<typeof eda.sch_PrimitiveAttribute.modify>[1]);
+		const changed=await eda.sch_PrimitiveAttribute.modify(id,props as Parameters<typeof eda.sch_PrimitiveAttribute.modify>[1]);
 		if(!changed)throw new ActionError(ErrorCodes.EDA_CALL_FAILED,'Attribute modification returned no primitive.');
 		const actual=await eda.sch_PrimitiveAttribute.get(id);
 		if(!actual||actual.getState_PrimitiveId()!==id)throw new ActionError(ErrorCodes.EDA_CALL_FAILED,'Modified attribute cannot be read back; its actual result is unknown.');
@@ -14679,12 +14773,101 @@ const HANDLERS: Record<string, Handler> = {
 			try {
 				const observed=getter.call(actual); attribute[field]=observed;
 				if(observed===undefined||value===null)unknown.push(key); // A resolved inherited value does not prove an explicit null override.
+				else if (key === 'fontSize' && payload.fontSizeUnit === 'display' && typeof value === 'number') {
+					if (typeof observed !== 'number' || !Number.isFinite(observed) || Math.abs(observed - value) > 1e-6) mismatch.push(key);
+				}
 				else if(exactJSON(observed)!==exactJSON(value))mismatch.push(key);
 			} catch {unknown.push(key)}
 		}
 		const verified=preserved&&unknown.length===0&&mismatch.length===0;
 		return {result:{primitiveId:id,attribute,verified,...(!verified?{partial:true,unknown,mismatch,reason:preserved?'Requested attribute fields were not confirmed by native readback.':'Attribute identity or electrical value changed during display-only modification.'}:{})}};
+	};
+
+/** Set only existing wire Name display state; missing publication never recreates a wire. */
+export const schematicWireLabelsApply: Handler = async (payload, execution) => {
+	const wireIds = requireStringArray(payload, 'wireIds');
+	if (!wireIds.length || new Set(wireIds).size !== wireIds.length) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'wireIds must be nonempty and unique.');
+	if (!Array.isArray(payload.labels)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'labels must explicitly list the required visible Names (or [] to hide all in scope).');
+	type Label = { wireId: string; attributeId?: string; x?: number; y?: number; rotation?: number };
+	const labels = payload.labels.map(raw => {
+		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Each label must be an object.');
+		const label = raw as Record<string, unknown>;
+		if (Object.keys(label).some(k => !['wireId', 'attributeId', 'x', 'y', 'rotation'].includes(k))) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Labels accept only wireId, attributeId, x, y and rotation; electrical Name cannot be changed.');
+		const wireId = requireString(label, 'wireId');
+		if (!wireIds.includes(wireId)) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `Label wire ${wireId} is outside wireIds.`);
+		if (label.attributeId !== undefined) requireString(label, 'attributeId');
+		for (const k of ['x', 'y', 'rotation']) if (label[k] !== undefined) requireNumber(label, k);
+		return label as Label;
+	});
+	const selected = new Set<string>();
+	for (const label of labels) {
+		const key = `${label.wireId}:${label.attributeId ?? '*'}`;
+		if (selected.has(key)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, `Duplicate label target ${key}.`);
+		selected.add(key);
+	}
+	const applied: Array<Record<string, unknown>> = [], remaining: Array<Record<string, unknown>> = [];
+	const plans: Array<{ wireId: string; net: string; line: unknown; ids: string[]; values: Map<string, string>; labels: Map<string, Label> }> = [];
+	for (const wireId of wireIds) {
+		try {
+			const wire = await eda.sch_PrimitiveWire.get(wireId);
+			if (!wire || wire.getState_PrimitiveId() !== wireId) throw new Error('Wire unavailable.');
+			const attrs = (await eda.sch_PrimitiveAttribute.getAll(wireId)).filter(a => a.getState_Key() === 'Name');
+			if (!attrs.length) throw new Error('Name attributes are not published; read this wire again before repairing display.');
+			if (attrs.some(a => a.getState_ParentPrimitiveId() !== wireId) || new Set(attrs.map(a => a.getState_PrimitiveId())).size !== attrs.length) throw new Error('Name ownership or unique identity is unavailable.');
+			const visible = new Map<string, Label>();
+			for (const label of labels.filter(l => l.wireId === wireId)) {
+				const matches = label.attributeId ? attrs.filter(a => a.getState_PrimitiveId() === label.attributeId) : attrs;
+				if (matches.length !== 1 || visible.has(matches[0].getState_PrimitiveId())) throw new Error('Visible Name selection is missing or ambiguous; specify attributeId.');
+				visible.set(matches[0].getState_PrimitiveId(), label);
+			}
+			plans.push({ wireId, net: wire.getState_Net(), line: JSON.parse(JSON.stringify(wire.getState_Line())), ids: attrs.map(a => a.getState_PrimitiveId()),
+				values: new Map(attrs.map(a => [a.getState_PrimitiveId(), a.getState_Value()])), labels: visible });
+		} catch (error) { remaining.push({ wireId, reason: describeThrown(error) }); }
+	}
+	let paused = false, cancelled = false;
+	applyLoop: for (const plan of plans) {
+		for (const id of plan.ids) {
+			cancelled = execution?.signal.aborted === true; paused = execution?.isPaused?.() === true;
+			if (cancelled || paused) {
+				for (const pending of plans) for (const pendingId of pending.ids) if (!applied.some(a => a.attributeId === pendingId)) {
+					remaining.push({ wireId: pending.wireId, attributeId: pendingId, reason: cancelled ? 'Cancelled before the next attribute write.' : 'Paused before the next attribute write.' });
+				}
+				break applyLoop;
+			}
+			const label = plan.labels.get(id), props: Record<string, unknown> = { keyVisible: false, valueVisible: !!label };
+			if (label) for (const k of ['x', 'y', 'rotation'] as const) if (label[k] !== undefined) props[k] = label[k];
+			try {
+				const result = await schematicAttributeModify({ primitiveId: id, props });
+				if (result.result?.verified !== true) throw new Error(`Attribute readback not confirmed: ${JSON.stringify(result.result)}`);
+				applied.push({ wireId: plan.wireId, attributeId: id, visible: !!label });
+			} catch (error) { remaining.push({ wireId: plan.wireId, attributeId: id, reason: describeThrown(error) }); }
+		}
+		try {
+			const wire = await eda.sch_PrimitiveWire.get(plan.wireId);
+			if (!matchingWireNameParent(wire, plan.wireId, plan.net) || !wire || exactJSON(wire.getState_Line()) !== exactJSON(plan.line)) throw new Error('Wire identity, network or geometry changed during display edits.');
+			const attrs = (await eda.sch_PrimitiveAttribute.getAll(plan.wireId)).filter(a => a.getState_Key() === 'Name');
+			if (exactJSON(attrs.map(a => a.getState_PrimitiveId()).sort()) !== exactJSON([...plan.ids].sort())) throw new Error('Name coverage changed during publication; read this wire again, do not redraw it.');
+			for (const attr of attrs) {
+				const id = attr.getState_PrimitiveId();
+				if (attr.getState_ParentPrimitiveId() !== plan.wireId || attr.getState_Value() !== plan.values.get(id) || attr.getState_KeyVisible() !== false || attr.getState_ValueVisible() !== plan.labels.has(id)) throw new Error(`Final Name identity, electrical value or visibility mismatch: ${id}.`);
+			}
+		} catch (error) { remaining.push({ wireId: plan.wireId, reason: describeThrown(error) }); }
+	}
+	return { result: { wireIds, applied, remaining, verified: remaining.length === 0, partial: remaining.length > 0,
+		...(cancelled ? { cancelled: true } : {}), ...(paused ? { paused: true } : {}) } };
+};
+
+const HANDLERS: Record<string, Handler> = {
+	'view.capture': async payload => {
+		if (payload.fit===true) await eda.dmt_EditorControl.zoomToAllPrimitives();
+		await waitForCanvasSettle();
+		const blob=await eda.dmt_EditorControl.getCurrentRenderedAreaImage();
+		if(!(blob instanceof Blob)||blob.size===0)throw new ActionError(ErrorCodes.EDA_CALL_FAILED,'Editor returned no image.');
+		return {result:{value:{base64:await blobToBase64(blob),mimeType:blob.type,size:blob.size}}};
 	},
+	'schematic.attribute.modify': schematicAttributeModify,
+	'schematic.wire.labels.apply': schematicWireLabelsApply,
+	'schematic.target.check': schematicTargetCheck,
 	'system.page_reload': systemPageReload,
 	'project.current': projectCurrent,
 	'project.export_source': projectExportSource,
@@ -14859,6 +15042,7 @@ export async function runAction(
 	payload: Record<string, unknown> | undefined,
 	attachContext = true,
     execution?: Execution,
+	inheritedHelperTarget?: Awaited<ReturnType<typeof readResponseContext>>,
 ): Promise<ActionResult> {
 	const handler = HANDLERS[action];
 	if (!handler) {
@@ -14869,13 +15053,15 @@ export async function runAction(
 	}
 
 	execution?.signal.throwIfAborted();
-	const { _target, _execution, _mutation, _scope, _edit, _displayOnly, _resumeBaseline, _expectedObserved, _resumeFrom, _taskParent, ...args } = asPayload(payload);
+	const { _target, _execution, _mutation, _scope, _edit, _displayOnly, _resumeBaseline, _expectedObserved, _resumeFrom, _taskParent, _taskRevision, ...args } = asPayload(payload);
+	let helperTarget = inheritedHelperTarget;
 	if (_target !== undefined) {
 		if (!_target || typeof _target !== 'object' || Array.isArray(_target)) {
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, '_target must be an object.');
 		}
 		const expected = _target as Record<string, unknown>;
 		const current = await readResponseContext();
+		helperTarget = current;
 		for (const key of ['projectUuid', 'documentUuid'] as const) {
 			if (expected[key] !== undefined && (typeof expected[key] !== 'string' || !expected[key] || expected[key] !== current[key])) {
 				throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `Target ${key} differs from the current document; no action executed.`);
@@ -14911,7 +15097,8 @@ export async function runAction(
 		} catch (error) { checkError = describeThrown(error); }
 	}
 	const observationBefore = sceneObservation();
-	const result = action === 'debug.batch' ? await debugBatch(args, execution, reads) : await handler(args, execution);
+	const result = action === 'debug.batch' ? await debugBatch(args, execution, reads, helperTarget)
+		: action === 'debug.exec_js' ? await debugExecJs(args, execution, helperTarget) : await handler(args, execution);
 	if (autoCheck && (beforeTarget?.documentType === 'schematic' || action.startsWith('schematic.') || action === 'debug.batch' || action === 'debug.exec_js')) {
 		let checks: RuleResult[] = [];
 		if (beforeFacts) {

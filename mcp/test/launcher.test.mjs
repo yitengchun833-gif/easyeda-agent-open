@@ -32,7 +32,7 @@ test('shared daemon survives either MCP client closing; explicit stop owns shutd
   assert.ok(runtime.inputSchema.properties.sourceWindow);
     const result = await client.callTool({ name: 'easyeda_health', arguments: {} });
     assert.equal(result.isError, false);
-    assert.equal(result.structuredContent.version, 'v1.8.1-open.9.4');
+    assert.equal(result.structuredContent.version, 'v1.8.1-open.9.5');
     assert.equal(result.structuredContent.windows.length, 0, 'no real editor connected to the test port');
     const pid = result.structuredContent.pid;
     await client.close();

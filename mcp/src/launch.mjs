@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { daemonURL } from './open.mjs';
+
+const expectedVersion = `v${JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version}`;
 
 process.env.EASYEDA_BIN = process.env.EASYEDA_OPEN_BIN || fileURLToPath(new URL('../../bin/easyeda.exe', import.meta.url));
 process.env.EASYEDA_RUNTIME_DIR ||= fileURLToPath(new URL('../../.runtime', import.meta.url));
@@ -12,7 +14,7 @@ async function health() {
   try {
     const response = await fetch(`${daemonURL}/health`, { signal: AbortSignal.timeout(1000) });
     const data = await response.json();
-    if (!response.ok || data.service !== 'easyeda-agent' || data.version !== 'v1.8.1-open.9.4') throw new Error(`Port is occupied by daemon ${data.version ?? 'unknown'}; expected v1.8.1-open.9.4. No process was replaced.`);
+    if (!response.ok || data.service !== 'easyeda-agent' || data.version !== expectedVersion) throw new Error(`Port is occupied by daemon ${data.version ?? 'unknown'}; expected ${expectedVersion}. No process was replaced.`);
     return true;
   } catch (error) {
     if (error.cause?.code === 'ECONNREFUSED') return false;

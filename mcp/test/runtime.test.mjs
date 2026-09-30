@@ -20,7 +20,7 @@ test('task intent is forwarded once with target and compare revision',async t=>{
   let actual;
   const server=createServer(async(req,res)=>{let body='';for await(const part of req)body+=part;actual=JSON.parse(body);res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,persisted:true,taskIsIntent:true}))});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
-  const input={operation:'task_update',window:'w',target:{projectUuid:'p',documentUuid:'d'},expectedRevision:3,task:{goal:'Move R2 label',primitiveIds:['r2'],remaining:['Inspect local result']}};
+  const input={operation:'task_replace',window:'w',target:{projectUuid:'p',documentUuid:'d'},expectedRevision:3,task:{goal:'Move R2 label',primitiveIds:['r2'],remaining:['Inspect local result']}};
   const result=await runtimeRequest(input,`http://127.0.0.1:${server.address().port}`);
   assert.equal(result.isError,false);assert.deepEqual(actual,input);
 });

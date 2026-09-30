@@ -57,6 +57,12 @@ func validateLibGeometry(p *powerLayoutPlan) error {
 			}
 		}
 	}
+	// Fixed, visually reviewed placements have no inferred label reservation.
+	// validatePowerLayout already checks every supplied text box against bodies,
+	// text and wires; body, pin and stem checks above still apply in full.
+	if p.measuredTextOnly {
+		return nil
+	}
 	for i, c := range p.Placements {
 		for _, other := range p.Placements[:i] {
 			for _, label := range libPartLabelBoxes(c) {

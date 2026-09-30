@@ -64,6 +64,12 @@ func (s *runtimeStore) adoptHistory(current, old *runtimeDocument, instance stri
 // Explicit recovery selects historical context, not an action to execute.
 // It cannot overwrite live work, cross document identities or restore proofs.
 func (s *Server) restoreRuntimeTask(w http.ResponseWriter, window, source string, target *protocol.Context, generation uint64) {
+	release, acquired := s.acquireExclusive("runtime-task-window", window)
+	if !acquired {
+		http.Error(w, "Task or queue control is changing; inspect current state before restoring", http.StatusConflict)
+		return
+	}
+	defer release()
 	s.runtime.mu.Lock()
 	current := s.runtime.documents[s.runtime.current[window]]
 	var old *runtimeDocument

@@ -3,7 +3,7 @@
   "uuid": "de2aa2ac3bd74c00b6701e3adf3ee723",
   "displayName": "EasyEDA Agent Open",
   "description": "连接 Codex 等 AI Agent，通过官方 API 读取、查看和修改嘉立创 EDA 原理图与 PCB，支持批量操作、局部返工与规则核对。",
-  "version": "1.8.1-open.9.4",
+  "version": "1.8.1-open.9.5",
   "publisher": "yitengchun833-gif",
   "engines": {
     "eda": "~3.2.0"

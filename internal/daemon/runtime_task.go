@@ -174,6 +174,7 @@ type runtimeDispatchProof struct {
 	Observed         any
 	ParentID         string
 	FinishGeneration *uint64
+	TaskRevision     *uint64
 }
 
 func (s *Server) runtimeDispatch(w http.ResponseWriter, r *http.Request, req protocol.Request, baseline ...any) {
@@ -236,6 +237,10 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Operation == "task_update" {
 		s.updateRuntimeTask(w, input.Window, input.Target, input.ExpectedRevision, input.Task)
+		return
+	}
+	if input.Operation == "task_replace" {
+		s.replaceRuntimeTask(w, r, input.Window, input.Target, input.ExpectedRevision, input.Task)
 		return
 	}
 	if input.Operation == "restore" {
@@ -319,7 +324,7 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 		observed := runtimeClone(receipt.ObservedFacts)
 		scope := runtimeClone(checks["scope"])
 		s.runtime.mu.Unlock()
-		s.runtimeDispatch(w, r, protocol.Request{Envelope: protocol.Envelope{ID: s.nextRequestID(), WindowID: input.Window}, Action: saveActionForDocType(ctx.DocumentType), Payload: map[string]any{"_target": map[string]any{"projectUuid": ctx.ProjectUUID, "documentUuid": ctx.DocumentUUID}, "_edit": map[string]any{"primitiveIds": scope}}}, runtimeDispatchProof{ParentID: input.RequestID, FinishGeneration: &expectedGeneration, Observed: observed})
+		s.runtimeDispatch(w, r, protocol.Request{Envelope: protocol.Envelope{ID: s.nextRequestID(), WindowID: input.Window}, Action: saveActionForDocType(ctx.DocumentType), Payload: map[string]any{"_target": map[string]any{"projectUuid": ctx.ProjectUUID, "documentUuid": ctx.DocumentUUID}, "_edit": map[string]any{"primitiveIds": scope}}}, runtimeDispatchProof{ParentID: input.RequestID, FinishGeneration: &expectedGeneration, Observed: observed, TaskRevision: &receipt.TaskRevision})
 		return
 	}
 	if input.Operation != "resume" && input.Operation != "retry" {
@@ -393,7 +398,7 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 	}
 	s.runtime.mu.Lock()
 	current := s.runtime.documents[s.runtime.current[input.Window]]
-	if current != d || current.Generation != receipt.Generation || receipt.Status != "resuming" {
+	if current != d || current.Generation != receipt.Generation || receipt.Status != "resuming" || (current.Task != nil && current.Task.Revision != receipt.TaskRevision) {
 		receipt.Status = "needs_readback"
 		s.runtime.mu.Unlock()
 		http.Error(w, "Task changed while resuming; no continuation sent", 409)
@@ -404,7 +409,7 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 	receipt.Status = "continued"
 	receipt.Progress = map[string]any{"continuationRequestId": saved.ID, "completed": completed, "total": len(steps)}
 	s.runtime.mu.Unlock()
-	s.runtimeDispatch(w, r, saved, runtimeDispatchProof{Baseline: baseline, Observed: observed, ParentID: input.RequestID})
+	s.runtimeDispatch(w, r, saved, runtimeDispatchProof{Baseline: baseline, Observed: observed, ParentID: input.RequestID, TaskRevision: &receipt.TaskRevision})
 }
 
 type runtimeResponseWriter struct {

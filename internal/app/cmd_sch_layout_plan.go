@@ -12,8 +12,8 @@ import (
 )
 
 func newSchLayoutPlanCmd(stdout io.Writer) *cobra.Command {
-	var from, out, report string
-	var zones, unbounded, lib, netLabels bool
+	var from, out, report, validateWires string
+	var zones, unbounded, lib, netLabels, routeOnly bool
 	c := &cobra.Command{Use: "layout-plan", Short: "Plan a measured component set offline without Lib or project metadata", Long: `Compute local placements, wires, markers and score from schemaVersion:1,
 coreComponentId, components:[{id,measurement,pinStates?,allowedRotations?}], netPolicies keyed by
 net NAME, optional attachments and maxCandidates. measurement contains explicit
@@ -59,6 +59,14 @@ Optional routing:{maxExpandedNodes?:200000,maxReroutes?:4} controls the shared
 per-zone 5-raw directional routing budget. Values are respectively 1..5000000
 and 1..32. Straight/simple routes remain fast paths; maze routing expands the
 content envelope by 40,80,160,320 raw without resetting the node budget.
+With --route-only: keep all measured placements and pin coordinates fixed and
+route only nets whose policy is direct. Other known nets remain pin obstacles.
+coreComponentId may be omitted. No markers, frames, placement optimization or
+attachments are added; output flags is empty. Add --validate-wires routes.json
+to validate existing {routes:[{net,points:[[x,y],...]}]} without generating wires.
+This checks all supplied paths and requires direct nets to be physically joined.
+Only measured textBboxes constrain fixed placements; missing text is not inferred.
+The input must describe every relevant component/pin obstacle. No EDA write/save.
 With --zones: input schemaVersion, components, netPolicies, zones, optional
 attachments/maxCandidates/spacing/optimization/routing. Optional spacing is the shared zone inner,
 page and inter-zone minimum clearance (>=10 raw, 5-raw grid), including stroke
@@ -83,13 +91,22 @@ Example:
 		if err := schLayoutReportPaths(from, out, report); err != nil {
 			return err
 		}
+		if validateWires != "" {
+			if !routeOnly {
+				return fmt.Errorf("--validate-wires requires --route-only")
+			}
+			if err := schLayoutReportPaths(validateWires, out, report); err != nil {
+				return err
+			}
+		}
 		phase := "read"
 		var source []byte
 		var result any
 		mode := ""
+		wireSourceSHA256 := ""
 		defer func() {
 			if report != "" {
-				if err := writeSchLayoutReport(report, source, phase, zones || lib, result, runErr, mode); err != nil {
+				if err := writeSchLayoutReport(report, source, phase, zones || lib, result, runErr, mode, wireSourceSHA256); err != nil {
 					if runErr != nil {
 						runErr = fmt.Errorf("%w; diagnostic report could not be written: %w", runErr, err)
 					} else {
@@ -104,7 +121,28 @@ Example:
 		}
 		source = raw
 		phase = "decode"
-		if lib {
+		if routeOnly {
+			mode = "route-only"
+			var input SchematicLayoutInput
+			input, err = decodeSchematicRouteInput(raw)
+			if err == nil && validateWires != "" {
+				mode, phase = "route-validate", "read"
+				var wireRaw []byte
+				wireRaw, err = os.ReadFile(validateWires)
+				if err == nil {
+					wireSourceSHA256, phase = sha256Hex(wireRaw), "decode"
+					var wires []SchematicWire
+					wires, err = decodeSchematicRouteWires(wireRaw)
+					if err == nil {
+						phase = "validate"
+						result, err = ValidateSchematicRoutes(input, wires)
+					}
+				}
+			} else if err == nil {
+				phase = "solve"
+				result, err = PlanSchematicRoutes(input)
+			}
+		} else if lib {
 			var input libLayoutSource
 			input, err = decodeLibLayout(raw)
 			if unbounded {
@@ -179,6 +217,11 @@ Example:
 	c.Flags().BoolVar(&unbounded, "unbounded", false, "expand components into routing columns without region/paper limits; allow X crossings, retain electrical checks")
 	c.Flags().BoolVar(&lib, "lib", false, "read canonical lib-layout input and emit local zones without sheet packing; retains identity and connectivity checks")
 	c.Flags().BoolVar(&netLabels, "net-labels", false, "explicitly replace inter-component direct wires with same-net labels and real pin leads; unbounded row layout")
+	c.Flags().BoolVar(&routeOnly, "route-only", false, "route direct nets at fixed measured placements, without markers, frames or EDA writes")
+	c.Flags().StringVar(&validateWires, "validate-wires", "", "with --route-only, validate supplied routes JSON without searching or changing paths")
+	for _, other := range []string{"lib", "zones", "unbounded", "net-labels"} {
+		c.MarkFlagsMutuallyExclusive("route-only", other)
+	}
 	c.MarkFlagsMutuallyExclusive("lib", "zones")
 	c.MarkFlagsMutuallyExclusive("unbounded", "net-labels")
 	c.Flags().StringVar(&out, "out", "", "write local geometry only after validation; defaults to stdout")

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -225,6 +226,15 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	req.CreatedAt = time.Now().UTC()
 	req.WindowID = target.id()
+	operation := runtimeString(req.Payload["operation"])
+	if req.Action == "debug.control" && operation != "" && operation != "status" && r.Context().Value(runtimeReplaceControlKey{}) != true {
+		release, acquired := s.acquireExclusive("runtime-task-window", req.WindowID)
+		if !acquired {
+			writeActionResponse(w, r, http.StatusConflict, errorResponse(req.ID, "RUNTIME_STATE_CHANGED", "task or queue control is changing", "inspect state before sending another queue control"))
+			return
+		}
+		defer release()
+	}
 	if protocol.UsesNativeNetLabel(req.Action, req.Payload) {
 		if err := protocol.NativeNetLabelSupport(target.snapshot().EasyEDAVersion); err != nil {
 			resp := errorResponse(req.ID, "HOST_API_UNSUPPORTED", "native net_label is unavailable on this host", err.Error())
@@ -518,7 +528,8 @@ func (s *Server) systemHealthResponse(id string) protocol.Response {
 }
 
 func (s *Server) nextRequestID() string {
-	return fmt.Sprintf("req_%d", s.reqSeq.Add(1))
+	// Connector duplicate history outlives a daemon process and its counters.
+	return "req_" + rand.Text()
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -180,39 +180,61 @@ func (s *runtimeStore) checkpointLoop(ctx context.Context) {
 }
 
 func (s *Server) updateRuntimeTask(w http.ResponseWriter, window string, target *protocol.Context, expected *uint64, task *runtimeTask) {
-	if target == nil || target.ProjectUUID == "" || target.DocumentUUID == "" || expected == nil || task == nil || strings.TrimSpace(task.Goal) == "" || len(task.Goal) > 2000 || len(task.Note) > 4000 || len(task.PrimitiveIDs) > 500 || len(task.Remaining) > 32 {
-		http.Error(w, "task_update needs explicit target, expectedRevision and bounded task goal/scope/remaining", 400)
+	release, acquired := s.acquireExclusive("runtime-task-window", window)
+	if !acquired {
+		http.Error(w, "Task or queue control is changing; inspect current state before updating", 409)
 		return
+	}
+	defer release()
+	s.commitRuntimeTask(w, window, target, expected, task, nil)
+}
+
+func validateRuntimeTask(target *protocol.Context, expected *uint64, task *runtimeTask) string {
+	if target == nil || target.ProjectUUID == "" || target.DocumentUUID == "" || expected == nil || task == nil || strings.TrimSpace(task.Goal) == "" || len(task.Goal) > 2000 || len(task.Note) > 4000 || len(task.PrimitiveIDs) > 500 || len(task.Remaining) > 32 {
+		return "Task change needs explicit target, expectedRevision and bounded task goal/scope/remaining"
 	}
 	for _, id := range task.PrimitiveIDs {
 		if id == "" || len(id) > 256 {
-			http.Error(w, "Invalid task primitive ID", 400)
-			return
+			return "Invalid task primitive ID"
 		}
 	}
 	for _, step := range task.Remaining {
 		if strings.TrimSpace(step) == "" || len(step) > 1000 {
-			http.Error(w, "Invalid remaining step", 400)
-			return
+			return "Invalid remaining step"
 		}
 	}
-	s.runtime.mu.Lock()
-	d := s.runtime.documents[s.runtime.current[window]]
+	return ""
+}
+
+// Caller holds the existing per-window task slot; runtime.mu owns the CAS.
+func (s *runtimeStore) taskTarget(window string, target *protocol.Context, expected uint64) (*runtimeDocument, error) {
+	d := s.documents[s.current[window]]
 	if d == nil || d.Restored || d.Context.ProjectUUID != target.ProjectUUID || d.Context.DocumentUUID != target.DocumentUUID {
-		s.runtime.mu.Unlock()
-		http.Error(w, "Read the current target identity first", 409)
-		return
+		return nil, fmt.Errorf("Read the current target identity first")
 	}
 	revision := uint64(0)
 	if d.Task != nil {
 		revision = d.Task.Revision
 	}
-	if *expected != revision {
-		s.runtime.mu.Unlock()
-		http.Error(w, "Task revision changed; read current task before updating", 409)
+	if expected != revision {
+		return nil, fmt.Errorf("Task revision changed; read current task before updating")
+	}
+	return d, nil
+}
+
+func (s *Server) commitRuntimeTask(w http.ResponseWriter, window string, target *protocol.Context, expected *uint64, task *runtimeTask, extra map[string]any) {
+	if invalid := validateRuntimeTask(target, expected, task); invalid != "" {
+		http.Error(w, invalid, 400)
 		return
 	}
-	task.Revision, task.UpdatedAt = revision+1, time.Now().UTC()
+	s.runtime.mu.Lock()
+	d, targetErr := s.runtime.taskTarget(window, target, *expected)
+	if targetErr != nil {
+		s.runtime.mu.Unlock()
+		http.Error(w, targetErr.Error(), 409)
+		return
+	}
+	task.Revision, task.UpdatedAt = *expected+1, time.Now().UTC()
 	d.Task = task
 	s.runtime.emit("task_updated", map[string]any{"windowId": window, "revision": task.Revision})
 	result := runtimeClone(task)
@@ -220,6 +242,12 @@ func (s *Server) updateRuntimeTask(w http.ResponseWriter, window string, target 
 	// Only explicit goal changes wait for durability; ordinary drawing does not.
 	err := s.runtime.flushCheckpoint()
 	response := map[string]any{"ok": true, "task": result, "edaReads": 0, "taskIsIntent": true, "persisted": err == nil && s.runtime.checkpointPath != ""}
+	for key, value := range extra {
+		response[key] = value
+	}
+	if extra != nil {
+		delete(response, "edaReads") // Replacement controls perform native target identity reads.
+	}
 	if err != nil {
 		response["persistenceError"] = err.Error()
 	}
