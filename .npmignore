@@ -10,9 +10,8 @@ bin/
 dist/
 logs/
 tmp/
-chat/
+docs/archive/
 videos/
-training/
 examples/
 *.log
 .DS_Store

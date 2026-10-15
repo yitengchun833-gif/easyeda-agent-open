@@ -3,7 +3,7 @@ package app
 // cmd_sch_block_apply_run.go — the I/O side of `sch block-apply` (the planner in
 // cmd_sch_block_apply.go is pure).
 //
-// Pipeline, matching the vertical slice in chat/2026-07-16-blocks-data-model.md:
+// Pipeline, matching the vertical slice in docs/archive/discussions/2026-07-16-blocks-data-model.md:
 //   1. load the block (go:embed, offline)
 //   2. resolve parts → standard-parts.json (the role-id → deviceUuid bridge)
 //   3. read the page's existing designators so a second instance never collides

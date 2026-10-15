@@ -2,7 +2,7 @@ package app
 
 // cmd_sch_block_apply.go — the PURE planner for `sch block-apply`.
 //
-// This is the vertical-slice experiment from chat/2026-07-16-blocks-data-model.md:
+// This is the vertical-slice experiment from docs/archive/discussions/2026-07-16-blocks-data-model.md:
 // blocks have proven useful as a structured KNOWLEDGE base, but nothing yet
 // proves the JSON is worth maintaining as an executable IR. The only way to find
 // out is to actually execute one: load a block → place its parts → wire its

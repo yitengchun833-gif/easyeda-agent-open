@@ -2,6 +2,8 @@
 
 本目录是当前 Open 插件的唯一日常开发入口，已建立独立的本机 Git 仓库。
 
+日常打开项目根`EasyEDA-开发与版本.code-workspace`，只看核心代码和两类Skill；需要完整目录、安装副本或历史包时用`EasyEDA-完整维护.code-workspace`。默认隐藏的目录仍在磁盘上，其中API参考、兼容Skill资源和发布证据有实际引用，不可按“看不到”或“像资料”删除。
+
 - 分支：`codex/current-source`。
 - 初始源码快照标签：`local/source-snapshot-20261015`，仅表示本机开发状态留档，不是发布或实机全部通过。
 - 此仓库没有新增远程地址，本轮不推送。上游出处、原始 LICENSE、NOTICE 和 README-UPSTREAM.md 保留。
@@ -33,3 +35,5 @@ Git 提交不会安装插件。先开发、检查和生成包，再在授权的�
 旧 `.local/easyeda-agent-open` 保留历史和已发布 PCB 复查的来源，不移动、不合并，也不作为 Open 主链日常修改入口。PCB 专项继续暂缓。
 
 运行历史、安装包、依赖目录及工程数据不进入本源码 Git。目录和版本总览见项目 `docs/项目目录与版本.md`。
+
+历史讨论和训练资料已原样归档到[docs/archive](docs/archive/README.md)，引用入口已调整。重复内容核对没有发现可无条件合并的Skill/参考文档；知识UI构建源与iframe产物、示例与测试夹具各有用途，继续保留。

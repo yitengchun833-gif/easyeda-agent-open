@@ -33,7 +33,7 @@ develop + regression-test the connector against a LIVE editor, hands-free:
 4. **Probe → file → fix → merge → re-verify** — run a real design task as the
    probe (the default regression is the [minimal blink board](test-case-esp32-blink.md);
    the four-layer `esp32MiniRequire.md` board is an extended case;
-   the copy-a-golden-board harness is `training/copy-check.py`), file each gap as
+   the copy-a-golden-board harness is `docs/archive/training/copy-check.py`), file each gap as
    a GitHub issue labeled `ready-for-agent`, let ClawFlow implement + open a PR,
    then **you merge and live-verify** (the operator can't do runtime acceptance —
    see the advisory-loop section at the bottom). The rolling gap/roadmap ledger is
