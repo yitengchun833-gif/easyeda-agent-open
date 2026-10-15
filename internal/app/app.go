@@ -1,0 +1,238 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+
+	"github.com/spf13/cobra"
+	"github.com/zhoushoujianwork/easyeda-agent/internal/protocol"
+	"github.com/zhoushoujianwork/easyeda-agent/internal/version"
+)
+
+// Run is the main entry point called by main.go.
+// It returns 0 on success, 1 on any error.
+func Run(args []string, stdout, stderr io.Writer) int {
+	code, _ := runCommand(args, stdout, stderr)
+	return code
+}
+
+// Keep typed failures available to in-process callers such as Apply. Converting
+// them to an exit code alone would lose mandatory partial-write stop semantics.
+func runCommand(args []string, stdout, stderr io.Writer) (int, error) {
+	root := newRootCmd(stdout, stderr)
+	root.SetArgs(args)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	if err := root.ExecuteContext(context.Background()); err != nil {
+		// A command that wants a specific exit code (e.g. `update --check
+		// --exit-code` signalling "updates available") has already printed its
+		// report — surface the code only.
+		var ec exitCodeError
+		if errors.As(err, &ec) {
+			return ec.code, err
+		}
+		// errActionFailed / errQuiet mean the response was already printed to
+		// stdout; no further message needed. All other errors get printed here.
+		if !errors.Is(err, errActionFailed) && !errors.Is(err, errQuiet) {
+			fmt.Fprintln(stderr, err)
+		}
+		return 1, err
+	}
+	return 0, nil
+}
+
+// errQuiet fails the command without printing anything extra — for commands
+// that already emitted a machine-readable report on stdout.
+var errQuiet = errors.New("command failed (details already reported)")
+
+// exitCodeError carries a specific process exit code out of a RunE, for
+// gate-able commands whose "non-zero" is a verdict rather than a failure.
+type exitCodeError struct{ code int }
+
+func (e exitCodeError) Error() string { return fmt.Sprintf("exit status %d", e.code) }
+
+func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
+	cfg := &appConfig{
+		host:  defaultHost,
+		ports: fmt.Sprintf("%d-%d", defaultPortStart, defaultPortEnd),
+	}
+
+	root := &cobra.Command{
+		Use:   "easyeda",
+		Short: version.Name + " — AI-native EasyEDA Pro automation layer",
+		// SilenceUsage: don't dump usage on every error.
+		// SilenceErrors: we handle printing ourselves so we can suppress
+		// errActionFailed without also suppressing "unknown command" etc.
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		// Setting Version enables `--version`; pre-registering the flag below
+		// adds the `-v` shorthand. Same output as the `version` subcommand.
+		Version: version.Version,
+	}
+	root.SetVersionTemplate(version.Name + " {{.Version}}\n")
+	root.Flags().BoolP("version", "v", false, "print version and exit")
+
+	root.PersistentFlags().StringVar(&cfg.host, "host", defaultHost,
+		"daemon host")
+	root.PersistentFlags().StringVar(&cfg.ports, "ports",
+		fmt.Sprintf("%d-%d", defaultPortStart, defaultPortEnd),
+		"daemon port range (start-end)")
+	root.PersistentFlags().StringVar(&cfg.project, "project", "",
+		"route by project name/uuid instead of --window (survives windowId churn)")
+	root.PersistentFlags().BoolVar(&cfg.skipVersionCheck, "skip-version-check", false,
+		"deprecated compatibility option; version differences are diagnostic and no longer block actions")
+	// Compatibility surface for scripts written while stale reads were a hard
+	// refusal. The daemon now returns the read with staleRisk evidence instead.
+	root.PersistentFlags().StringVar(&cfg.forceStaleRead, "force-stale-read", "",
+		"deprecated compatibility option; stale PCB reads now continue with staleRisk and authoritative workflows still save, reload, then read back")
+	root.PersistentFlags().StringVar(&cfg.doc, "doc", "",
+		"pin every mutating action to this schematic page / PCB (uuid or name): the CLI switches to it and confirms via live document.current before editing, refusing rather than land the edit on whatever page is foreground — removes the doc-switch race")
+
+	root.AddCommand(
+		newVersionCmd(stdout),
+		newActionsCmd(stdout, stderr),
+		newNotifyCmd(cfg, stdout, stderr),
+		newCallCmd(cfg, stdout, stderr),
+		newApplyCmd(cfg, stdout, stderr),
+		newDaemonCmd(cfg, stdout, stderr),
+		newHealthAliasCmd(cfg, stdout, stderr),
+		newAuditCmd(stdout, stderr),
+		newProjectCmd(cfg, stdout, stderr),
+		newDocCmd(cfg, stdout, stderr),
+		newWebCmd(cfg, stdout),
+		newSchCmd(cfg, stdout, stderr),
+		newPcbCmd(cfg, stdout, stderr),
+		newWorkflowCmd(cfg, stdout, stderr),
+		newSpecCmd(cfg, stdout, stderr),
+		newBoardCmd(cfg, stdout, stderr),
+		newViewCmd(cfg, stdout, stderr),
+		newBomCmd(cfg, stdout, stderr),
+		newLibCmd(cfg, stdout, stderr),
+		newBlocksCmd(stdout, stderr),
+		newApiCmd(stdout, stderr),
+		newDebugCmd(cfg, stdout, stderr),
+		newSkillCmd(stdout, stderr),
+		newUpdateCmd(cfg, stdout, stderr),
+	)
+	installMissingSubcommandErrors(root)
+
+	return root
+}
+
+// Cobra treats an unhandled argument after a non-runnable command group as a
+// request for help and exits successfully. A misspelled subcommand must fail so
+// shell scripts cannot mistake an unexecuted operation for a completed one.
+func installMissingSubcommandErrors(root *cobra.Command) {
+	var visit func(*cobra.Command)
+	visit = func(command *cobra.Command) {
+		if len(command.Commands()) > 0 && command.Run == nil && command.RunE == nil {
+			command.RunE = func(cmd *cobra.Command, args []string) error {
+				if len(args) > 0 {
+					return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
+				}
+				return cmd.Help()
+			}
+		}
+		for _, child := range command.Commands() {
+			visit(child)
+		}
+	}
+	for _, child := range root.Commands() {
+		visit(child)
+	}
+}
+
+// ── version ───────────────────────────────────────────────────────────────
+
+func newVersionCmd(stdout io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintf(stdout, "%s %s\n", version.Name, version.Version)
+			return nil
+		},
+	}
+}
+
+// ── notify ────────────────────────────────────────────────────────────────
+
+func newNotifyCmd(cfg *appConfig, stdout, stderr io.Writer) *cobra.Command {
+	var window, message, typ string
+	var duration float64
+	c := &cobra.Command{
+		Use:   "notify",
+		Short: "Show a toast inside the EasyEDA window (design-flow step notification)",
+		Long: `Surface a non-blocking toast INSIDE the EasyEDA window. The design flow calls this
+as each stage passes so the user can watch progress live — "完成 X,下一步 Y".
+type ∈ info | success | warn | error | question.`,
+		Args: cobra.NoArgs,
+		Example: `  easyeda notify --message "完成 布局,下一步 布线" --type success
+  easyeda notify --message "DRC 未通过,需修复" --type error --duration 5`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{"message": message}
+			if typ != "" {
+				payload["type"] = typ
+			}
+			if cmd.Flags().Changed("duration") {
+				payload["duration"] = duration
+			}
+			return dispatch(cfg, "system.notify", window, payload, stdout, stderr)
+		},
+	}
+	c.Flags().StringVar(&message, "message", "", "toast text (required)")
+	c.Flags().StringVar(&typ, "type", "info", "info | success | warn | error | question")
+	c.Flags().Float64Var(&duration, "duration", 3, "seconds to show")
+	c.Flags().StringVar(&window, "window", "", "EasyEDA window ID (else use --project)")
+	_ = c.MarkFlagRequired("message")
+	return c
+}
+
+// ── actions ───────────────────────────────────────────────────────────────
+
+func newActionsCmd(stdout, _ io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "actions",
+		Short: "Print the typed action catalog as JSON",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(protocol.AllActions())
+		},
+	}
+}
+
+// ── call (generic escape hatch) ───────────────────────────────────────────
+
+func newCallCmd(cfg *appConfig, stdout, stderr io.Writer) *cobra.Command {
+	var window, payload string
+
+	cmd := &cobra.Command{
+		Use:   "call <action>",
+		Short: "Generic escape hatch: call any typed action directly",
+		Args:  cobra.ExactArgs(1),
+		Example: `  easyeda call system.health
+  easyeda call schematic.components.list --window win-1
+  easyeda call schematic.component.place --payload '{"libraryUuid":"...","uuid":"...","x":100,"y":200}'`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			action := args[0]
+
+			var payloadMap map[string]any
+			if payload != "" {
+				if err := json.Unmarshal([]byte(payload), &payloadMap); err != nil {
+					return fmt.Errorf("invalid --payload json: %w", err)
+				}
+			}
+
+			return dispatch(cfg, action, window, payloadMap, stdout, stderr)
+		},
+	}
+	cmd.Flags().StringVar(&window, "window", "", "EasyEDA window ID")
+	cmd.Flags().StringVar(&payload, "payload", "", "action payload as a JSON object")
+	return cmd
+}

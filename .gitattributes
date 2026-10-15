@@ -1,0 +1,2 @@
+# Preserve the exact existing source bytes; snapshots must not rewrite release hashes.
+* -text

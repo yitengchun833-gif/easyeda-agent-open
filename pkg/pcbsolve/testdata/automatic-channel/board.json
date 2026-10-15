@@ -1,0 +1,16 @@
+{
+  "schemaVersion":1,"units":"mil","semanticHash":"automatic-channel-v1",
+  "outline":{"bbox":{"minX":0,"minY":0,"maxX":300,"maxY":220},"points":[[0,0],[300,0],[300,220],[0,220]],"source":"polygon"},
+  "stackup":{"copper":[{"id":1,"name":"TOP","role":"signal"},{"id":2,"name":"BOTTOM","role":"signal"}]},
+  "rules":{"clearance":5,"trackTrack":5,"copperToEdge":5,"trackWidthMinimum":4,"viaDiameter":16,"viaDrill":8,"source":"fixture"},
+  "components":[
+    {"ref":"U1","side":1,"anchor":[30,100],"locked":true,"bbox":{"minX":20,"minY":65,"maxX":40,"maxY":135},"pads":[{"padNumber":"1","net":"A","layer":1,"center":[30,80],"width":10,"height":10,"shape":"rect"},{"padNumber":"2","net":"B","layer":1,"center":[30,120],"width":10,"height":10,"shape":"rect"}]},
+    {"ref":"J1","side":1,"anchor":[270,100],"locked":true,"bbox":{"minX":260,"minY":65,"maxX":280,"maxY":135},"pads":[{"padNumber":"1","net":"A","layer":1,"center":[270,80],"width":10,"height":10,"shape":"rect"},{"padNumber":"2","net":"B","layer":1,"center":[270,120],"width":10,"height":10,"shape":"rect"}]},
+    {"ref":"M1","side":1,"anchor":[150,125],"bbox":{"minX":140,"minY":110,"maxX":160,"maxY":140},"pads":[{"padNumber":"1","net":"BLOCK","layer":1,"center":[150,125],"width":20,"height":30,"shape":"rect"}]},
+    {"ref":"C1","side":1,"anchor":[190,125],"bbox":{"minX":180,"minY":115,"maxX":200,"maxY":135},"pads":[{"padNumber":"1","net":"LOCAL","layer":1,"center":[190,125],"width":10,"height":10,"shape":"rect"}]}
+  ],
+  "regions":[
+    {"id":"lower-wall","kind":"rule","layer":1,"rules":["no-wires"],"points":[[140,0],[160,0],[160,90],[140,90]]},
+    {"id":"upper-wall","kind":"rule","layer":1,"rules":["no-wires"],"points":[[140,140],[160,140],[160,220],[140,220]]}
+  ]
+}

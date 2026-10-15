@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "netPolicies": { "SIGNAL": "direct" },
+  "routing": { "maxExpandedNodes": 200000, "maxReroutes": 1 },
+  "components": [
+    {
+      "id": "left",
+      "measurement": {
+        "designator": "J1", "x": -10, "y": 0, "rotation": 0, "mirror": false,
+        "bbox": { "minX": -20, "minY": -10, "maxX": 0, "maxY": 10 },
+        "pins": [{ "number": "1", "net": "SIGNAL", "x": 5, "y": 0, "rotation": 0 }]
+      }
+    },
+    {
+      "id": "right",
+      "measurement": {
+        "designator": "J2", "x": 210, "y": 0, "rotation": 0, "mirror": false,
+        "bbox": { "minX": 200, "minY": -10, "maxX": 220, "maxY": 10 },
+        "pins": [{ "number": "1", "net": "SIGNAL", "x": 195, "y": 0, "rotation": 180 }]
+      }
+    },
+    {
+      "id": "obstacle", "pinStates": { "1": "nc" },
+      "measurement": {
+        "designator": "U1", "x": 100, "y": 0, "rotation": 0, "mirror": false,
+        "bbox": { "minX": 70, "minY": -100, "maxX": 130, "maxY": 100 },
+        "pins": [{ "number": "1", "net": "", "x": 100, "y": 105, "rotation": 90 }]
+      }
+    }
+  ]
+}

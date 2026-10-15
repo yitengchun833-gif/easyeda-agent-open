@@ -1,0 +1,1170 @@
+package app
+
+// cmd_sch_block_apply.go — the PURE planner for `sch block-apply`.
+//
+// This is the vertical-slice experiment from chat/2026-07-16-blocks-data-model.md:
+// blocks have proven useful as a structured KNOWLEDGE base, but nothing yet
+// proves the JSON is worth maintaining as an executable IR. The only way to find
+// out is to actually execute one: load a block → place its parts → wire its
+// internal_nets → bind its ports → check → emit a traceable instance manifest.
+//
+// Scope is deliberately minimal (per that doc): parts / internal_nets / ports
+// only. pcb_layout, placement, signals and silk are NOT consumed here — and the
+// manifest says so explicitly rather than implying the whole block was honoured.
+//
+// The planner is PURE and deterministic: same block + parts library + scene
+// always yields the same designators, coordinates and nets, so it is unit
+// testable with no connector. The I/O side lives in cmd_sch_block_apply_run.go.
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/zhoushoujianwork/easyeda-agent/internal/blocks"
+)
+
+// ── the role-id → device bridge ─────────────────────────────────────────────
+
+// bapDevice is the standard-parts.json entry a block's parts[role].part points
+// at. This is the bridge internal/blocks/placement.go documents as missing: a
+// block declares an internal role-id ("res.1k_0402"), and only this table turns
+// it into something placeable ({libraryUuid, deviceUuid}).
+type bapDevice struct {
+	LibraryUUID string
+	DeviceUUID  string
+	MPN         string
+	LCSC        string
+	Value       string
+	Basic       bool
+}
+
+// ── designator prefixes ─────────────────────────────────────────────────────
+
+// bapPrefixes maps a part-key NAMESPACE (the segment before the dot in
+// "res.1k_0402") to a reference-designator prefix.
+//
+// Provenance matters here, so it is recorded rather than asserted. Six prefixes
+// are EVIDENCED — they are what this project's own validated boards actually
+// used (examples/esp32-mini playbooks): C, R, J, U, SW, LED. The rest follow the
+// standard IEEE-315 / IPC reference-designator classes. They are marked below so
+// a future reader knows which ones are backed by a real board and which are
+// convention awaiting first use.
+//
+// An UNKNOWN namespace is a hard error, never a guessed prefix: silently filing
+// a new part class under the wrong designator would corrupt a board in a way
+// that is tedious to unpick.
+var bapPrefixes = map[string]string{
+	// evidenced on real validated boards (examples/esp32-mini)
+	"cap":  "C",
+	"res":  "R",
+	"conn": "J",
+	"ic":   "U",
+	"mcu":  "U",
+	"sw":   "SW",
+	"led":  "LED",
+	// conventional (IEEE-315 classes) — not yet exercised by a placed board
+	"ind":       "L",
+	"fb":        "FB",
+	"diode":     "D",
+	"zener":     "D",
+	"tvs":       "D",
+	"esd":       "D",
+	"bjt":       "Q",
+	"pmos":      "Q",
+	"mosfet":    "Q",  // StickS3 吸收引入(2N7002/2N7002DW/CJ3439KDW)
+	"sensor":    "U",  // StickS3 吸收引入(BMI270 IMU)
+	"mic":       "MK", // StickS3 吸收引入(MSM381 MEMS mic;IEEE-315 麦克风=MK)
+	"xtal":      "X",
+	"fuse":      "F",
+	"ant":       "ANT",
+	"opto":      "U",
+	"ldo":       "U",
+	"buck":      "U",
+	"buckboost": "U",
+	"charger":   "U",
+	"pmu":       "U",
+	"gnss":      "U",
+	"storage":   "U",
+}
+
+// bapPrefixFor resolves a part key to its designator prefix.
+func bapPrefixFor(partKey string) (string, error) {
+	ns, _, ok := strings.Cut(partKey, ".")
+	if !ok || ns == "" {
+		return "", fmt.Errorf("part key %q has no namespace (expected e.g. res.1k_0402)", partKey)
+	}
+	p, ok := bapPrefixes[ns]
+	if !ok {
+		return "", fmt.Errorf("part namespace %q has no designator prefix mapping — add it to bapPrefixes "+
+			"(guessing a prefix would misfile the part)", ns)
+	}
+	return p, nil
+}
+
+// ── flag kinds ──────────────────────────────────────────────────────────────
+
+// bapFlagKind picks the netflag kind for a net name. Blocks do not declare flag
+// kinds, so this is a small deterministic rule rather than a judgment call:
+// ground names get a ground flag, supply-looking names get a power flag, and
+// everything else gets a bidirectional net port (which merges purely by name and
+// is therefore always structurally safe).
+//
+// It is a NAME heuristic and can be wrong for an unconventionally named rail —
+// `--kind NET=kind` overrides it per net.
+func bapFlagKind(net string) string {
+	u := strings.ToUpper(strings.TrimSpace(net))
+	switch u {
+	case "GND", "VSS", "0V":
+		return "gnd"
+	case "AGND":
+		return "agnd"
+	case "PGND", "EARTH":
+		return "pgnd"
+	}
+	if strings.HasSuffix(u, "_GND") || strings.HasSuffix(u, "GND") {
+		return "gnd"
+	}
+	// Supply rails: a leading + (+3V3), a V-prefixed rail (VCC/VBAT/VBUS/VSYS/VIN),
+	// or an nVn / nV form (3V3, 5V).
+	if strings.HasPrefix(u, "+") ||
+		strings.HasPrefix(u, "VCC") || strings.HasPrefix(u, "VDD") || strings.HasPrefix(u, "VBAT") ||
+		strings.HasPrefix(u, "VBUS") || strings.HasPrefix(u, "VSYS") || strings.HasPrefix(u, "VIN") {
+		return "power"
+	}
+	if bapLooksLikeRail(u) {
+		return "power"
+	}
+	return "netport"
+}
+
+// bapLooksLikeRail reports whether a name reads as a voltage rail: 5V, 3V3,
+// 12V, 1V8 — a leading digit, then V, then optional digits, and nothing else.
+func bapLooksLikeRail(u string) bool {
+	i := 0
+	for i < len(u) && u[i] >= '0' && u[i] <= '9' {
+		i++
+	}
+	if i == 0 || i >= len(u) || u[i] != 'V' {
+		return false
+	}
+	for j := i + 1; j < len(u); j++ {
+		if u[j] < '0' || u[j] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// ── plan shapes ─────────────────────────────────────────────────────────────
+
+// bapPlacement is one part the plan will create.
+type bapPlacement struct {
+	Role        string  `json:"role"`
+	PartKey     string  `json:"part"`
+	Designator  string  `json:"designator"`
+	PrimitiveID string  `json:"primitiveId,omitempty"`
+	LibraryUUID string  `json:"libraryUuid"`
+	DeviceUUID  string  `json:"deviceUuid"`
+	LCSC        string  `json:"lcsc,omitempty"`
+	X           float64 `json:"x"`
+	Y           float64 `json:"y"`
+	Rotation    float64 `json:"rotation,omitempty"`
+	Source      string  `json:"layout,omitempty"` // "template" | "grid" | "anchor-seed" | "relation-seed"
+}
+
+// bapOrigin records where the block actually landed vs where the caller asked,
+// so a silent auto-relocation never reads as "placed at --at".
+type bapOrigin struct {
+	RequestedX float64 `json:"requestedX"`
+	RequestedY float64 `json:"requestedY"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Relocated  bool    `json:"relocated"`
+	Reason     string  `json:"reason,omitempty"`
+}
+
+// bapNet is one internal net, resolved to placed-pin references.
+type bapNet struct {
+	Net     string   `json:"net"`
+	Kind    string   `json:"kind"`
+	Port    string   `json:"port,omitempty"`  // set when this net is a block boundary
+	Bound   bool     `json:"bound,omitempty"` // true when the host supplied --bind
+	Members []string `json:"members"`         // DESIGNATOR:PIN, ready for autoconnect
+	Roles   []string `json:"roles"`           // ROLE.pin, for traceability back to the block
+}
+
+// bapPlan is the full deterministic plan + the instance manifest skeleton.
+type bapPlan struct {
+	BlockID    string         `json:"blockId"`
+	Revision   int            `json:"revision,omitempty"`
+	Instance   string         `json:"instance"`
+	Origin     *bapOrigin     `json:"origin,omitempty"`
+	Placements []bapPlacement `json:"placements"`
+	Nets       []bapNet       `json:"nets"`
+	Warnings   []string       `json:"warnings,omitempty"`
+	// Unconsumed names the block's constraint maps that this command does NOT
+	// execute, so a caller never reads a successful apply as "block fully honoured".
+	Unconsumed []string `json:"unconsumedConstraints,omitempty"`
+	// Relational/AnchorRole 标记这是关系形态模板:落地时先放锚件、回读它的实测
+	// 引脚,再用求解器算其余件的位姿(issue #180 P2)。
+	Relational bool   `json:"relationalLayout,omitempty"`
+	AnchorRole string `json:"anchorRole,omitempty"`
+}
+
+// ── the planner ─────────────────────────────────────────────────────────────
+
+// bapInput is everything the pure planner needs.
+type bapInput struct {
+	Block    blocks.Block
+	Topology [][]string           // internal_nets, already parsed out of Raw
+	Devices  map[string]bapDevice // part key → device (from standard-parts.json)
+	Existing map[string]bool      // designators already on the page (upper-cased)
+	Instance string               // instance id, e.g. "led1"
+	OriginX  float64
+	OriginY  float64
+	Spacing  float64
+	PerRow   int
+	// SpecPath 非空时,落块+归组之后自动把真实位号回填进这份 S0 spec 的
+	// modules[].parts(#181:位号漂移每次都要人回头改 json)。纯执行侧字段,
+	// 规划不读它。
+	SpecPath string
+	Bind     map[string]string // PORT → host net
+	KindOver map[string]string // NET → flag kind override
+	// Layout is the block's schematic_layout template (nil → fallback grid).
+	Layout *blocks.SchematicLayout
+	// Obstacles are the existing parts' rendered bboxes on the active page; when
+	// present, the planner auto-relocates a colliding origin (unless AtExplicit).
+	Obstacles  []layoutBBox
+	AtExplicit bool // --at was passed explicitly: the origin is the caller's decision
+	// TitleBlock is the A4 图签/明细表 keep-out rectangle (bottom-right), when the
+	// sheet bbox is known; nil → not enforced. Treated as an extra obstacle so the
+	// block origin never lands on the title block (issue #141).
+	TitleBlock *layoutBBox
+	// SkipDevicePreflight disables the pre-placement library.device.get sweep.
+	// The sweep costs one read per distinct device and turns an unresolvable
+	// parts file into a refusal with the canvas untouched; skipping it restores
+	// the old behaviour of finding out one failed placement at a time.
+	SkipDevicePreflight bool
+	// Sheet 是图纸边框 bbox。**它必须参与螺旋搜索**,不能只做事后 warning:
+	// origin 搜索从前给 findSlot 的 inBounds 传 nil,于是"最近的空位"可以在图纸
+	// 外面 —— 实测把 J_USB 放到 x=-20、把 R6 放到 y=880(sheet 上界 825)。
+	// nil → 不约束(并在 manifest 里如实说明未强制)。见 issue #180 Fix B。
+	Sheet *layoutBBox
+}
+
+// bapRoleOffset is one role's resolved offset from the block origin.
+type bapRoleOffset struct {
+	dx, dy, rot float64
+	source      string // "template" | "grid" | "anchor-seed" | "relation-seed"
+}
+
+// bapPartMargin approximates half a typical small symbol's rendered extent
+// (schematic units) — used only to estimate the block's footprint rectangle for
+// origin collision avoidance, never for exact geometry (real bboxes exist only
+// after placement; `sch layout-lint` remains the post-placement ground truth).
+const bapPartMargin = 50
+
+// bapObstacleGap is the min edge-to-edge clearance the block's estimated
+// footprint keeps from existing parts (mirrors autolayout's PartGap).
+const bapObstacleGap = 20
+
+// ── marker 晕圈:落点判定与组重叠判定必须用同一把尺 ──────────────────────────
+//
+// 一个块落地后占的地**不止器件本体**:autoconnect 随后会给每条网在引脚外面挂一支
+// marker(netflag/netport)+ 一根桩线,四面长出一圈"晕"。`sch clusters` 的判据
+// (L1 虚拟组 = 器件 ∪ 它自己的 marker/桩线)量的就是这一圈,而落点求解从前只量
+// 器件本体 —— **两把尺**。
+//
+// 2026-08-20 esp32Mini 端到端两轮逐字复现的缺陷正是它:MCU_IO 页先落 WROOM 块,
+// U2 本体 x=[684.5,755.5],但它的 MCU_RX netport 连名字带一路探到 x=490;再落 LED
+// 块,螺旋从 (400,300) 起跳一环到 (400,450),此处 LED 块的**本体**矩形
+// x=[350,570] 距 U2 本体还有 114 的余量 —— 本体尺说"没撞",于是落点定案;而 LED 自己
+// 的 LED_GPIO/LED1_N2 端口又往右探到 650,两组的 marker 当场压在一起(clusters 报
+// 「LED1 ↔ U2 图元重叠 6×2」)。同一批里 esp32_autodownload 触发了避让,只是因为它
+// 的本体矩形宽到 670,恰好擦到 U2 的**本体** —— 触发与否全凭本体尺是否碰巧够得着,
+// 这不是避让机制在工作。
+//
+// 收敛成一把尺的做法:
+//   - 障碍侧(已落地的东西)用**实测**全图元 —— schBlockObstacleBoxes 把 marker 的
+//     判定盒(本体 ∪ 文字带,markerJudgeBBox,与 sch check / clusters 同源)也算进去;
+//   - 自己这一侧(还没长出来的 marker)用**估算** —— 即本函数的晕圈半径。
+//
+// 半径口径与 autoconnect 同源,不另拍脑袋:最短桩长 OffsetMin + 一支 netport 的总占地
+// (六边形 31 + 名字 6/字符 + 8,acPortTotalLen),取块内**最长网名**——晕圈外沿由最长
+// 的那一支决定。实测对照:LED 块最长网名 LED_GPIO(8) → 18+87=105,而真机量出来
+// LED_GPIO 端口自 R5 本体边缘外探 95,估算略有余量正好当下限。
+//
+// bapMinNetNameLen 是名字长度的下限:块没声明 default_net 时端口名可能很短
+// (GND/EN),但内部网名走 <INSTANCE>_N<k>,实测 7~8 字符,不能按 3 字符算。
+const bapMinNetNameLen = 8
+
+// bapMarkerHalo 估算块落地后四周 marker/桩线晕圈的半径(见上方大段说明)。
+func bapMarkerHalo(b blocks.Block, instance string, bind map[string]string) float64 {
+	longest := bapMinNetNameLen
+	consider := func(net string) {
+		if n := len(strings.TrimSpace(net)); n > longest {
+			longest = n
+		}
+	}
+	for port, p := range b.Ports {
+		consider(port)
+		consider(p.DefaultNet)
+		consider(bind[port])
+	}
+	consider(instance + "_N99") // 内部网名的口径,见 planBlockApply 的 <INSTANCE>_N<k>
+	return defaultAutoconnectRules().OffsetMin + acPortTotalLen(strings.Repeat("N", longest))
+}
+
+// bapGrow 把一个矩形四面外扩 d(d<=0 时原样返回)。
+func bapGrow(b layoutBBox, d float64) layoutBBox {
+	if d <= 0 {
+		return b
+	}
+	return layoutBBox{MinX: b.MinX - d, MinY: b.MinY - d, MaxX: b.MaxX + d, MaxY: b.MaxY + d}
+}
+
+// bapRoleHalfExtent estimates half a symbol's rendered width by part class. Crude
+// on purpose — real bboxes exist only after placement — but it must not UNDER-shoot,
+// because the grid uses it to decide how far apart to put parts.
+func bapRoleHalfExtent(partKey string) float64 {
+	k := strings.ToLower(partKey)
+	switch {
+	// High-pin-count silicon: the symbol is a tall box with two pin columns, and
+	// its half width grows with the pin count. ESP32-S3 (QFN56, 57 pins) overlapped
+	// its neighbour by 126 at the 100 estimate below, so these get their own tier.
+	case strings.HasPrefix(k, "mcu."),
+		strings.Contains(k, "qfn56"), strings.Contains(k, "qfn48"),
+		strings.Contains(k, "lqfp"), strings.Contains(k, "bga"),
+		strings.Contains(k, "wroom"), strings.Contains(k, "wrover"):
+		// 250, not 200: at 200 the ESP32-S3 chip symbol still overlapped its
+		// neighbouring SOP-8 by 26. These numbers are MEASURED corrections, not
+		// theory — the estimate can only ever be a floor, which is why blocks that
+		// care about geometry should ship a schematic_layout template instead.
+		return 250
+	// Ordinary ICs: CH334F (QFN24) measured ~70 anchor-to-pin-column.
+	case strings.HasPrefix(k, "ic."),
+		strings.HasPrefix(k, "buck."), strings.HasPrefix(k, "buckboost."),
+		strings.HasPrefix(k, "ldo."), strings.HasPrefix(k, "charger."),
+		strings.HasPrefix(k, "pmu."), strings.HasPrefix(k, "esd."),
+		strings.HasPrefix(k, "opto."), strings.HasPrefix(k, "gnss."),
+		strings.HasPrefix(k, "storage."):
+		return 100
+	// Connectors and sockets are wide too (USB-C 16P, microSD, SIM).
+	case strings.HasPrefix(k, "conn."):
+		return 90
+	}
+	return float64(bapPartMargin) // discretes: R/C/L/D/crystal
+}
+
+// bapGridSpacing sizes the fallback grid from the BIGGEST part in the block. The
+// old fixed 100 equalled one small symbol's full width (2×bapPartMargin), leaving
+// literally zero gap — fine for discretes, but an IC's pins then reach into the
+// neighbouring cell. That is not a cosmetic overlap: CH334F's U3:20 (VDD33) landed
+// on exactly the same point as the crystal's X2:4 (GND), an implicit short with no
+// wire to show for it. Blocks that ship a schematic_layout template never come
+// here; this is the floor for the 24 blocks that still lack one.
+func bapGridSpacing(roles []string, b blocks.Block) float64 {
+	maxHalf := float64(bapPartMargin)
+	for _, role := range roles {
+		if p, ok := b.Parts[role]; ok {
+			if h := bapRoleHalfExtent(p.Part); h > maxHalf {
+				maxHalf = h
+			}
+		}
+	}
+	return 2*maxHalf + float64(bapObstacleGap)
+}
+
+// bapRoleOffsets resolves every role to an offset: template roles use their
+// authored geometry; roles the template misses (or all roles, when there is no
+// template) fall back to the legacy grid — laid out BELOW the template extent so
+// the two never interleave.
+// halfOf gives each role's estimated half extent; nil means "uniform spacing"
+// (an explicit --spacing). Per-part sizing matters: one IC in the block used to
+// widen EVERY cell, so a 21-part block at the IC's 220 pitch ran to y=1400 on an
+// 825-tall A4 sheet. Sizing each cell to its own part keeps the decoupling caps
+// tight and only pays the wide pitch where a wide part actually sits.
+// bapHalfExtentFn 是块内某个 role 的**半宽估算的唯一来源**:fallback 网格排布
+// (bapRoleOffsets)与块 footprint 估算(bapBlockRect)必须共用它。
+//
+// 两套估算一旦分家就会「螺旋搜索说没撞、放完实测撞」——那正是 bapBlockRect 此前
+// 的病:它统一按 bapPartMargin(50)外扩,不看 bapRoleHalfExtent(模组/MCU 半宽
+// 250、IC 100、连接器 90),含 WROOM 的块每边低估 200,螺旋判定"空位"的地方放完
+// 必然 overlap → 撞硬门 → 整单回滚(issue #180)。
+//
+// halfOf 为 nil(调用方显式给了 --spacing)时,所有件按 spacing/2 一刀切,这是
+// 调用方的显式决定;有 halfOf 时逐件用自己的实测/查表半宽。
+func bapHalfExtentFn(spacing float64, halfOf map[string]float64) func(role string) float64 {
+	return func(role string) float64 {
+		if halfOf == nil {
+			return spacing / 2
+		}
+		if h, ok := halfOf[role]; ok {
+			return h
+		}
+		return float64(bapPartMargin)
+	}
+}
+
+func bapRoleOffsets(roles []string, layout *blocks.SchematicLayout, spacing float64, perRow int,
+	halfOf map[string]float64) map[string]bapRoleOffset {
+
+	out := make(map[string]bapRoleOffset, len(roles))
+	tmplMaxDY := 0.0
+	hasTmpl := false
+	if layout != nil {
+		for _, role := range roles {
+			if h, ok := layout.Roles[role]; ok {
+				out[role] = bapRoleOffset{dx: h.DX, dy: h.DY, rot: h.Rotation, source: "template"}
+				hasTmpl = true
+				if h.DY > tmplMaxDY {
+					tmplMaxDY = h.DY
+				}
+			}
+		}
+	}
+	gridBaseY := 0.0
+	if hasTmpl {
+		gridBaseY = tmplMaxDY + spacing
+	}
+
+	grid := make([]string, 0, len(roles))
+	for _, role := range roles {
+		if _, ok := out[role]; !ok {
+			grid = append(grid, role)
+		}
+	}
+
+	half := bapHalfExtentFn(spacing, halfOf)
+
+	// Walk row by row, advancing x by the two neighbours' half extents plus a gap,
+	// and dropping y by the tallest part in the row just finished.
+	x, y := 0.0, gridBaseY
+	rowMaxHalf, prevHalf := 0.0, 0.0
+	for i, role := range grid {
+		h := half(role)
+		if i%perRow == 0 {
+			if i > 0 {
+				y += rowMaxHalf + h + float64(bapObstacleGap)
+			}
+			x, rowMaxHalf, prevHalf = 0, h, h
+		} else {
+			x += prevHalf + h + float64(bapObstacleGap)
+			prevHalf = h
+			if h > rowMaxHalf {
+				rowMaxHalf = h
+			}
+		}
+		out[role] = bapRoleOffset{dx: x, dy: y, source: "grid"}
+	}
+	return out
+}
+
+// bapBlockRect is the block's estimated footprint rectangle at a given origin.
+// bapBlockRect 估算整块落地后占的矩形(螺旋搜索用它当刚体)。
+//
+// **负 dx/dy 一直是被正确计入的**(math.Min/Max 覆盖负值)——不要照 issue #180
+// 正文最初那句「螺旋搜索不把负偏移计进 footprint」去"修"这里,那条归因是错的,
+// 已在 issue 评论里订正:件出图纸的真机制是 bapResolveOrigin 从前给 findSlot 的
+// inBounds/hitsTitle 传了 nil(边界谓词根本没接上)。
+//
+// half 是每个 role 的半宽(bapHalfExtentFn,与网格排布同源);传 nil 退回旧的
+// 统一 bapPartMargin 外扩,只为老调用点兼容——新代码一律传 half。
+func bapBlockRect(originX, originY float64, offsets map[string]bapRoleOffset, half func(string) float64) layoutBBox {
+	first := true
+	var minX, maxX, minY, maxY float64
+	for role, o := range offsets {
+		// **半宽与半高必须分开**:bapRoleHalfExtent 的文档口径是「half a symbol's
+		// rendered WIDTH」——高引脚数芯片的 250 说的是两列引脚拉开的横向尺寸。
+		// 拿它同时外扩纵向会让一个 MCU 顶出 500 高,实测使 4 个块在 A4 上
+		// 「怎么摆都不可能 inBounds」(可用高只有 801),把边界约束变成死锁。
+		// 半高没有实测表,沿用 bapPartMargin 这个通用下限;估算本来就只能给下限,
+		// 真判据是放置后的实测 bbox(verifyBlockLayout)。
+		hw := float64(bapPartMargin)
+		if half != nil {
+			hw = math.Max(half(role), bapPartMargin)
+		}
+		hh := float64(bapPartMargin)
+		lo, hi := o.dx-hw, o.dx+hw
+		bo, to := o.dy-hh, o.dy+hh
+		if first {
+			minX, maxX, minY, maxY = lo, hi, bo, to
+			first = false
+			continue
+		}
+		minX = math.Min(minX, lo)
+		maxX = math.Max(maxX, hi)
+		minY = math.Min(minY, bo)
+		maxY = math.Max(maxY, to)
+	}
+	return layoutBBox{
+		MinX: originX + minX, MinY: originY + minY,
+		MaxX: originX + maxX, MaxY: originY + maxY,
+	}
+}
+
+// bapResolveOrigin collision-checks the requested origin against the existing
+// parts and, when the caller did not pin --at explicitly, spirals the block's
+// footprint rectangle to the nearest free region (reusing autolayout's findSlot).
+// It always returns a usable origin — on failure it keeps the request and says
+// so in the warnings, because a placed-but-overlapping block is diagnosable by
+// layout-lint while a refused apply loses all the work.
+func bapResolveOrigin(in bapInput, offsets map[string]bapRoleOffset, half func(string) float64) (float64, float64, *bapOrigin, []string) {
+	origin := &bapOrigin{
+		RequestedX: in.OriginX, RequestedY: in.OriginY,
+		X: in.OriginX, Y: in.OriginY,
+	}
+	// 障碍判定用的是**晕圈矩形**(本体估算 + bapMarkerHalo),不是本体矩形:块落地后
+	// autoconnect 还会在四周长出一圈 marker/桩线,那一圈同样占地,而 `sch clusters`
+	// 的组重叠判据量的正是它。障碍侧则由 schBlockObstacleBoxes 提供**实测**的全图元
+	// 盒(含 marker 的文字带),两侧口径一致 —— 见 bapMarkerHalo 上方的复盘。
+	//
+	// 晕圈**只进障碍判定,不进 inBounds/oversize**:后者问的是"这一块装不装得进图纸",
+	// 是本体几何的问题;把预留的晕圈算进去会让中等块凭空变 oversize,而 oversize 分支
+	// 会**关掉**边界约束 —— 为了更严反而更松,那是净损失。
+	halo := bapMarkerHalo(in.Block, in.Instance, in.Bind)
+	// 间隙判定一律走 boxesGapOverlap:旧代码用 rectGap(欧氏角距,math.Hypot),
+	// 对角方向名义留 20 实际只保证 ~14 单轴 —— 判据必须逐轴。
+	collidesWith := func(pad float64) func(layoutBBox) bool {
+		return func(b layoutBBox) bool {
+			h := bapGrow(b, pad)
+			if in.TitleBlock != nil && boxesGapOverlap(h, *in.TitleBlock, bapObstacleGap) {
+				return true
+			}
+			for _, o := range in.Obstacles {
+				if boxesGapOverlap(h, o, bapObstacleGap) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	collides := collidesWith(halo)
+	// inBounds/hitsTitle 是 issue #180 三个坑的正解:此前它们给 findSlot 传的是
+	// nil,图纸边界与分区标题带**从未参与搜索**,出界只在事后打 warning(而且比
+	// 的是锚点不是 bbox)。接上之后,"搜出来的空位在图纸外"从构造上不可能。
+	rect := bapBlockRect(in.OriginX, in.OriginY, offsets, half)
+	var inBounds func(layoutBBox) bool
+	var usable layoutBBox
+	var oversize bool
+	if in.Sheet != nil {
+		usable = schUsableArea(*in.Sheet)
+		// **块比图纸还大时不许让 inBounds 连坐掉避让**:此时它恒 false,96 个候选
+		// 全否决 → 回落原坐标 → 压在已有器件上 → wiring 前硬门整单回滚。也就是
+		// 说「放不下」会被升级成「连躲都不躲」,比不加边界约束更差。
+		// 正确行为:降级为只避器件,并单独说清楚为什么。
+		bw, bh := bboxSize(rect)
+		uw, uh := bboxSize(usable)
+		if bw > uw || bh > uh {
+			oversize = true
+		} else {
+			inBounds = func(b layoutBBox) bool { return boxInside(b, usable) }
+		}
+	}
+	fits := !collides(rect) && (inBounds == nil || inBounds(rect))
+	if fits {
+		return in.OriginX, in.OriginY, origin, nil
+	}
+	if in.AtExplicit {
+		// **出界与重叠不是一回事,不能同等对待**:
+		//   - 重叠:图还能读,人也能事后挪 → 尊重「显式 --at 优先」,警告了事。
+		//   - 出界:落在图纸外的器件在导出/打印/评审里根本不存在,是**废图**。
+		//     坐标是偏好,不出界是**硬约束**,偏好不该覆盖约束。
+		// 所以出界时不照放,自动移到距你给的坐标最近的合法位置(同一套网格扫描,
+		// 判定坐标=落地坐标),并把「为什么动了你的坐标」说清楚。
+		if inBounds != nil && !inBounds(rect) {
+			if nx, ny, found := bapScanOrigin(in.OriginX, in.OriginY, offsets, half, usable, collides); found {
+				origin.X, origin.Y = nx, ny
+				origin.Relocated = true
+				origin.Reason = "--at 会让这一块超出图纸可用区 — 出界是硬约束不是偏好,已移到距你指定坐标最近的合法位置"
+				return nx, ny, origin, []string{fmt.Sprintf(
+					"--at (%.0f,%.0f) 会让这一块超出图纸可用区(块估算范围 [%.0f,%.0f]-[%.0f,%.0f],图纸 [%.0f,%.0f]-[%.0f,%.0f] 内缩 %.0f)— 已移到最近的合法原点 (%.0f,%.0f)",
+					in.OriginX, in.OriginY,
+					rect.MinX, rect.MinY, rect.MaxX, rect.MaxY,
+					in.Sheet.MinX, in.Sheet.MinY, in.Sheet.MaxX, in.Sheet.MaxY, sheetEdgeMinGap,
+					nx, ny)}
+			}
+			// 连有界扫描都找不到:图纸真的塞不下这一块。此刻画布**还没动过**,
+			// 大声说出来比放到纸外强 —— 出界的块后面每一步(分区、导出、评审)都是坏的。
+			return in.OriginX, in.OriginY, origin, []string{fmt.Sprintf(
+				"--at (%.0f,%.0f) 会让这一块超出图纸可用区,且整张图纸都找不到放得下的位置(块估算 %.0f×%.0f,可用区 %.0f×%.0f)— 照你的坐标放置,但这张图是废的:换更大图纸、拆到别的页,或先清出空间",
+				in.OriginX, in.OriginY,
+				rect.MaxX-rect.MinX, rect.MaxY-rect.MinY,
+				usable.MaxX-usable.MinX, usable.MaxY-usable.MinY)}
+		}
+		return in.OriginX, in.OriginY, origin, []string{
+			"--at 指定的原点与已有图元(器件本体 / marker 连名字带 / 本块 marker 晕圈)或标题栏图签重叠 — 按你的坐标照常放置(显式 --at 优先);放完请跑 `sch layout-lint` + `sch clusters` 确认"}
+	}
+	w, h := bboxSize(rect)
+	step := math.Max(w, h)/2 + 2*bapObstacleGap
+	cx, cy := bboxCenter(rect)
+	// normalize:候选中心换算回 origin 后吸附 5 格再还原成 box —— 判定坐标必须
+	// 等于落地坐标,否则吸附引入的 ±2.5 会让"判定说不撞、放下去撞"。
+	normalize := func(cand layoutBBox) layoutBBox {
+		ccx, ccy := bboxCenter(cand)
+		nx := snapAnchor(in.OriginX + (ccx - cx))
+		ny := snapAnchor(in.OriginY + (ccy - cy))
+		return bapBlockRect(nx, ny, offsets, half)
+	}
+	slot, _, ok := findSlotNormalized(rect, cx, cy, step, true, normalize, collides, inBounds, nil, nil)
+	if !ok && inBounds != nil {
+		// 螺旋的步长 = max(w,h)/2 + 2*gap,**随块尺寸放大**;而合法原点窗口
+		// = 可用区跨度 − 块跨度,**随块尺寸缩小**。两者反向,中等块就交叉:
+		// 实测 ch340c(step 380)在 A4 上 96 个候选一个都落不进可用区,而 5 格
+		// 暴力扫描能找到距请求原点仅 170 的合法位置。所以螺旋落空**不等于放不下**,
+		// 补一次有界扫描把假阴性救回来 —— 否则回落原坐标压在别人身上,撞硬门整单回滚。
+		if nx, ny, found := bapScanOrigin(in.OriginX, in.OriginY, offsets, half, usable, collides); found {
+			origin.X, origin.Y = nx, ny
+			origin.Relocated = true
+			origin.Reason = "默认原点与已有图元(含 marker 连名字带)重叠,螺旋的 8 条射线 × 12 环够不着空位(步长随块放大、方向只有轴向+对角),已按网格扫描移到最近的合法空位(显式传 --at 可固定原点)"
+			return nx, ny, origin, nil
+		}
+	}
+	if !ok {
+		// **降级重试:严格尺找不到 ≠ 放不下。**晕圈是给未来 marker 预留的地,页面一挤
+		// 就可能整页都满足不了;此时退回本体尺再搜一次。两害相权:「marker 会挤一点」
+		// 是 layout-lint/clusters 事后能诊断、group-move 能修的版面问题,而「本体压在
+		// 别人身上」直接撞 wiring 前硬门 → 整单回滚,工作全丢。
+		// 顺序不能反:先严格后降级,才不会因为宽松尺先找到位置就永远用不上严格尺。
+		body := collidesWith(0)
+		if slot2, _, ok2 := findSlotNormalized(rect, cx, cy, step, true, normalize, body, inBounds, nil, nil); ok2 {
+			ncx, ncy := bboxCenter(slot2)
+			nx, ny := snapAnchor(in.OriginX+(ncx-cx)), snapAnchor(in.OriginY+(ncy-cy))
+			origin.X, origin.Y = nx, ny
+			origin.Relocated = true
+			origin.Reason = "默认原点与已有器件重叠,已移到最近的**本体**空位;页面太挤,给本块 marker 预留的晕圈没留住"
+			return nx, ny, origin, []string{fmt.Sprintf(
+				"本块已避开所有器件本体,但整页找不到能同时容下 marker 晕圈(半径 %.0f)的位置 — 放完请跑 `sch clusters` 看组间是否压到,必要时 `sch group-move` 挪开", halo)}
+		}
+		if inBounds != nil {
+			if nx, ny, found := bapScanOrigin(in.OriginX, in.OriginY, offsets, half, usable, body); found {
+				origin.X, origin.Y = nx, ny
+				origin.Relocated = true
+				origin.Reason = "默认原点与已有器件重叠,已按网格扫描移到最近的**本体**空位;页面太挤,给本块 marker 预留的晕圈没留住"
+				return nx, ny, origin, []string{fmt.Sprintf(
+					"本块已避开所有器件本体,但整页找不到能同时容下 marker 晕圈(半径 %.0f)的位置 — 放完请跑 `sch clusters` 看组间是否压到,必要时 `sch group-move` 挪开", halo)}
+			}
+		}
+		why := "与已有器件重叠"
+		switch {
+		case oversize:
+			// **估算都装不下 = 一定装不下**(估算的半高是写死的下限,见 bapBlockRect)。
+			// 所以这一档可以直接下 page-too-small 的结论,措辞与实测口径共用同一个
+			// advice 生成器 —— 同一件事在估算侧和实测侧必须说同一句话,否则用户会
+			// 以为是两个不同的问题各修一遍。
+			bw, bh := bboxSize(rect)
+			f := schPageFitFromEstimate(strings.TrimPrefix(in.Block.ID, "block."), bw, bh, usable, in.TitleBlock)
+			why = "与已有器件重叠;另注:" + f.Advice + "(本次已只按器件避让、不判图纸边界)"
+		case inBounds != nil:
+			why = "与已有器件重叠或超出图纸可用区"
+		}
+		return in.OriginX, in.OriginY, origin, []string{
+			fmt.Sprintf("默认原点%s,且螺旋搜索 %d 个候选 + 网格扫描后仍无空位 — 按原坐标放置,预期有 overlap/出图,放完必须跑 `sch layout-lint --strict`", why, alMaxRing*len(alDirsVertical)),
+		}
+	}
+	ncx, ncy := bboxCenter(slot)
+	nx := snapAnchor(in.OriginX + (ncx - cx))
+	ny := snapAnchor(in.OriginY + (ncy - cy))
+	origin.X, origin.Y = nx, ny
+	origin.Relocated = true
+	origin.Reason = "默认原点与已有图元(含 marker 连名字带)重叠,已自动移到最近的、连本块 marker 晕圈都放得下的空位(显式传 --at 可固定原点)"
+	return nx, ny, origin, nil
+}
+
+// planBlockApply turns a block + a parts library + the current page into a
+// deterministic placement/wiring plan. It never touches the connector.
+func planBlockApply(in bapInput) (bapPlan, error) {
+	plan := bapPlan{
+		BlockID:  in.Block.ID,
+		Revision: in.Block.Revision,
+		Instance: in.Instance,
+	}
+	// NOTE — the instance id is what keeps two instances of the same block apart,
+	// because it names every PORT-less internal net. Deriving it from the BLOCK id
+	// would hand both instances the same synthetic net names, and same-name nets
+	// MERGE: instance 2's internal node would silently short to instance 1's. So an
+	// unset instance is resolved AFTER designator allocation, from the first
+	// allocated designator (LED1 → LED1_N2, LED2 → LED2_N2) — designators are
+	// already collision-free against the page, so the net names inherit that.
+
+	// Roles in a stable order so designators and coordinates are reproducible.
+	roles := make([]string, 0, len(in.Block.Parts))
+	for r := range in.Block.Parts {
+		roles = append(roles, r)
+	}
+	sort.Strings(roles)
+
+	// A block may bind a port the host never mentioned; validate --bind early so a
+	// typo'd port name fails before anything is placed.
+	for port := range in.Bind {
+		if _, ok := in.Block.Ports[port]; !ok {
+			return plan, fmt.Errorf("--bind %s=…: block %s has no port %q", port, in.Block.ID, port)
+		}
+	}
+
+	// 1. Allocate designators + coordinates.
+	used := map[string]bool{}
+	for d := range in.Existing {
+		used[strings.ToUpper(d)] = true
+	}
+	next := map[string]int{}
+	roleDesig := map[string]string{}
+	perRow := in.PerRow
+	if perRow < 1 {
+		perRow = 4
+	}
+	// An explicit --spacing means "uniform cells, caller's choice"; otherwise each
+	// cell is sized to its own part (halfOf), so one wide IC no longer inflates the
+	// whole grid off the sheet.
+	spacing := in.Spacing
+	var halfOf map[string]float64
+	if spacing <= 0 {
+		spacing = bapGridSpacing(roles, in.Block)
+		halfOf = make(map[string]float64, len(roles))
+		for _, role := range roles {
+			if p, ok := in.Block.Parts[role]; ok {
+				halfOf[role] = bapRoleHalfExtent(p.Part)
+			}
+		}
+	}
+	// Geometry: the block's schematic_layout template wins over the fallback
+	// grid, and the whole block dodges existing parts when the caller left the
+	// origin to us (the old blind 4-column grid at 400,300 was a top overlap
+	// source — every second apply landed on the first).
+	offsets := bapRoleOffsets(roles, in.Layout, spacing, perRow, halfOf)
+	// A relational plan's origin is its anchor, not the first alphabetic grid
+	// cell. Reserve the relation envelope before picking a bounded origin.
+	if rel, ok := bslRelationsFrom(in.Layout); ok {
+		anchor, err := bslAnchorRole(in.Block, rel, bslBlockNets(in.Block))
+		if err != nil {
+			return plan, err
+		}
+		plan.Relational, plan.AnchorRole = true, anchor
+		offsets = bslSeedOffsets(in.Block, rel, anchor, roles)
+		plan.Warnings = append(plan.Warnings, "relation-seed: estimated anchor/flow/pair envelope; attach pin positions remain pending until fresh anchor readback. These coordinates are not a verified layout")
+	}
+	// **footprint 估算与网格间距是两件事**,不能共用一把尺:
+	//   - 网格间距回答「调用方想要多宽」——显式 `--spacing` 时就该听调用方的;
+	//   - footprint 回答「这块实际占多大」——物理事实,与 --spacing 无关。
+	// 此前两者共用 bapHalfExtentFn:显式 `--spacing 220` 让 half=110,把模组
+	// (真实半宽 250)的 footprint 每边低估 140,螺旋判"没撞"、放完实测撞、
+	// 撞硬门整单回滚 —— 正是 Fix A 要根治的病在 --spacing 路径上原样复发。
+	half := func(role string) float64 {
+		if p, ok := in.Block.Parts[role]; ok {
+			return math.Max(bapRoleHalfExtent(p.Part), bapPartMargin)
+		}
+		return float64(bapPartMargin)
+	}
+	originX, originY, origin, warns := bapResolveOrigin(in, offsets, half)
+	plan.Origin = origin
+	plan.Warnings = append(plan.Warnings, warns...)
+	if plan.Relational && in.Sheet != nil {
+		rect := bapBlockRect(originX, originY, offsets, half)
+		if !boxInside(rect, schUsableArea(*in.Sheet)) {
+			return plan, fmt.Errorf("relational layout preflight: no in-sheet envelope for %s; enlarge the sheet, split the block, or clear space (no parts placed)", in.Block.ID)
+		}
+		obstacles := append([]layoutBBox(nil), in.Obstacles...)
+		if in.TitleBlock != nil {
+			obstacles = append(obstacles, *in.TitleBlock)
+		}
+		for _, obstacle := range obstacles {
+			if boxesGapOverlap(rect, obstacle, bapObstacleGap) {
+				return plan, fmt.Errorf("relational layout preflight: envelope for %s still intersects existing geometry; clear space or choose another sheet (no parts placed)", in.Block.ID)
+			}
+		}
+	}
+	for _, role := range roles {
+		p := in.Block.Parts[role]
+		if p.Qty != 1 {
+			// qty>1 would need one designator per instance; the minimal slice does
+			// not do it, and silently placing one part would under-build the block.
+			return plan, fmt.Errorf("role %s: qty=%d not supported yet (block-apply v1 places qty=1 roles only)", role, p.Qty)
+		}
+		dev, ok := in.Devices[p.Part]
+		if !ok {
+			return plan, fmt.Errorf("role %s: part %q not found in standard-parts.json", role, p.Part)
+		}
+		if dev.DeviceUUID == "" {
+			return plan, fmt.Errorf("role %s: part %q has no deviceUuid in standard-parts.json", role, p.Part)
+		}
+		prefix, err := bapPrefixFor(p.Part)
+		if err != nil {
+			return plan, fmt.Errorf("role %s: %w", role, err)
+		}
+		d := bapNextDesignator(prefix, used, next)
+		roleDesig[role] = d
+		off := offsets[role]
+		plan.Placements = append(plan.Placements, bapPlacement{
+			Role:        role,
+			PartKey:     p.Part,
+			Designator:  d,
+			LibraryUUID: dev.LibraryUUID,
+			DeviceUUID:  dev.DeviceUUID,
+			LCSC:        dev.LCSC,
+			X:           snapAnchor(originX + off.dx),
+			Y:           snapAnchor(originY + off.dy),
+			Rotation:    off.rot,
+			Source:      off.source,
+		})
+	}
+
+	if strings.TrimSpace(in.Instance) == "" {
+		if len(plan.Placements) == 0 {
+			return plan, fmt.Errorf("block %s has no parts", in.Block.ID)
+		}
+		in.Instance = plan.Placements[0].Designator
+	}
+	plan.Instance = in.Instance
+
+	// 2. Resolve internal_nets → named nets over placed pins.
+	for i, net := range in.Topology {
+		var (
+			members []string
+			roleRef []string
+			port    string
+		)
+		for _, m := range net {
+			if strings.HasPrefix(m, "PORT:") {
+				name := strings.TrimPrefix(m, "PORT:")
+				if port == "" {
+					port = name
+				}
+				continue
+			}
+			role, pin, ok := strings.Cut(m, ".")
+			if !ok {
+				return plan, fmt.Errorf("internal_nets[%d]: bad pin ref %q", i, m)
+			}
+			d, ok := roleDesig[role]
+			if !ok {
+				return plan, fmt.Errorf("internal_nets[%d]: unknown role %q", i, role)
+			}
+			members = append(members, d+":"+pin)
+			roleRef = append(roleRef, m)
+		}
+		if len(members) == 0 {
+			// A net of nothing but PORT markers has no pin to attach a flag to.
+			return plan, fmt.Errorf("internal_nets[%d]: no pin members", i)
+		}
+
+		name, bound := bapNetName(in, port, i)
+		kind := bapFlagKind(name)
+		if k, ok := in.KindOver[strings.ToUpper(name)]; ok {
+			kind = k
+		}
+		plan.Nets = append(plan.Nets, bapNet{
+			Net: name, Kind: kind, Port: port, Bound: bound,
+			Members: members, Roles: roleRef,
+		})
+	}
+
+	// 3. **端口兜底**:internal_nets 只覆盖「块内至少两个东西相连」的网,而**边界端口
+	//    完全可以指向一个块内孤立的引脚** —— ch340c 的 ports.DTR → U.DTR# 就是:
+	//    片内没有任何别的元件连它,它的全部意义就是引出去给别人用。
+	//
+	//    过去这类端口被彻底忽略:网只从 internal_nets 构造,于是
+	//    (a) 端口引脚放下来就是悬空的,用户不知道该从哪接;
+	//    (b) `--bind DTR=USB_DTR` **静默无效** —— 校验只看「块有没有这个端口」,
+	//        而后面根本没有对应的网可以改名,不报错也不建网。
+	//    多块设计的核心就是块间互联,这个缺口让每两块之间都得人工补线。
+	//
+	//    现在给每个未覆盖的端口补一条**单成员网**,网名走同一套规则(--bind 优先 →
+	//    default_net → 端口名),于是端口该有的 marker 一定会出现,--bind 也真的生效。
+	covered := map[string]bool{}
+	for _, n := range plan.Nets {
+		if n.Port != "" {
+			covered[n.Port] = true
+		}
+	}
+	uncovered := make([]string, 0, len(in.Block.Ports))
+	for portName := range in.Block.Ports {
+		if !covered[portName] {
+			uncovered = append(uncovered, portName)
+		}
+	}
+	sort.Strings(uncovered) // map 遍历随机 —— 计划必须可复现
+	for _, portName := range uncovered {
+		p := in.Block.Ports[portName]
+		role, pin, ok := strings.Cut(p.At, ".")
+		if !ok {
+			return plan, fmt.Errorf("port %q: bad `at` %q(应形如 ROLE.PIN)", portName, p.At)
+		}
+		d, ok := roleDesig[role]
+		if !ok {
+			return plan, fmt.Errorf("port %q: `at` 指向未知 role %q", portName, role)
+		}
+		name, bound := bapNetName(in, portName, 0)
+		kind := bapFlagKind(name)
+		if k, ok := in.KindOver[strings.ToUpper(name)]; ok {
+			kind = k
+		}
+		plan.Nets = append(plan.Nets, bapNet{
+			Net: name, Kind: kind, Port: portName, Bound: bound,
+			Members: []string{d + ":" + pin}, Roles: []string{p.At},
+		})
+	}
+
+	plan.Unconsumed = bapUnconsumed(in.Block)
+	return plan, nil
+}
+
+// bapNetName picks a net's name: an explicit --bind wins, then the port's
+// default_net, then the port name; a purely internal net gets an
+// instance-scoped synthetic name that cannot collide with a host net.
+func bapNetName(in bapInput, port string, idx int) (string, bool) {
+	if port != "" {
+		if host, ok := in.Bind[port]; ok && strings.TrimSpace(host) != "" {
+			return host, true
+		}
+		p := in.Block.Ports[port]
+		if p.DefaultNet != "" {
+			return p.DefaultNet, false
+		}
+		return port, false
+	}
+	return fmt.Sprintf("%s_N%d", strings.ToUpper(in.Instance), idx+1), false
+}
+
+// bapNextDesignator returns the next free designator for a prefix, skipping any
+// already on the page so a second instance never collides with the first.
+func bapNextDesignator(prefix string, used map[string]bool, next map[string]int) string {
+	for {
+		next[prefix]++
+		d := prefix + strconv.Itoa(next[prefix])
+		if !used[strings.ToUpper(d)] {
+			used[strings.ToUpper(d)] = true
+			return d
+		}
+	}
+}
+
+// bapRemapDesignators rewrites a plan in place after EasyEDA assigned designators
+// different from the planned ones (issue #144).
+//
+// The platform re-numbers on create to dodge designators it already knows about —
+// INCLUDING ones on schematic pages we cannot see. `sch_PrimitiveComponent.getAll(_,
+// allPages)` only returns pages that are LOADED, so a never-visited page is invisible
+// to the pre-flight scan yet still steers the platform's numbering: planning C1 and
+// landing C11 is NORMAL, not an error. What is fatal is leaving the plan's downstream
+// references on the planned name — wiring then resolves "C1:VCC" against whatever C1
+// exists elsewhere in the document (the netlist is keyed by designator.pin
+// document-wide), silently connecting another page's part.
+//
+// renames maps PLANNED (upper-cased) → ACTUAL. It rewrites:
+//   - each placement's designator
+//   - every net member's "DESIGNATOR:PIN" reference
+//   - the instance id and the "<INSTANCE>_N<i>" internal net names derived from it,
+//     so two instances never share an internal net name (a same-named internal net
+//     on another page would MERGE with this one)
+//
+// Port-bound nets carry HOST net names and are never rewritten.
+func bapRemapDesignators(plan *bapPlan, renames map[string]string) {
+	if plan == nil || len(renames) == 0 {
+		return
+	}
+	lookup := func(d string) (string, bool) {
+		n, ok := renames[strings.ToUpper(strings.TrimSpace(d))]
+		return n, ok
+	}
+
+	for i := range plan.Placements {
+		if n, ok := lookup(plan.Placements[i].Designator); ok {
+			plan.Placements[i].Designator = n
+		}
+	}
+
+	// The instance id defaults to the first placement's designator, so it follows
+	// that rename; an explicit --instance matches no designator and is left alone.
+	oldPrefix := strings.ToUpper(plan.Instance) + "_N"
+	if n, ok := lookup(plan.Instance); ok {
+		plan.Instance = n
+	}
+	newPrefix := strings.ToUpper(plan.Instance) + "_N"
+
+	for i := range plan.Nets {
+		for j, m := range plan.Nets[i].Members {
+			desig, pin, ok := strings.Cut(m, ":")
+			if !ok {
+				continue
+			}
+			if n, ok := lookup(desig); ok {
+				plan.Nets[i].Members[j] = n + ":" + pin
+			}
+		}
+		if plan.Nets[i].Port == "" && oldPrefix != newPrefix &&
+			strings.HasPrefix(plan.Nets[i].Net, oldPrefix) {
+			plan.Nets[i].Net = newPrefix + strings.TrimPrefix(plan.Nets[i].Net, oldPrefix)
+		}
+	}
+}
+
+// ── post-apply reconciliation (issue #135) ──────────────────────────────────
+//
+// Per-stub autoconnect success is NOT proof the block's topology landed:
+// EasyEDA auto-merges touching wires, so a stub can silently fuse into a
+// foreign net AFTER it was "successfully" created — and both check and
+// bridge-check have historically missed the swallowed-flag shape. The netlist
+// is the only authority on what actually connected, so block-apply now closes
+// the loop: read it back and diff every planned net against reality.
+
+// bapNetDiff is one planned net whose live membership does not match the plan.
+type bapNetDiff struct {
+	Net     string            `json:"net"`
+	Missing []string          `json:"missing"`           // planned members absent from the live net (DESIGNATOR.PIN)
+	FoundIn map[string]string `json:"foundIn,omitempty"` // missing member → the net it actually landed in
+}
+
+// bapPinKey resolves a planned member "DESIGNATOR:PINREF" (name or number) to
+// the netlist's "DESIGNATOR.NUMBER" key via the designator→(name|number)→number
+// map from the live component read.
+// A "NAME*" member fans out to EVERY pin carrying that name, so it resolves to
+// SEVERAL netlist keys and reconciliation must find all of them — a `GND*` that
+// landed on only half the ground pins is exactly the silent half-connection this
+// whole mechanism exists to catch.
+func bapPinKeys(member string, pinNumbers map[string]map[string][]string) ([]string, bool) {
+	desig, ref, ok := strings.Cut(member, ":")
+	if !ok {
+		return nil, false
+	}
+	byRef := pinNumbers[strings.ToUpper(desig)]
+	if byRef == nil {
+		return nil, false
+	}
+	nums, ok := byRef[strings.ToUpper(strings.TrimSuffix(ref, acPinFanoutSuffix))]
+	if !ok || len(nums) == 0 {
+		return nil, false
+	}
+	if !strings.HasSuffix(ref, acPinFanoutSuffix) {
+		// A plain ref names one pin; if the symbol has several with that name the
+		// planner never resolved it either, so take the first deterministically.
+		return []string{desig + "." + nums[0]}, true
+	}
+	keys := make([]string, 0, len(nums))
+	for _, n := range nums {
+		keys = append(keys, desig+"."+n)
+	}
+	return keys, true
+}
+
+// reconcileBlockNets diffs the plan against the live netlist. liveNets maps net
+// name → set of "DESIGNATOR.NUMBER"; pinNumbers maps DESIGNATOR → pin name/number
+// → number. A planned net passes when every planned member is present in that
+// live net — the live net MAY hold extra pins (bound host nets legitimately
+// aggregate the rest of the board).
+func reconcileBlockNets(plan bapPlan, liveNets map[string]map[string]bool, pinNumbers map[string]map[string][]string) []bapNetDiff {
+	var diffs []bapNetDiff
+	for _, n := range plan.Nets {
+		live := liveNets[n.Net]
+		var missing []string
+		foundIn := map[string]string{}
+		for _, m := range n.Members {
+			keys, ok := bapPinKeys(m, pinNumbers)
+			if !ok {
+				// Pin ref did not resolve — count as missing so it can't hide.
+				missing = append(missing, m)
+				continue
+			}
+			for _, key := range keys {
+				if live != nil && live[key] {
+					continue
+				}
+				missing = append(missing, key)
+				for otherNet, pins := range liveNets {
+					if otherNet != n.Net && pins[key] {
+						foundIn[key] = otherNet
+						break
+					}
+				}
+			}
+		}
+		if len(missing) > 0 {
+			d := bapNetDiff{Net: n.Net, Missing: missing}
+			if len(foundIn) > 0 {
+				d.FoundIn = foundIn
+			}
+			diffs = append(diffs, d)
+		}
+	}
+	return diffs
+}
+
+// bapUnconsumed lists the constraint maps present in the block that this command
+// does not execute. Honesty surface: `must` constraints that no consumer honours
+// must not hide behind a green exit code.
+func bapUnconsumed(b blocks.Block) []string {
+	var raw map[string]any
+	if err := json.Unmarshal(b.Raw, &raw); err != nil {
+		return nil
+	}
+	var out []string
+	for _, k := range []string{"pcb_layout", "placement", "signals", "silk", "keepout", "openings"} {
+		if v, ok := raw[k]; ok && v != nil {
+			out = append(out, k)
+		}
+	}
+	// Planning only reserves a provisional envelope. Relations remain unconsumed
+	// until live anchor readback and constrained solving succeed.
+	if layout, err := b.SchematicLayout(); err == nil && layout.IsRelational() {
+		// 单返回值类型断言在失败时会 panic —— 用双返回值形式,块数据是外部输入。
+		if sl, ok := raw["schematic_layout"].(map[string]any); ok {
+			for _, k := range []string{"flow", "attach", "pair"} {
+				if v, ok := sl[k]; ok && v != nil {
+					out = append(out, "schematic_layout."+k)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// bapScanOrigin 是螺旋搜索的**兜底**:在图纸可用区内按连接网格枚举原点,取第一个
+// 「块完全在可用区内 且 与任何已有器件保持 bapObstacleGap」的位置,按到请求原点的
+// 距离取最近。
+//
+// 为什么需要它:findSlot 的候选是 8 条射线 × 12 环 = 96 个点,步长
+// max(w,h)/2 + 2*gap **随块尺寸放大**,而合法原点窗口 = 可用区跨度 − 块跨度
+// **随块尺寸缩小**——两者反向,中等块(ch340c 680×310,step 380)在 A4 上就已经
+// 一个候选都落不进可用区,而合法位置其实距请求原点只有 170。没有这层兜底,
+// 「螺旋落空」会被当成「放不下」回落原坐标,压在已有器件上撞 wiring 前硬门,
+// 把 apply 从「搬个位置」变成「整单回滚」。
+//
+// 判定坐标 = 落地坐标:枚举的就是吸附后的 origin,rect 由同一个 bapBlockRect 算,
+// 不存在「判完再吸附」的半格漂移。纯函数。
+func bapScanOrigin(reqX, reqY float64, offsets map[string]bapRoleOffset, half func(string) float64,
+	usable layoutBBox, collides func(layoutBBox) bool) (float64, float64, bool) {
+
+	// rect 相对 origin 的偏移(与 origin 无关,算一次即可)。
+	rel := bapBlockRect(0, 0, offsets, half)
+	// origin 的合法区间:让 rect 完全落进 usable。
+	loX, hiX := usable.MinX-rel.MinX, usable.MaxX-rel.MaxX
+	loY, hiY := usable.MinY-rel.MinY, usable.MaxY-rel.MaxY
+	if loX > hiX || loY > hiY {
+		return 0, 0, false // 块比可用区还大,调用方已按 oversize 分支处理
+	}
+	best, bestX, bestY := math.Inf(1), 0.0, 0.0
+	for y := snapAnchor(loY); y <= hiY; y += bapScanStep {
+		for x := snapAnchor(loX); x <= hiX; x += bapScanStep {
+			r := bapBlockRect(x, y, offsets, half)
+			if !boxInside(r, usable) || collides(r) {
+				continue
+			}
+			if d := math.Hypot(x-reqX, y-reqY); d < best {
+				best, bestX, bestY = d, x, y
+			}
+		}
+	}
+	if math.IsInf(best, 1) {
+		return 0, 0, false
+	}
+	return bestX, bestY, true
+}
+
+// bapScanStep 是兜底扫描的步长:4 个连接网格。取 20 而不是 5 是纯算力权衡
+// (A4 可用区 1146×801 → 约 2300 个候选,离线毫秒级);落点仍在 5 格网格上,
+// 因为 20 是 schAnchorGrid 的整数倍。
+const bapScanStep = 4 * schAnchorGrid

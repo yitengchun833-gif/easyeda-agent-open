@@ -1,0 +1,79 @@
+<!doctype html>
+<!--
+  Adapted from eext-knowledge-base iframe/index.html and its document sidebar
+  at commit 39acb6a4dc9e04d9216a1bcb0d2218ff60cb7a11 (Apache-2.0).
+  This page deliberately contains management and retrieval only: no chat/LLM.
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EDA Agent 知识库</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <aside id="sidebar">
+      <div class="brand"><span>📚</span><div><strong>硬件知识库</strong><small id="health">正在连接服务…</small></div></div>
+      <label class="upload-btn" for="file-input">导入资料</label>
+      <input id="file-input" type="file" accept=".md,.markdown,.txt,.pdf,.png,text/plain,application/pdf,image/png" multiple hidden>
+      <section class="filters">
+        <label>类型 <select id="type-filter"><option value="">全部资料</option><option value="datasheet">数据手册</option><option value="reference">参考设计</option><option value="company_rule">原理图/PCB规则</option><option value="lesson">已审核经验</option></select></label>
+        <label>范围 <select id="domain-filter"><option value="">原理图与 PCB</option><option value="schematic">原理图</option><option value="pcb">PCB</option></select></label>
+        <input id="source-filter" type="search" placeholder="筛选名称、型号或标签">
+      </section>
+      <div class="tree-title">资料 <span id="source-count"></span></div>
+      <div id="source-tree" class="source-tree" aria-live="polite"></div>
+    </aside>
+    <section id="content">
+      <header class="toolbar">
+        <div>
+          <h1>知识库</h1>
+          <p id="summary">加载资料状态…</p>
+        </div>
+        <button id="reindex-btn" class="secondary">更新索引</button>
+      </header>
+      <nav class="tabs" aria-label="知识库功能">
+        <button class="tab active" data-view="sources">资料管理</button>
+        <button class="tab" data-view="search">检索测试</button>
+        <button class="tab" data-view="candidates">经验审核 <span id="pending-count" class="badge" hidden></span></button>
+      </nav>
+      <section id="sources-view" class="view active">
+        <div class="table-wrap"><table><thead><tr><th>名称</th><th>类型 / 范围</th><th>型号 / 版本</th><th>状态</th><th>操作</th></tr></thead><tbody id="sources-body"></tbody></table></div>
+      </section>
+      <section id="search-view" class="view">
+        <form id="search-form" class="search-box"><input id="search-query" required placeholder="例如：USB-C 电源输入 CC1 CC2 ESD VBUS"><button>检索</button></form>
+        <p class="hint">仅调用检索服务，不生成 AI 回答。型号与引脚名应先按严格字段筛选。</p>
+        <div id="search-results" class="search-results"></div>
+      </section>
+      <section id="candidates-view" class="view">
+        <p class="hint">候选经验必须人工批准后才进入正式检索范围。</p>
+        <div id="candidate-list" class="candidate-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="metadata-dialog"><form id="metadata-form" method="dialog">
+    <header><h2 id="metadata-title">导入资料</h2><button type="button" class="icon" value="cancel" aria-label="关闭">×</button></header>
+    <input id="editing-id" type="hidden">
+    <label>名称 <input id="meta-title" required></label>
+    <div class="form-grid">
+      <label>类型 <select id="meta-type"><option value="datasheet">数据手册</option><option value="reference">参考设计</option><option value="company_rule">规则</option><option value="lesson">经验</option></select></label>
+      <label>范围 <select id="meta-domain"><option value="schematic">原理图</option><option value="pcb">PCB</option><option value="both">原理图与 PCB</option></select></label>
+      <label>版本 <input id="meta-version" placeholder="如 Rev. C"></label>
+      <label>来源 <input id="meta-source" placeholder="厂商、规范或项目"></label>
+      <label>型号 / 料号 <input id="meta-models" placeholder="多个用逗号分隔"></label>
+      <label>引脚 / 接口 <input id="meta-pins" placeholder="多个用逗号分隔"></label>
+      <label>所属项目 <input id="meta-project" maxlength="200" placeholder="项目名称或标识"></label>
+      <label>电路模块 <input id="meta-module" maxlength="200" placeholder="如 power_input、usb"></label>
+    </div>
+    <label>标签 <input id="meta-tags" placeholder="例如 USB-C, ESD, 输入保护"></label>
+    <label>项目范围 <input id="meta-scope" placeholder="留空表示所有项目"></label>
+    <menu><button value="cancel" type="button" data-close-dialog>取消</button><button id="metadata-save" value="default">保存</button></menu>
+  </form></dialog>
+
+  <dialog id="preview-modal"><article><header><h2 id="preview-title"></h2><button type="button" class="icon" value="cancel" aria-label="关闭">×</button></header><div id="preview-meta" class="meta"></div><details id="preview-information" open><summary>证据、适用条件与验证范围</summary><div id="preview-context"></div></details><details><summary>证据引用（用于定位同一版本）</summary><pre id="preview-reference"></pre></details><pre id="preview-body"></pre><p id="preview-progress" class="hint" aria-live="polite"></p><button id="preview-more" class="secondary" type="button" hidden>继续读取原文</button><div id="preview-assets"></div></article></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
