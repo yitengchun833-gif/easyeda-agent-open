@@ -18,3 +18,4 @@
 - 当前Open专业Skill只维护本目录skills/easyeda-agent-open；工作流/解析/PWF等Skill维护上层项目skills，统一入口见其README。不得直接改全局安装Skill或复制第二份专业正文。
 - 阶段完成后提交本任务范围，并在所属PWF短记仓库/commit、涉及文件、必要检查、是否已打包/采用；未提交须写明原因。程序功能、专业规则和发布载荷需要配套修改时，同轮列明待同步项，不能悄悄让运行副本落后。
 - 纯资料归档仍要核import、动态读文件、go:embed、构建/打包、Skill及文档入向引用。docs/archive保留历史，不在其中修功能；已发布证据、LICENSE/NOTICE、动态资源和测试夹具不得按重复哈希直接删。
+- Connector 当前图标只取 `extension/extension.json` 声明的 `extension/images/logo.png`（用户选定图）。删除旧演示图前核清单、打包及引用；旧上游README中的案例图片不自动恢复进当前插件源码。

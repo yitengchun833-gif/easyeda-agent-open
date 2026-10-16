@@ -18,8 +18,6 @@
   <a href="README.en.md">English</a>
 </p>
 
-![easyeda-agent workflow](docs/assets/easyeda-agent-workflow.svg)
-
 `easyeda-agent` 是 EasyEDA Pro（嘉立创 EDA 专业版）的 AI 自动化层。你可以直接描述想做的
 电路或要修的问题，Agent 会读取真实工程数据，通过官方 `eda.*` API 完成操作，并在写入前后
 检查器件身份、引脚网络、几何、DRC 和保存状态。
@@ -132,8 +130,6 @@ DRC 规则，再修复可以确定的问题。不要凭截图猜连接；所有�
 Agent 完成原理图到 PCB 的完整流程，包括模块布局、圆角板框、4 层电源结构、天线净空、
 规则感知布线、铺铜和丝印整理。
 
-![AI 在 EasyEDA 中完成 PCB 布局、板框和铺铜](docs/assets/demo-pcb-layout.gif)
-
 | 板框贴合 | 丝印避让 |
 |---|---|
 | <img src="docs/assets/demo-outline-before.png" width="300" alt="板框贴合前"/> → <img src="docs/assets/demo-outline-after.png" width="300" alt="板框贴合后"/> | <img src="docs/assets/demo-silk-before.png" width="300" alt="丝印整理前"/> → 整理结果见成品板 |
@@ -144,8 +140,6 @@ Agent 先在本地连接数据中核对器件、引脚和网络，再计算模�
 表示独立功能区，Apply 后逐脚回读，而不是仅凭截图判断成功。
 
 ![门禁控制板的电源与 RF 主控原理图](docs/images/access-control-power-rf.png)
-
-![原理图实际 Apply 过程](docs/assets/access-control-sch-apply.gif)
 
 ## 安装与开始使用
 

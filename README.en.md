@@ -14,8 +14,6 @@
   <a href="README.md">中文</a>
 </p>
 
-![easyeda-agent workflow](docs/assets/easyeda-agent-workflow.svg)
-
 > **Version 1.4.5.** Schematic work starts from component,
 > pin, and connectivity data: design each Lib circuit and its geometry locally,
 > compose one sheet with `sch compose`, then execute and verify with `sch apply`.
@@ -260,8 +258,6 @@ the circuit to reduce height.
 
 #### SCH Apply in action
 
-![Actual SCH Apply stages for the access control example, captured and played back at an accelerated pace](docs/assets/access-control-sch-apply.gif)
-
 The animation uses 12 official exports captured during the power and RF controller
 sheet's actual Apply, played back at an accelerated pace. Both still images come from official EasyEDA exports, with the displayed project name anonymized.
 See [Apply capture instructions](docs/schematic-showcase.md) for the script and reproduction steps.
@@ -274,8 +270,6 @@ some text placement needs refinement. See [the 1.4 validation record](docs/relea
 This separate regression case starts from the raw requirement in
 [esp32MiniRequire.md](esp32MiniRequire.md), with the agent selecting real LCSC
 parts and designing the circuit. See the [full PCB case study](docs/showcase-esp32-mini.md).
-
-![AI executing PCB placement, board outline creation, and copper pours in EasyEDA](docs/assets/demo-pcb-layout.gif)
 
 The board below was produced by the agent driving the full PCB flow — **auto-place →
 outline-fit → rule-aware route → 4-layer power planes → collision-aware silk** — then
