@@ -1,9 +1,5 @@
 > **本目录现为 EasyEDA Agent Open 开发分支。构建、开放范围与使用方式见 [README-OPEN.md](README-OPEN.md)。以下保留上游历史说明，不作为本分支操作规则。**
 
-<p align="center">
-  <img src="docs/assets/easyeda-agent-logo.png" width="96" alt="easyeda-agent logo" />
-</p>
-
 <h1 align="center">easyeda-agent</h1>
 
 <p align="center">
@@ -118,10 +114,6 @@ DRC 规则，再修复可以确定的问题。不要凭截图猜连接；所有�
 “样例关系 → 算法候选 → AI 选择 → typed 写入 → 回读”的布局方法。该图展示布局阶段结果，
 不代表整板布线或生产检查已经完成。
 
-<p align="center">
-  <img src="docs/assets/demo-at32f415-exam-layout.png" width="820" alt="嘉立创 PCB 初级考试第十八期 AT32F415 学习板参数化 Layout" />
-</p>
-
 标准考试来源：**嘉立创 PCB 初级考试题第十八期**。执行步骤、参数和验证边界见
 [260919 AT32F415 考试执行指导](docs/260919-exam-execution-guide.md)。
 
@@ -130,16 +122,10 @@ DRC 规则，再修复可以确定的问题。不要凭截图猜连接；所有�
 Agent 完成原理图到 PCB 的完整流程，包括模块布局、圆角板框、4 层电源结构、天线净空、
 规则感知布线、铺铜和丝印整理。
 
-| 板框贴合 | 丝印避让 |
-|---|---|
-| <img src="docs/assets/demo-outline-before.png" width="300" alt="板框贴合前"/> → <img src="docs/assets/demo-outline-after.png" width="300" alt="板框贴合后"/> | <img src="docs/assets/demo-silk-before.png" width="300" alt="丝印整理前"/> → 整理结果见成品板 |
-
 ### 数据驱动的原理图组合
 
 Agent 先在本地连接数据中核对器件、引脚和网络，再计算模块内部布局并写回 EasyEDA；粉色虚线框
 表示独立功能区，Apply 后逐脚回读，而不是仅凭截图判断成功。
-
-![门禁控制板的电源与 RF 主控原理图](docs/images/access-control-power-rf.png)
 
 ## 安装与开始使用
 
