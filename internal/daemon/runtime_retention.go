@@ -17,8 +17,15 @@ func (s *runtimeStore) protectedReceipts() map[string]bool {
 			continue
 		}
 		switch r.Status {
-		case "queued", "running", "resuming", "saving", "paused", "needs_readback", "needs_review":
+		case "queued", "running", "resuming", "saving", "paused", "needs_readback":
 			protected[r.RequestID] = true
+		case "needs_review":
+			// Settled review evidence from an older generation cannot finish or resume.
+			// Keep its original unknown/fail result in audit JSONL, not forever in the live pool.
+			d := s.documents[r.WindowID+"|"+r.ProjectUUID+"|"+r.DocumentUUID]
+			if d == nil || r.Generation >= d.Generation {
+				protected[r.RequestID] = true
+			}
 		case "action_finished":
 			d := s.documents[r.WindowID+"|"+r.ProjectUUID+"|"+r.DocumentUUID]
 			if d == nil || r.Generation != d.Generation {
