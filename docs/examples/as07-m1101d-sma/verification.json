@@ -1,0 +1,540 @@
+{
+  "environment": {
+    "cli": "1.5.1",
+    "daemon": "1.5.1",
+    "connector": "1.5.1",
+    "easyeda": "3.2.186"
+  },
+  "symbol": {
+    "circles": [
+      {
+        "async": true,
+        "centerX": -60,
+        "centerY": 42,
+        "color": null,
+        "fillColor": null,
+        "fillStyle": null,
+        "lineType": null,
+        "lineWidth": null,
+        "primitiveType": "Circle",
+        "radius": 3
+      }
+    ],
+    "pins": [
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "GND",
+        "pinNumber": "1",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 180,
+        "x": -90,
+        "y": 30
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "CSN",
+        "pinNumber": "4",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 0,
+        "x": 90,
+        "y": 10
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "SCK",
+        "pinNumber": "5",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 180,
+        "x": -90,
+        "y": -10
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "GDO0",
+        "pinNumber": "3",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 180,
+        "x": -90,
+        "y": 10
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "MOSI",
+        "pinNumber": "6",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 0,
+        "x": 90,
+        "y": -10
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "MISO/GDO1",
+        "pinNumber": "7",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 180,
+        "x": -90,
+        "y": -30.000000000000004
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "GDO2",
+        "pinNumber": "8",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 0,
+        "x": 90,
+        "y": -30
+      },
+      {
+        "async": true,
+        "noConnected": false,
+        "otherProperty": {},
+        "pinColor": null,
+        "pinLength": 20,
+        "pinName": "VCC",
+        "pinNumber": "2",
+        "pinShape": "None",
+        "pinType": "Undefined",
+        "primitiveType": "Pin",
+        "rotation": 0,
+        "x": 90,
+        "y": 30.000000000000004
+      }
+    ],
+    "polygons": [
+      {
+        "async": true,
+        "color": null,
+        "fillColor": "none",
+        "line": [
+          -70,
+          -50,
+          70,
+          -50,
+          70,
+          50,
+          -70,
+          50,
+          -70,
+          -50
+        ],
+        "lineType": null,
+        "lineWidth": 1,
+        "primitiveType": "Polygon"
+      }
+    ],
+    "saved": true
+  },
+  "footprintPads": [
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "RECT",
+        66.9,
+        66.9,
+        0
+      ],
+      "padNumber": "1",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": -50,
+      "y": 150
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "2",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": 50,
+      "y": 150
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "3",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": -50,
+      "y": 50
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "4",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": 50,
+      "y": 50
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "5",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": -50,
+      "y": -50
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "6",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": 50,
+      "y": -50
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "7",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": -50,
+      "y": -150
+    },
+    {
+      "async": true,
+      "heatWelding": null,
+      "hole": [
+        "ROUND",
+        39.3701
+      ],
+      "holeOffsetX": 0,
+      "holeOffsetY": 0,
+      "holeRotation": 0,
+      "layer": 12,
+      "metallization": true,
+      "net": "",
+      "pad": [
+        "ELLIPSE",
+        66.9,
+        66.9
+      ],
+      "padNumber": "8",
+      "padType": 0,
+      "primitiveLock": false,
+      "primitiveType": "Pad",
+      "rotation": 0,
+      "solderMaskAndPasteMaskExpansion": {
+        "bottomPasteMask": 0,
+        "bottomSolderMask": 2,
+        "topPasteMask": 0,
+        "topSolderMask": 2
+      },
+      "specialPad": [],
+      "x": 50,
+      "y": -150
+    }
+  ],
+  "silkscreen": {
+    "checks": [
+      {
+        "bbox": {
+          "maxX": -268.2,
+          "maxY": 166,
+          "minX": -361.2,
+          "minY": 134
+        },
+        "text": "1 GND"
+      },
+      {
+        "bbox": {
+          "maxX": -125.00000000000001,
+          "maxY": 166,
+          "minX": -227.70000000000005,
+          "minY": 134
+        },
+        "text": "2 VCC"
+      },
+      {
+        "bbox": {
+          "maxX": -268.2,
+          "maxY": 66,
+          "minX": -391.4,
+          "minY": 34
+        },
+        "text": "3 GDO0"
+      },
+      {
+        "bbox": {
+          "maxX": -124.99999999999999,
+          "maxY": 66,
+          "minX": -226.1,
+          "minY": 34
+        },
+        "text": "4 CSN"
+      },
+      {
+        "bbox": {
+          "maxX": -268.2,
+          "maxY": -33.99999999999999,
+          "minX": -368.5,
+          "minY": -66
+        },
+        "text": "5 SCK"
+      },
+      {
+        "bbox": {
+          "maxX": -124.99999999999999,
+          "maxY": -33.99999999999999,
+          "minX": -236.8,
+          "minY": -66
+        },
+        "text": "6 MOSI"
+      },
+      {
+        "bbox": {
+          "maxX": -268.2,
+          "maxY": -134.00000000000003,
+          "minX": -485.6,
+          "minY": -166
+        },
+        "text": "7 MISO/GDO1"
+      },
+      {
+        "bbox": {
+          "maxX": -125,
+          "maxY": -134.00000000000003,
+          "minX": -248.2,
+          "minY": -166
+        },
+        "text": "8 GDO2"
+      },
+      {
+        "bbox": {
+          "maxX": 637.6311,
+          "maxY": 355.2756,
+          "minX": 264.7311000000001,
+          "minY": 315.2756
+        },
+        "text": "AS07-M1101D-SMA"
+      }
+    ],
+    "verified": true
+  },
+  "save": {
+    "columnGap": 20,
+    "leftX": -268.2,
+    "rightX": -125,
+    "saved": true
+  },
+  "limitations": [
+    "No placed-instance or PCB DRC verification",
+    "No physical module fit check",
+    "Calculated land pattern; manufacturer identity unverified"
+  ],
+  "note": "Selected official API readbacks; private library, project and primitive identifiers omitted. Footprint pads were read before text-only edits.",
+  "noConnectCheck": {
+    "userRemovedNC": true,
+    "finalOfficialRender": "symbol.png",
+    "renderShowsNoCrossMarkers": true,
+    "note": "Previous noConnected:false readback did not establish absence of NC. User corrected the markers; final shape/type edits preserve that state and the official render was checked."
+  }
+}

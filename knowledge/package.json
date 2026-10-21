@@ -1,0 +1,23 @@
+{
+  "name": "easyeda-agent-knowledge",
+  "version": "1.8.1-open.9.6",
+  "private": true,
+  "type": "module",
+  "description": "Local hardware knowledge service for EasyEDA Agent Open",
+  "scripts": {
+    "start": "node src/service.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check:native": "node --test test/native-runtime.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "@langchain/core": "1.1.38",
+    "@lancedb/lancedb": "0.39.0"
+  },
+  "overrides": {
+    "sharp": "0.35.4"
+  }
+}

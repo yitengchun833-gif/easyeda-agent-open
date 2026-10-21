@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "units": "mil",
+  "layout": {"groups":[{"id":"blocker","refs":["M1","C1"],"anchorRef":"M1","offsets":[{"x":0,"y":0},{"x":0,"y":60}]}],"fixedRefs":["U1","J1"],"minGap":5,"maxStates":100,"maxCandidates":3},
+  "routing": {"demands":[{"id":"a","net":"A","from":"U1.1","to":"J1.1","width":4,"layers":[1],"maxVias":0},{"id":"b","net":"B","from":"U1.2","to":"J1.2","width":4,"layers":[1],"maxVias":0}],"step":10,"maxDetour":0,"maxStates":100000},
+  "maxStates": 200000,
+  "maxCandidates": 3
+}

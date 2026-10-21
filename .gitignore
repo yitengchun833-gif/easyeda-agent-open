@@ -1,0 +1,45 @@
+.DS_Store
+
+# Go
+/bin/
+/dist/
+/coverage.out
+/.runtime/
+/*-check.log
+/extension/*-check.log
+
+# 人工分发的自包含总包(construct via scripts/pack-download.sh) — 太大不进 git,
+# 上传到外部下载托管;downloads/ 目录本身与其 README 保留。
+/downloads/*.zip
+
+# air live-reload build output
+/tmp/
+/build-errors.log
+
+# Local runtime state
+/.easyeda-agent/
+/artifacts/
+/.agents/worktrees/
+/.agents/settings.local.json
+/.agents/skills/*/__pycache__/
+
+# Editor
+.idea/
+.vscode/
+.playwright-mcp/
+
+# Node
+node_modules/
+*.tgz
+
+# Python
+__pycache__/
+*.pyc
+
+# Videos
+videos/
+# Per-project artifacts (screenshots/exports) written by the CLI cwd
+.easyeda/
+*.journal.jsonl
+
+docs/video-material

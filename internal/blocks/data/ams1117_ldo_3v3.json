@@ -1,0 +1,114 @@
+{
+  "id": "block.ams1117_ldo_3v3",
+  "desc": "AMS1117-3.3 线性稳压 5V→3.3V(最小系统主控供电);输入/输出去耦 + 旁路电容",
+  "category": "power",
+  "author": "@zhoushoujianwork",
+  "contributors": [],
+  "added": "v0.9.0",
+  "updated": "v0.9.0",
+  "source": "datasheet:AMS1117 (Advanced Monolithic Systems, LCSC C6186 https://item.szlcsc.com/datasheet/AMS1117-3.3/6652.html ; PDF https://atta.szlcsc.com/upload/public/pdf/source/20180727/C6186_7A095716F0823C02F1997A905E26C086.pdf ; 第1页引脚定义, 第4页 Stability/典型可调电路, 第5页固定版与散热说明)。本块为固定3.3V版本,不使用可调版R1/R2/CADJ；10µF输入及100nF旁路为项目选值,不是手册给出的固定版典型BOM。",
+  "validated": "esp32-barrier-v02 2026-07-09 by @zhoushoujianwork: 整板布线 place→wire→sch check(0 findings)→bridge-check(0/0)→sch drc(0 fatal),netlist 逐网核实(P2 91/91 对账达标:U2.VIN=+5V / U2.VOUT=3V3 / U2.GND=GND,C201/C202/C203 去耦);同拓扑在 examples/esp32-mini 回归板通过 pcb drc Connection/Clearance 双归零。诚实:随整板布线验证,非孤立块单放。",
+  "parts": {
+    "U": {
+      "part": "ldo.ams1117_3v3",
+      "alt": [
+        "ldo.ams1117_3v3"
+      ],
+      "qty": 1,
+      "note": "AMS1117-3.3 固定3.3V线性稳压,SOT-223,标称1A且受散热限制。手册第1页:1=GND(可调版为ADJ),2=VOUT,3=VIN；散热片同属VOUT,本器件库将其编号为4。pin2与pin4必须同连3V3。手册第3页压差1.1V典型/1.3V最大是在0.8A条件下,超过0.8A时压差更高；须按负载和热条件校核5V输入余量。"
+    },
+    "C_IN": {
+      "part": "cap.10uf_0805",
+      "qty": 1,
+      "note": "10µF输入去耦为项目选值,靠近U.VIN接到GND。手册第4页图2示出输入电容但未标容量,不能据此声称输入≥10µF是稳定性保证。"
+    },
+    "C_OUT": {
+      "part": "cap.22uf_0805",
+      "qty": 1,
+      "note": "输出补偿电容,靠近U.VOUT接到GND。手册第4页明确22µF固体钽可保证所有工作条件的稳定性；本块现存22µF 0805陶瓷选型不是该保证的等价替代,须校核有效容量/ESR并做负载瞬态及振荡测试后才能判定硬件稳定。"
+    },
+    "C_BYP": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "100nF高频旁路为项目选值,与C_OUT并联接在VOUT和GND之间；不能替代手册要求的输出补偿电容。"
+    }
+  },
+  "internal_nets": [
+    [
+      "U.VIN",
+      "C_IN.1",
+      "PORT:VIN_5V"
+    ],
+    [
+      "U.VOUT*",
+      "C_OUT.1",
+      "C_BYP.1",
+      "PORT:3V3"
+    ],
+    [
+      "U.GND",
+      "C_IN.2",
+      "C_OUT.2",
+      "C_BYP.2",
+      "PORT:GND"
+    ]
+  ],
+  "ports": {
+    "VIN_5V": {
+      "dir": "in",
+      "at": "U.VIN",
+      "desc": "5V 输入(来自 USB 5V / 5V 端子 / 上游 buck 的 +5V 轨)",
+      "default_net": "+5V"
+    },
+    "3V3": {
+      "dir": "out",
+      "at": "U.VOUT*",
+      "desc": "稳压 3.3V 输出, 供 MCU 模组及 3V3 外设(接 block.esp32s3_wroom1_module 的 3V3 port)",
+      "default_net": "+3V3"
+    },
+    "GND": {
+      "dir": "bidir",
+      "at": "U.GND",
+      "desc": "参考地(汇集输入/输出电容负端)",
+      "default_net": "GND"
+    }
+  },
+  "schematic_layout": {
+    "note": "核心U按实测引脚布局,输入电容置VIN侧,两只输出电容共同置右侧VOUT(pin4)并竖直并联在输出母线与局部GND之间。C_IN到VIN、C_OUT/C_BYP到VOUT均用真实短导线连续连接,同网电源/地符号用于局部引出。pin2与pin4是同一VOUT节点的两个库引脚,两脚都必须落到3V3；attach只指定几何参考脚,不改变internal_nets的电气连接。",
+    "anchor": "U",
+    "attach": {
+      "C_IN": "U.VIN",
+      "C_OUT": "U.4",
+      "C_BYP": "U.4"
+    },
+    "orient": {
+      "C_IN": "vertical",
+      "C_OUT": "vertical",
+      "C_BYP": "vertical"
+    }
+  },
+  "schematic_notes": [
+    "AMS1117是线性稳压,功耗近似(VIN−VOUT)×IOUT。5V→3.3V @300mA约0.51W；需结合铜面积、环境温度和热阻验算结温≤125°C,不能仅凭封装宣称散热足够。",
+    "VOUT在pin2及散热片两处同网,本库将散热片编号为pin4；internal_nets的U.VOUT*覆盖两个库引脚,均须连3V3,不能作为两个独立输出或删除其中一脚。",
+    "固定3.3V版pin1为GND。手册第4页Figure 1/2是可调版,其中R1/R2/CADJ不适用于本块固定版。",
+    "输出电容属于环路补偿。手册第4页Stability给出的全工况保证为22µF固体钽；更小容量或陶瓷不能由这份手册直接推导出稳定性保证。当前陶瓷BOM的硬件稳定性仍待验证,电气连通/DRC通过不等于稳定性通过。",
+    "外围电容真实接到对应VIN/VOUT导线,不以独立同名标签代替模块内连线；netflag必须经真实导线连接。"
+  ],
+  "pcb_layout": [
+    {
+      "rule": "thermal-copper",
+      "target": "U.VOUT(pin2/4)",
+      "constraint": "SOT-223散热片接VOUT同网铜箔,散热过孔只能连接VOUT同网铜层。可隔着PCB介质向GND平面传热(手册第5页),严禁把VOUT散热焊盘或过孔电连接到GND。铜面积须按负载/环境/实测热阻校核。",
+      "value": "按PD=(VIN−VOUT)×IOUT及TJ≤125°C验算；手册表1的100mm²顶层铜示例还带2500mm²背层铜,不是通用面积保证",
+      "severity": "should"
+    },
+    {
+      "rule": "cap-adjacency",
+      "target": "C_IN / C_OUT / C_BYP",
+      "constraint": "输入电容贴 VIN、输出电容+旁路贴 VOUT, 短回路",
+      "value": "<=2mm",
+      "severity": "must"
+    }
+  ],
+  "bom_note": "4件:1×AMS1117-3.3(SOT-223)+1×10µF输入+1×22µF输出+1×100nF旁路。当前选用的22µF陶瓷需独立稳定性验证；若要求直接遵循手册的全工况稳定性保证,应选22µF固体钽并核实极性、耐压及实际料号。"
+}

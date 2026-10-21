@@ -1,0 +1,298 @@
+{
+  "id": "block.esp32s3_chip_minsys",
+  "desc": "ESP32-S3 普通裸片(QFN-56,无内封 PSRAM)最小系统:外挂 W25Q64 8MB flash(SPICS0)+ APS6404L 8MB 四线 PSRAM(SPICS1,与 flash 共享 SPI0 数据线)+ 40MHz 晶振/负载帽 + 逐脚去耦 + EN 上电 RC + IO0 上拉;四线 PSRAM 只占 SPICS1,GPIO33~37 全部保留可用(这正是相对 S3R8 内封八线 PSRAM 的取舍,见 alt block.esp32s3r8_chip_minsys)",
+  "category": "mcu",
+  "author": "@zhoushoujianwork",
+  "contributors": [],
+  "added": "v0.13.1",
+  "updated": "v0.13.1",
+  "source": "official-ref:Espressif《ESP Hardware Design Guidelines — ESP32-S3 Schematic Checklist》(docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32s3/schematic-checklist.html,2026-07-16 实取):Flash/PSRAM 节『External SPI flash and PSRAM connect via the SPI0 pins. Flash uses SPICS0 while PSRAM uses SPICS1. Both share: SPICLK, SPID, SPIQ, SPIHD, and SPIWP. They're powered by VDD_SPI』、电源节逐轨去耦值(VDD3P3=10uF+1uF / VDD3P3_RTC=0.1uF / VDD3P3_CPU=0.1uF / VDD_SPI 额外 0.1uF+1uF / 入口≥10uF)、复位节『R = 10 kΩ and C = 1 μF』、GPIO0『recommended to place a pull-up resistor』、GPIO45 默认 0=3.3V、晶振节 40MHz ±10ppm + CL 公式。 ; datasheet:APS6404L-3SQR(AP Memory《APM SPI 3V PSRAM Datasheet》Rev.2.1 2019-10-25,PDF 实读):§3.1 Package Types SOP-8 脚位图、§6 Signal Table、§7 Power-Up Initialization『CE# should remain HIGH (track VDD within 200mV)』、§14.3 Decoupling Capacitor Requirement『required to have a decoupling capacitor on VDD pin… A low ESR 1μF ceramic cap is recommended… An optional 0.1μF can further improve high frequency transient response』(图示 C0=100nF + C1=1µF)。 ; official-ref:ESP-IDF components/esp_psram/esp32s3/Kconfig.spiram(master,2026-07-16 实取):SPIRAM_MODE_QUAD 为默认、SPIRAM_TYPE_ESPPSRAM64『ESP-PSRAM64 , LY68L6400 or APS6408』(64Mbit 档不限 QUAD/OCT)、SPIRAM_CS_IO default 26(=SPICS1)、SPIRAM_CLK_IO default 30(=SPICLK)——从固件侧反证 PSRAM 片选就是 SPICS1。 ; U/FLASH 脚名沿用同族已核实块 block.esp32s3r8_chip_minsys(2026-07-15 ceshi sch read 逐脚核实,同芯片族同符号族);PSRAM 脚名取自上述 datasheet §3.1/§6,**尚未** sch read 核实(见 _internal_nets_note)",
+  "validated": null,
+  "parts": {
+    "U": {
+      "part": "mcu.esp32s3_chip",
+      "alt": ["mcu.esp32s3r8_chip"],
+      "qty": 1,
+      "note": "ESP32-S3 普通裸片 QFN-56,**无内封 PSRAM** → 本块外挂 APS6404L 四线 PSRAM 补齐 R8 级内存。收益:四线 PSRAM 仅占 SPICS1,GPIO33~37(SPIIO4~SPIIO7/SPIDQS)全部空出可当普通 GPIO 用——选 alt(S3R8 内封八线 PSRAM)则这 5 个脚被永久占用。代价:多 1 片 PSRAM + SPI0 多一路 CS 与走线等长负担,且四线带宽低于八线。"
+    },
+    "FLASH": {
+      "part": "ic.w25q64_flash",
+      "qty": 1,
+      "note": "W25Q64JVSSIQ 8MB QSPI flash(N8),SOP-8;VCC 接 VDD_SPI(芯片内部 LDO 输出域),不接外部 3V3。片选 SPICS0(HDG:『Flash uses SPICS0』)。"
+    },
+    "PSRAM": {
+      "part": "ic.aps6404l",
+      "qty": 1,
+      "note": "APS6404L-3SQR-SN 8MB(64Mbit)四线 QSPI PSRAM,SOP-8,VDD=2.7~3.6V(datasheet §6 Signal Table『Core supply 3.3V』)→ 接 VDD_SPI 3.3V 域,与 flash 同域同总线、独立片选 SPICS1(HDG:『PSRAM uses SPICS1』)。⚠必须选带 3 前缀的 3SQR/3SQN(3.3V 版);无 3 的 SQN/SQH 系是 1.8V 件,接 3.3V VDD_SPI 会烧。"
+    },
+    "X": {
+      "part": "xtal.40mhz_3225_12pf",
+      "qty": 1,
+      "note": "40MHz 3225 四脚晶振 CL=12pF,ESP32-S3 主时钟(HDG 晶振节要求精度 ±10ppm 以内);壳脚(符号 GND 名,物理 pin2/4)接地。"
+    },
+    "C_X1": {
+      "part": "cap.12p_0402",
+      "qty": 1,
+      "note": "XTAL_P 负载帽,起步 12pF;精确值按 HDG 公式 CL=(C1×C4)/(C1+C4)+Cstray 实测微调到 ±10ppm。"
+    },
+    "C_X2": {
+      "part": "cap.12p_0402",
+      "qty": 1,
+      "note": "XTAL_N 负载帽,与 C_X1 对称等值。"
+    },
+    "C_BULK": {
+      "part": "cap.10uf_0805",
+      "qty": 1,
+      "note": "3V3 入口体电容 10uF(HDG 电源节:VDD3P3 用 10uF+1uF,主入口『at least 10 μF』),压 WiFi 发射瞬态(峰值 ~500mA);靠近 VDD3P3(pin2/3)供电入口。"
+    },
+    "C_VDD3P3": {
+      "part": "cap.1uf_0402",
+      "qty": 1,
+      "note": "VDD3P3(模拟/RF 供电,pin2+pin3 相邻双脚)去耦 1uF —— HDG 电源节该轨明确写 10uF + 1uF(与同族 block.esp32s3r8_chip_minsys 此位取 100nF 不同,本块按 HDG 原文取 1uF)。"
+    },
+    "C_VDDA": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "VDDA(pin55+pin56 相邻双脚)去耦 100nF,贴脚;HDG 将 VDDA 归入 VDD3P3 去耦方案,此 100nF 为高频补充。"
+    },
+    "C_RTC": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "VDD3P3_RTC(pin20)去耦 0.1uF(HDG 原文值),贴脚。"
+    },
+    "C_CPU": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "VDD3P3_CPU(pin46)去耦 0.1uF(HDG 原文值),贴脚。"
+    },
+    "C_SPI": {
+      "part": "cap.1uf_0402",
+      "qty": 1,
+      "note": "VDD_SPI(pin29,内部由 VDD3P3_RTC 供出的 3.3V 输出域)滤波 1uF(HDG:VDD_SPI 需『extra 0.1 μF and 1 μF decoupling capacitors』),贴脚;该域同时喂外挂 flash + PSRAM,是本块比模组方案更吃电流的一轨。"
+    },
+    "C_SPI_HF": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "VDD_SPI 高频去耦 0.1uF(HDG 同上『extra 0.1 μF and 1 μF』的 0.1uF 那颗),贴 pin29。"
+    },
+    "C_FLASH": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "flash VCC 去耦 100nF,贴 W25Q64 pin8。"
+    },
+    "C_PSRAM": {
+      "part": "cap.1uf_0402",
+      "qty": 1,
+      "note": "PSRAM VDD 去耦 1uF —— APS6404L datasheet §14.3 是**强制**要求(『It is required to have a decoupling capacitor on VDD pin… A low ESR 1μF ceramic cap is recommended』),低 ESR,尽可能贴 VDD(pin8);省掉它 = 违反器件手册。"
+    },
+    "C_PSRAM_HF": {
+      "part": "cap.100nf_0402",
+      "qty": 1,
+      "note": "PSRAM VDD 高频去耦 100nF —— datasheet §14.3 的 optional 项(『An optional 0.1μF can further improve high frequency transient response』,图示 C0=100nF);84~133MHz 总线下建议保留。"
+    },
+    "C_EN": {
+      "part": "cap.1uf_0402",
+      "qty": 1,
+      "note": "CHIP_PU 对地 1uF,与 R_EN 组成上电延时 RC(HDG 复位节明写『R = 10 kΩ and C = 1 μF』);复位/自动下载电路从 EN port 外接。"
+    },
+    "R_EN": {
+      "part": "res.10k_0402",
+      "qty": 1,
+      "note": "CHIP_PU(EN)上拉 10k → 3V3(HDG 复位节推荐值)。"
+    },
+    "R_IO0": {
+      "part": "res.10k_0402",
+      "qty": 1,
+      "note": "GPIO0(boot strapping)上拉 10k → 默认 SPI flash 启动(HDG:『It is recommended to place a pull-up resistor at the GPIO0 pin』);下载时由 BOOT 按键/自动下载电路经 IO0 port 拉低。⚠HDG 同节警告『Do not add high-value capacitors at GPIO0』——本块因此不给 IO0 配电容。"
+    },
+    "R_CS0": {
+      "part": "res.10k_0402",
+      "qty": 1,
+      "note": "SPICS0(flash 片选)上拉 10k → VDD_SPI(**不是** 3V3):防上电未初始化期 flash 误选中;上拉到 VDD_SPI 域使该域断电时不倒灌。"
+    },
+    "R_CS1": {
+      "part": "res.10k_0402",
+      "qty": 1,
+      "note": "SPICS1(PSRAM 片选)上拉 10k → VDD_SPI。依据 APS6404L datasheet §7 Power-Up Initialization:上电到 150µs 初始化结束期间『CE# should remain HIGH (track VDD within 200mV)』——ESP32-S3 复位期 SPICS1 是高阻,无此上拉则 CE# 浮空,PSRAM 初始化行为不确定。上拉到 VDD_SPI(非 3V3)才满足『track VDD within 200mV』。"
+    }
+  },
+  "_internal_nets_note": "脚名可信度分两级,勿混:(1) **U / FLASH / X 已核实** —— 沿用同族 block.esp32s3r8_chip_minsys(2026-07-15 在 ceshi 临时页 sch read 逐脚核实,同芯片族同符号族):U 符号 LNA_IN(1)/VDD3P3(2,3 同名双脚)/CHIP_PU(4)/GPIO0(5)/VDD3P3_RTC(20)/SPICS1(28)/VDD_SPI(29)/SPIHD(30)/SPIWP(31)/SPICS0(32)/SPICLK(33)/SPIQ(34)/SPID(35)/VDD3P3_CPU(46)/U0TXD(49)/U0RXD(50)/XTAL_N(53)/XTAL_P(54)/VDDA(55,56 同名双脚)/GND(57=EPAD,符号真实名就叫 GND);FLASH 符号 CS#(1)/DO(IO1)(2)/WP#(IO2)(3)/GND(4)/DI(IO0)(5)/CLK(6)/HOLD#orRESET#(IO3)(7)/VCC(8),括号是脚名的一部分;X 符号 1/3=晶体,GND(2,4)=壳脚。同名多物理脚(VDD3P3/VDDA/GND)写一个功能名 = tie 全部。 (2) **PSRAM 未核实、SPICS1 半核实** —— PSRAM 脚名取自 APS6404L datasheet §3.1/§6 原文:/CE(1)、SO/SIO[1](2)、SIO[2](3)、VSS(4)、SI/SIO[0](5)、SCLK(6)、SIO[3](7)、VDD(8);EasyEDA 符号(C5333729)实际可能写成 CE#/SIO0/SIO1 等变体,**验证时必须先 sch read 核对再落线**。U.SPICS1 来自同族块正文注记(pin28)而非其逐脚核实清单,同样需 sch read 确认。此外 mcu.esp32s3_chip 与 mcu.esp32s3r8_chip 是两个不同 deviceUuid,符号虽同族仍须重核。",
+  "internal_nets": [
+    ["U.VDD3P3*", "U.VDD3P3_RTC", "U.VDD3P3_CPU", "U.VDDA*", "C_BULK.1", "C_VDD3P3.1", "C_VDDA.1", "C_RTC.1", "C_CPU.1", "R_EN.2", "R_IO0.2", "PORT:3V3"],
+    ["U.EP", "FLASH.GND", "PSRAM.VSS", "X.GND*", "C_BULK.2", "C_VDD3P3.2", "C_VDDA.2", "C_RTC.2", "C_CPU.2", "C_SPI.2", "C_SPI_HF.2", "C_FLASH.2", "C_PSRAM.2", "C_PSRAM_HF.2", "C_EN.2", "C_X1.2", "C_X2.2", "PORT:GND"],
+    ["U.VDD_SPI", "FLASH.VCC", "PSRAM.VDD", "C_SPI.1", "C_SPI_HF.1", "C_FLASH.1", "C_PSRAM.1", "C_PSRAM_HF.1", "R_CS0.2", "R_CS1.2"],
+    ["U.CHIP_PU", "R_EN.1", "C_EN.1", "PORT:EN"],
+    ["U.GPIO0", "R_IO0.1", "PORT:IO0"],
+    ["U.XTAL_P", "X.1", "C_X1.1"],
+    ["U.XTAL_N", "X.3", "C_X2.1"],
+    ["U.SPICS0", "FLASH.CS#", "R_CS0.1"],
+    ["U.SPICS1", "PSRAM.CE#", "R_CS1.1"],
+    ["U.SPICLK", "FLASH.CLK", "PSRAM.SCLK"],
+    ["U.SPID", "FLASH.DI(IO0)", "PSRAM.SI/SIO[0]"],
+    ["U.SPIQ", "FLASH.DO(IO1)", "PSRAM.SO/SIO[1]"],
+    ["U.SPIWP", "FLASH.WP#(IO2)", "PSRAM.SIO[2]"],
+    ["U.SPIHD", "FLASH.HOLD#orRESET#(IO3)", "PSRAM.SIO[3]"],
+    ["U.U0TXD", "PORT:U0TXD"],
+    ["U.U0RXD", "PORT:U0RXD"],
+    ["U.LNA_IN", "PORT:LNA_IN"]
+  ],
+  "ports": {
+    "3V3": {
+      "dir": "in",
+      "at": "U.VDD3P3*",
+      "desc": "3.3V 主供电(来自 LDO/buck),须扛 WiFi 发射瞬态 ≥500mA",
+      "default_net": "3V3"
+    },
+    "GND": {
+      "dir": "bidir",
+      "at": "U.EP",
+      "desc": "系统地(含 QFN-56 EPAD 热焊盘,符号名 GND)",
+      "default_net": "GND"
+    },
+    "EN": {
+      "dir": "bidir",
+      "at": "U.CHIP_PU",
+      "desc": "复位/使能(CHIP_PU):接 RESET 按键(block.tactile_boot_reset)+ 自动下载电路(block.esp32_autodownload 的 EN port)",
+      "default_net": "EN"
+    },
+    "IO0": {
+      "dir": "bidir",
+      "at": "U.GPIO0",
+      "desc": "boot strapping:接 BOOT 按键 + 自动下载电路(block.esp32_autodownload 的 IO0 port)",
+      "default_net": "IO0"
+    },
+    "U0TXD": {
+      "dir": "out",
+      "at": "U.U0TXD",
+      "desc": "调试/烧录串口 TX → 接 CH340 的 RXD(block.ch340c_usb_serial)",
+      "default_net": "MCU_TX"
+    },
+    "U0RXD": {
+      "dir": "in",
+      "at": "U.U0RXD",
+      "desc": "调试/烧录串口 RX ← 接 CH340 的 TXD(block.ch340c_usb_serial)",
+      "default_net": "MCU_RX"
+    },
+    "LNA_IN": {
+      "dir": "out",
+      "at": "U.LNA_IN",
+      "desc": "2.4GHz RF 收发脚 → 接天线匹配块(block.ant_2g4_ceramic_pi 的 RF_IN);50Ω 馈线,勿在本块内接任何东西",
+      "default_net": "RF_ANT"
+    }
+  },
+  "schematic_notes": [
+    "本块 vs alt(block.esp32s3r8_chip_minsys)的取舍就一条:**GPIO33~GPIO37 要不要**。S3R8 内封八线 PSRAM 会把 GPIO33~37(SPIIO4~SPIIO7 + SPIDQS)永久占死(Espressif HDG:『When 1.8 V or 3.3 V, octal, in-package or off-package SPI flash/PSRAM is used, GPIO33 ~ GPIO37 are occupied and cannot be used for other functions』);本块用四线 APS6404L 只多占 SPICS1(GPIO26),GPIO33~37 全部可当普通 GPIO。引脚紧张的板子选本块,想省一片料/要八线带宽的选 alt。",
+    "SPI0 总线共享规则(HDG Flash/PSRAM 节原文):flash 与 PSRAM **共用** SPICLK/SPID/SPIQ/SPIHD/SPIWP 五根,只靠片选区分 —— flash=SPICS0、PSRAM=SPICS1,两者都由 VDD_SPI 供电。固件侧反证:ESP-IDF esp32s3/Kconfig.spiram 里 SPIRAM_CS_IO default 26(=SPICS1)、SPIRAM_CLK_IO default 30(=SPICLK)。",
+    "四线数据线映射(U 符号名→PSRAM datasheet 脚名):SPID→SI/SIO[0]、SPIQ→SO/SIO[1]、SPIWP→SIO[2]、SPIHD→SIO[3] —— 与 flash 的 IO0~IO3 一一对应,四线 PSRAM 的 SIO[0:3] 就是复用 flash 那四根。",
+    "PSRAM 片选上拉 R_CS1 不可省:APS6404L datasheet §7 要求上电后 150µs 初始化期内 CE# 保持高并『track VDD within 200mV』,而 ESP32-S3 复位期 SPICS1 为高阻。上拉必须到 **VDD_SPI**(不是 3V3),否则 VDD_SPI 域断电/降压时 CE# 跟不住 VDD、且会经上拉倒灌。",
+    "VDD_SPI(pin29)是 3.3V **输出**域(内部由 VDD3P3_RTC 经内部 LDO/开关供出):flash VCC 与 PSRAM VDD 都接它,**不要**直接接 3V3。本块该域比模组方案多带一片 PSRAM 的动态电流,HDG 要求的 0.1uF+1uF 去耦(C_SPI_HF+C_SPI)务必贴脚。",
+    "GPIO45 是 VDD_SPI 电压 strapping:默认拉低=3.3V(HDG VDD_SPI Voltage Control 表:EFUSE_VDD_SPI_FORCE=0 且 GPIO45=1 → 1.8V;GPIO45=0 → 3.3V 默认)。本块的 W25Q64 与 APS6404L-3SQR 都是 3.3V 件,**GPIO45 必须保持低/悬空,严禁上拉**(上拉=1.8V 会毁 flash/PSRAM 通信)。",
+    "EN 上电复位 RC:R_EN 10k 上拉 + C_EN 1uF 对地(HDG 复位节原值),保证 3V3 稳定后再释放 CHIP_PU;RESET 按键/自动下载走 EN port,别省 C_EN。HDG 同时给出时序底线 tSTBL≥50µs、tRST≥50µs。",
+    "GPIO0 = boot strapping:10k 上拉默认 flash 启动。HDG 明确警告『Do not add high-value capacitors at GPIO0』—— IO0 上不要挂电容(自动下载电路的三极管时序也会被电容破坏)。",
+    "电源脚全覆盖:VDD3P3(pin2,3 同名双脚,模拟/RF)+ VDD3P3_RTC(20)+ VDD3P3_CPU(46)+ VDDA(pin55,56 同名双脚)全部接 3V3 并逐组去耦;GND 只有 EPAD(pin57,符号名 GND)一个物理脚,必接且要热过孔。",
+    "HDG Flash/PSRAM 节还建议『add zero-ohm resistor footprints in series on the SPI communication lines』(SPI 线串 0Ω 位便于调试/调时序)。本块**未**实例化这 6 个 0R 位(BOM/面积代价 vs 收益按项目定);若要加,用 res.0r_0402,默认贴 0R 不 DNF。",
+    "固件侧内存类型:ESP-IDF esp32s3/Kconfig.spiram 的 SPIRAM_MODE 默认 QUAD,64Mbit 档选项 SPIRAM_TYPE_ESPPSRAM64 原文列的是『ESP-PSRAM64 , LY68L6400 or APS6408』—— **未点名 APS6404L**(LY68L6400 是同级 64Mbit 四线 PSRAM)。实践上走 SPIRAM_TYPE_AUTO 自动探测;**此条属固件侧待实测确认项**,bring-up 时先确认 PSRAM 被识别为 8MB 再定稿。",
+    "XTAL_32K_P/N(pin21/22)外接 32.768k 慢钟是可选项,本块不含(内部 RC 可用);未用 GPIO 合法悬空,sch check 出 WARN 属正常。",
+    "HDG 晶振节提到 XTAL_P 上『Initially, it is suggested to use an inductor of 24 nH』的串联电感位 —— 属晶振匹配微调项,本块未含(同族 S3R8 块亦未含),需要时按实测加。",
+    "netflag 必须经真实导线连接(坐标重叠不算连通)——本项目通用约束。"
+  ],
+  "pcb_layout": [
+    {
+      "rule": "decap-adjacency",
+      "target": "C_PSRAM / C_PSRAM_HF",
+      "constraint": "APS6404L 的 1uF(+可选 100nF)尽可能贴 PSRAM VDD(pin8),最短回地 —— datasheet §14.3 原文『To minimize parasitic inductance, place the cap as close to VDD pin as possible』",
+      "value": "<= 2mm",
+      "severity": "must"
+    },
+    {
+      "rule": "spi0-bus-adjacency",
+      "target": "FLASH / PSRAM",
+      "constraint": "W25Q64 与 APS6404L 都靠近芯片 SPI0 脚区(QFN pin28-35 那一侧),共享的五根数据/时钟线短、直、少过孔;两片分列 SPI0 出线两侧,避免总线绕远形成长残桩(stub)",
+      "value": "走线尽量 <= 15mm,过孔 <= 1/线",
+      "severity": "must"
+    },
+    {
+      "rule": "decap-adjacency",
+      "target": "C_VDD3P3 / C_VDDA / C_RTC / C_CPU / C_SPI / C_SPI_HF / C_FLASH",
+      "constraint": "每颗去耦帽紧贴其对应电源脚(VDD3P3 双脚区/VDDA 双脚区/VDD3P3_RTC/VDD3P3_CPU/VDD_SPI/flash VCC),最短回地(HDG 电源节)",
+      "value": "<= 2mm",
+      "severity": "must"
+    },
+    {
+      "rule": "xtal-adjacency",
+      "target": "X / C_X1 / C_X2",
+      "constraint": "40MHz 晶振紧贴 XTAL_P/XTAL_N 脚(QFN 53/54 侧),两颗负载帽对称布置,XTAL_P/N 走线短且对称;晶振区包地(guard ring + 缝合过孔),下方勿走高速/RF 线",
+      "value": "晶振到芯片 <= 5mm,负载帽对称",
+      "severity": "must"
+    },
+    {
+      "rule": "ep-thermal-vias",
+      "target": "U.GND (EPAD)",
+      "constraint": "QFN-56 EPAD(唯一 GND 脚)下打热过孔阵列直连 GND 平面——既是散热也是唯一回流路径,不打等于没接好地",
+      "value": ">= 9 vias (3x3)",
+      "severity": "must"
+    },
+    {
+      "rule": "bulk-cap",
+      "target": "C_BULK",
+      "constraint": "10uF 体电容靠近 VDD3P3(pin2/3)供电入口,压 WiFi 发射瞬态(HDG:主入口『at least 10 μF』)",
+      "value": "",
+      "severity": "should"
+    },
+    {
+      "rule": "en-rc-near",
+      "target": "R_EN / C_EN",
+      "constraint": "EN 的 RC 靠近 CHIP_PU 脚,短走线,远离噪声源",
+      "value": "",
+      "severity": "should"
+    },
+    {
+      "rule": "rf-feed-clear",
+      "target": "PORT:LNA_IN",
+      "constraint": "LNA_IN 出脚即按 50Ω 微带走,两侧护地;π 匹配与天线净空约束在 block.ant_2g4_ceramic_pi",
+      "value": "50ohm",
+      "severity": "must"
+    }
+  ],
+  "signals": {
+    "SPI0": {
+      "nets": ["SPICS0", "SPICS1", "SPICLK", "SPID", "SPIQ", "SPIWP", "SPIHD"],
+      "type": "single_high_speed",
+      "max_via": 1,
+      "route": "共享总线(flash+PSRAM 两片挂同五根线)短、直、组内尽量等长;两片片选各自独立。四线 PSRAM 默认 40MHz、可跑 80/120MHz(ESP-IDF Kconfig:『Quad PSRAM 120 MHz is stable』)——按 120MHz 目标布线,不跨分割地,少过孔,避免长残桩",
+      "keepout": "远离 RF 馈线与晶振区",
+      "severity": "must",
+      "reason": "SPI0 上同时挂 flash 与 PSRAM 两片负载,总线容性负载与残桩比单挂 flash 更敏感;走线长/参差直接限频(HDG Flash/PSRAM 节)"
+    },
+    "XTAL": {
+      "nets": ["XTAL_P", "XTAL_N"],
+      "type": "clock",
+      "route": "短且对称,负载帽对称贴放,差分对待",
+      "keepout": "包地(guard ring+缝合过孔),远离 RF/高速/开关电源",
+      "severity": "must",
+      "reason": "40MHz 主时钟直接决定 RF 频率精度,受扰=WiFi/BLE 掉链(HDG 晶振节要求 ±10ppm)"
+    }
+  },
+  "silk": {
+    "U": {
+      "label": "ESP32-S3",
+      "pins": {
+        "U.CHIP_PU": "EN",
+        "U.GPIO0": "IO0",
+        "U.U0TXD": "TX",
+        "U.U0RXD": "RX",
+        "U.LNA_IN": "RF"
+      },
+      "note": "关键脚功能名丝印,便于飞线调试/量测;QFN 无引脚伸出,标记落 courtyard 外侧对应方位",
+      "clearance": "outside-body",
+      "severity": "should"
+    },
+    "PSRAM": {
+      "label": "PSRAM 8MB",
+      "note": "标 pin1 方向点;⚠只能装 3.3V 版(型号带 3 前缀,如 APS6404L-3SQR),装成 1.8V 版会烧 —— 丝印标型号可挡返修误装",
+      "clearance": "outside-body",
+      "severity": "should"
+    }
+  },
+  "bom_note": "共 21 件:1× ESP32-S3 裸片 + 1× W25Q64(C179171)+ 1× APS6404L-3SQR-SN(C5333729,扩展料)+ 1× 40MHz 3225 晶振 + 13× 0402 电容(2×12pF/6×100nF/5×1uF)+ 1× 10uF 0805 + 4× 10k 0402(基础料)。比 alt(block.esp32s3r8_chip_minsys,17 件)多 4 件:PSRAM 本体 + 其 1uF/100nF 去耦 + SPICS1 上拉;换来 GPIO33~37 五个脚可用。"
+}

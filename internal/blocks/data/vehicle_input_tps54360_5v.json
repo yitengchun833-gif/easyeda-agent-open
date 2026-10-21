@@ -1,0 +1,128 @@
+{
+  "id": "block.vehicle_input_tps54360_5v",
+  "desc": "车载 12-24V 常电输入前端(端子+保险+反接P-MOS带栅极钳位+TVS)+ TPS54360B 车规 buck →5V/2A(600kHz);摩托/汽车电瓶供电设备的电源入口标准单元",
+  "category": "power",
+  "author": "@zhoushoujianwork",
+  "contributors": [],
+  "added": "v0.11.0",
+  "updated": "v0.11.0",
+  "source": "datasheet:TPS54360B (TI SLVSC50 — 60V/3.5A 宽压 buck 典型应用: EN UVLO 分压/RT 定频/COMP 补偿/BOOT/非同步续流) + datasheet:SMBJ33A/BZT52C12 ; 反接 P-MOS 栅极钳位拓扑与 60V 续流管选型经 motobox 车机V2 两轮设计评审修正(评审实证: 无栅极网络时 Vgs 达 -24~-53V 超 ±20V 上限;40V 续流管在 SMBJ33A ~53V 钳位电压下击穿)后在 车机V2-fable P1 整板落网",
+  "validated": "车机V2-fable 2026-07-09 by @zhoushoujianwork: 整板 place→autoconnect→sch check(0 桥接/0 异名合并)→bridge-check 收敛→sch drc(0 fatal/0 error),spec↔sch read 逐网对账 0 差异(P1 85 rails + 52 ports)。诚实: 随整板 netport 落网验证,非孤立块单放;未实板 bring-up;COMP 补偿值/L Isat/保险分断电压标终核。",
+  "parts": {
+    "J_VEH": {
+      "part": "conn.terminal_3p_508",
+      "qty": 1,
+      "note": "车辆线束入口 3P 端子: 1=常电(12-24V), 2=ACC/点火(透传给检测块), 3=车身地。"
+    },
+    "F_IN": {
+      "part": "fuse.2a_1206",
+      "qty": 1,
+      "note": "输入保险。⚠终核: 24V 系统钳位故障电压可达 ~53V,1206 片式保险分断电压常低于 63V——确认不足则换分断 ≥63V 的件。"
+    },
+    "Q_REV": {
+      "part": "bjt.pmos40v_sot23",
+      "qty": 1,
+      "note": "反接保护 P-MOS(理想二极管接法): D=输入侧(体二极管先导通), S=受保护母线。必须配 R_QG+D_QG 栅极网络——裸栅时 Vgs=-24V(常态)~-53V(TVS 钳位期间),超 SOT-23 P-MOS ±20V 上限,栅氧击穿后保护静默失效(评审 P0 实证)。"
+    },
+    "R_QG": { "part": "res.100k_0402", "qty": 1, "note": "栅极下拉(G→GND),提供导通偏置。" },
+    "D_QG": {
+      "part": "zener.bzt52c12_sod123",
+      "qty": 1,
+      "note": "12V 稳压管钳 |Vgs|≤12V: A→栅, K→源。"
+    },
+    "D_TVS": {
+      "part": "diode.smbj33a_smb",
+      "qty": 1,
+      "note": "输入浪涌 TVS(载具瞬态)。⚠终核: 真 24V 系统 load-dump(ISO 7637-2 P5 数十焦)建议升 SMCJ33A 1500W;12V-only 则 SMBJ33A 够。"
+    },
+    "C_IN1": { "part": "cap.10uf50v_1210", "qty": 1, "note": "输入体电容 ×2 之一(50V 档,24V 直流偏压降额 ~50% 已计入用双颗)。" },
+    "C_IN1B": { "part": "cap.10uf50v_1210", "qty": 1, "note": "输入体电容 ×2 之二。" },
+    "C_IN_HF": { "part": "cap.100nf_0603", "qty": 1, "note": "输入高频(50V 档),贴 U.VIN。" },
+    "U": {
+      "part": "buck.tps54360_so8",
+      "qty": 1,
+      "note": "TPS54360B 60V/3.5A 非同步 buck。功能脚(sch read 实测): BOOT/VIN/EN/RT\\CLK(符号名 RT/CLK)/FB/COMP/GND/SW/EP。65V abs-max 是全链钳位电压的天花板。"
+    },
+    "R_ENT": { "part": "res.453k_0402", "qty": 1, "note": "EN 上分压(VIN→EN): 与 R_ENB 设 UVLO 启动≈6.8V/停≈5.2V——躲过起动机压降但不误停(终核)。" },
+    "R_ENB": { "part": "res.887k_0402", "qty": 1, "note": "EN 下分压 88.7k。" },
+    "R_RT": { "part": "res.162k_0402", "qty": 1, "note": "RT/CLK 定频 ≈600kHz(24V 输入下最小导通时间余量充足)。" },
+    "C_BOOT": { "part": "cap.100nf_0402", "qty": 1, "note": "BOOT 自举(BOOT↔SW)。" },
+    "L_OUT": {
+      "part": "ind.15uh_12x12mm",
+      "qty": 1,
+      "note": "15µH 屏蔽功率电感,Isat≥4A(终核)。4 焊盘件: 同侧双 pad 同网,两个都要连(1/2=SW 侧, 3/4=5V 侧)。"
+    },
+    "D_CATCH": {
+      "part": "diode.b360a_sma",
+      "qty": 1,
+      "note": "续流肖特基 ≥60V/3A(A→GND, K→SW)。评审 P1 实证: 反压=输入钳位后电压(SMBJ33A 最高 ~53V),40V 件(SS34/B340A)会击穿短路带走 5V 轨——必须 60V 档。SMA 在 24V/2A 下 ~0.8W 偏热,更大电流升 SMB/SMC(B560C)。"
+    },
+    "R_FBT": { "part": "res.523k_0402", "qty": 1, "note": "FB 上分压 52.3k(5V: 0.8×(1+52.3/10)=4.98V)。" },
+    "R_FBB": { "part": "res.10k_0402", "qty": 1, "note": "FB 下分压。" },
+    "R_COMP": { "part": "res.47k_0402", "qty": 1, "note": "COMP 补偿 R 4.7k(终核 Webench,按输出电容直流偏压降额后的有效容值算)。" },
+    "C_COMP": { "part": "cap.47nf_0402", "qty": 1, "note": "COMP 补偿 C 4.7nF(终核)。" },
+    "C_COMP_HF": { "part": "cap.47pf_0402", "qty": 1, "note": "COMP 高频极点 47pF(终核)。" },
+    "C_OUT1": { "part": "cap.22uf_0805", "qty": 1, "note": "输出体电容 ×2 之一。" },
+    "C_OUT2": { "part": "cap.22uf_0805", "qty": 1, "note": "输出体电容 ×2 之二。" },
+    "C_OUT_HF": { "part": "cap.100nf_0402", "qty": 1, "note": "输出高频。" }
+  },
+  "internal_nets": [
+    ["J_VEH.1", "F_IN.1"],
+    ["J_VEH.2", "PORT:IGN_12V"],
+    ["J_VEH.3", "PORT:GND"],
+    ["F_IN.2", "Q_REV.D"],
+    ["Q_REV.G", "R_QG.1", "D_QG.A"],
+    ["Q_REV.S", "D_QG.C", "D_TVS.C", "C_IN1.1", "C_IN1B.1", "C_IN_HF.1", "U.VIN", "R_ENT.1", "PORT:VBAT_RAW"],
+    ["R_ENT.2", "U.EN", "R_ENB.1"],
+    ["U.RT/CLK", "R_RT.1"],
+    ["U.BOOT", "C_BOOT.1"],
+    ["C_BOOT.2", "U.SW", "D_CATCH.K", "L_OUT.1", "L_OUT.2"],
+    ["L_OUT.3", "L_OUT.4", "C_OUT1.1", "C_OUT2.1", "C_OUT_HF.1", "R_FBT.1", "PORT:5V"],
+    ["U.FB", "R_FBT.2", "R_FBB.1"],
+    ["U.COMP", "R_COMP.1", "C_COMP_HF.1"],
+    ["R_COMP.2", "C_COMP.1"],
+    ["U.GND", "U.EP", "R_QG.2", "D_TVS.A", "D_CATCH.A", "R_ENB.2", "R_RT.2", "R_FBB.2", "C_COMP.2", "C_COMP_HF.2", "C_IN1.2", "C_IN1B.2", "C_IN_HF.2", "C_OUT1.2", "C_OUT2.2", "C_OUT_HF.2", "PORT:GND"]
+  ],
+  "ports": {
+    "IGN_12V": {
+      "dir": "out",
+      "at": "J_VEH.2",
+      "desc": "ACC/点火线透传(接 block.opto_acc_ign_detect 的 IGN_12V 口)",
+      "default_net": "IGN_12V"
+    },
+    "VBAT_RAW": {
+      "dir": "out",
+      "at": "U.VIN",
+      "desc": "保护后的 12-24V 母线(供车电在位采样分压等;大分压+钳位后进 ADC)",
+      "default_net": "VBAT_RAW"
+    },
+    "5V": {
+      "dir": "out",
+      "at": "L_OUT.3",
+      "desc": "5V/2A 母线(供 power-path 充电器/USB hub 等;USB VBUS 并入必须经二极管 OR,严禁直连)",
+      "default_net": "+5V"
+    },
+    "GND": {
+      "dir": "bidir",
+      "at": "U.GND",
+      "desc": "参考地(车身地经 J_VEH.3 汇入)",
+      "default_net": "GND"
+    }
+  },
+  "schematic_notes": [
+    "反接保护方向: Q_REV.D=输入侧使体二极管先导通,正常供电后沟道反向导通旁路体二极管。栅极网络(R_QG+D_QG)不可省——这是评审抓到的 P0 级静默失效点。",
+    "续流管电压等级由『TVS 钳位电压』决定而不是标称输入: SMBJ33A 击穿 36.7V/钳位最高 53.3V,续流管反压=该值——40V 件必炸,60V 档起步,天花板是 TPS54360B 的 65V abs-max。",
+    "600kHz(R_RT=162k) 是 12-24V 输入下效率/体积折中;历史文档写 ~500kHz 是笔误(评审勘误)。",
+    "COMP 三件与 L Isat 标『终核』: 按陶瓷电容直流偏压降额后的有效容值跑 Webench 复核;L_OUT Isat≥4A。",
+    "L_OUT 是 4 焊盘功率电感,同侧双 pad 必须都连(internal_nets 已含 1+2/3+4)。",
+    "F_IN 分断电压与 D_TVS 功率档随『12V-only 还是真 24V』的产品决策终核(评审条件项)。"
+  ],
+  "pcb_layout": [
+    { "rule": "loop-area", "target": "U.VIN→U.SW→D_CATCH→C_IN1", "constraint": "开关热回路(VIN-SW-续流-输入电容)面积最小化", "value": "回路对角 <=10mm", "severity": "must" },
+    { "rule": "cap-adjacency", "target": "C_IN_HF/C_BOOT", "constraint": "高频电容贴 U.VIN / BOOT-SW", "value": "<=2mm", "severity": "must" },
+    { "rule": "thermal-copper", "target": "U.EP / D_CATCH", "constraint": "EP 过孔阵列下沉地平面;续流管阴极铺铜散热(SMA ~0.8W)", "value": "EP>=4 过孔; D 铜箔 >=50mm²", "severity": "must" },
+    { "rule": "sensitive-route", "target": "U.FB/U.COMP 网络", "constraint": "反馈/补偿远离 SW 节点与电感", "value": ">=3mm", "severity": "must" },
+    { "rule": "edge-placement", "target": "J_VEH", "constraint": "线束端子靠板边,开口朝外", "value": "edge", "severity": "must" }
+  ],
+  "bom_note": "24 件: 端子+保险+反接保护 3 件+TVS+TPS54360B 全外围。摩托/汽车电瓶常电供电设备的标准电源入口;下游典型: block.bq24074_powerpath_charger(电池备份)或直接 5V 负载。"
+}

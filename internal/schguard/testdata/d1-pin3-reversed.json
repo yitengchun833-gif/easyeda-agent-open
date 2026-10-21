@@ -1,0 +1,45 @@
+{
+  "case": "P1 D1.3 reversed marker branch",
+  "projectUuid": "475cc0f773ed4a6fb7a02336c8a6a67f",
+  "documentUuid": "fb2fca2fba6d9d07",
+  "target": {
+    "componentId": "f80d3779-bd33-4533-b068-f1c23da82b0c",
+    "designator": "D1",
+    "pinNumber": "3",
+    "net": "USB_DM",
+    "expectedDirection": "left",
+    "candidateOffset": 20
+  },
+  "result": {
+    "components": [
+      {
+        "componentType": "part",
+        "primitiveId": "6752b13a360ce8c0",
+        "designator": "D1",
+        "bbox": {"minX": 165, "minY": 1040, "maxX": 205, "maxY": 1060},
+        "pinsAvailable": true,
+        "pins": [
+          {"pinNumber": "3", "x": 165, "y": 1050, "rotation": 180, "net": "USB_DM"}
+        ]
+      },
+      {
+        "componentType": "netport",
+        "primitiveId": "498ce3419c4cc3a3",
+        "x": 245,
+        "y": 1050,
+        "rotation": 0,
+        "net": "USB_DM"
+      }
+    ],
+    "wiresAvailable": true,
+    "wires": [
+      {
+        "primitiveId": "59fdb0a45265079b",
+        "x0": 165,
+        "y0": 1050,
+        "x1": 245,
+        "y1": 1050
+      }
+    ]
+  }
+}

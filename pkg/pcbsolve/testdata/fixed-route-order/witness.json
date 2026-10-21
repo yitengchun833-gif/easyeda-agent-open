@@ -1,0 +1,4 @@
+[
+  {"demandId":"a","routes":[{"id":"a","net":"A","layer":1,"width":4,"points":[[30,100],[80,100],[110,70],[190,70],[220,100],[270,100]]}]},
+  {"demandId":"b","routes":[{"id":"b","net":"B","layer":1,"width":4,"points":[[150,115],[150,85]]}]}
+]
