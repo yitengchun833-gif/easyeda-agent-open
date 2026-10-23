@@ -39,3 +39,11 @@ Go 使用任务局部缓存与过程级遥测目录，关闭依赖下载；未�
 此版本是候选，不是实机验收完成的正式版。工作流 CLI 功能断言仍受初始化权限错误阻碍；既有后台和 Connector 的只读连通性不证明候选已加载。Knowledge 功能未改，其服务版本保留，候选包仅同步 package 版本声明，不要求重启现有知识服务。Connector 的安装和禁用旧扩展暂无经核实的官方 EDA API，不能用开发期 IndexedDB 注入代替安装。
 
 候选 Connector 已生成，清单/UUID/版本、bundle 字节、logo 与 ZIP CRC 校验通过。标准 npm 构建的 esbuild 子进程启动被当前运行环境拒绝；停止该路径后，在相同沙箱内直接调用已安装 esbuild CLI，参数逐项对应 config/esbuild.common.ts，再使用原 sync-knowledge-ui.mjs 和 build/packaged.ts。未降级沙箱或修改安全设置。公开增量的 13 个产品/测试 Open 文件及 4 个工作流文件按换行规范化后与各自已审阅集成提交完全一致，未删除公开跟踪路径。
+
+后续构建与验收检查（2026-10-23）：
+
+- 本次正式单次审批通过后，workflow CLI 初始化和实际断言可运行；最初发现 hash-chain 测试首个子用例改坏共享计划后未恢复。夹具现用 finally 恢复原字节，仅修测试，产品拒绝门禁未改。来源提交 `7bba6f714d54c4b12248a34e8cb5f611fffb2586`；5 个 native-delivery 方法与2个旧入口兼容方法共7/7通过，10.058秒，七类哈希漂移子用例均达到预期拒绝断言。
+- 保留 pack-open.py 的严格 Go 来源检查。按 [Go #58218](https://github.com/golang/go/issues/58218) 和本机工具链源码定位后，采用同一候选提交的本地共享对象稀疏检出（仅cmd/internal/pkg与根文件，有真实.git目录）。正式单次审批下构建成功；实际元数据具有 vcs=git、真实提交、vcs.modified=false，并开启trimpath。构建依赖沿用缓存，不复制运行数据，不切原分支。
+- 构建及测试的单次审批不改变运行环境的全局权限配置，未改ACL或降低来源验证。
+- 当前任务CUA原生桌面API被禁用，实际清单apps为空且无EDA浏览器标签，无法操作客户端扩展管理器或检查其它工程未保存状态。未执行UI安装、退出或重开；不将全局退出当作预定必要步骤。候选真实绘制、图面与保存重开验收仍待部署后完成。
+- 第二轮PCB route apply保持独立，不包含在本候选。完整包与校验文件先本地交付；旧publish-release.py最终自动设置draft=false，未按候选语义使用prerelease，不原样用于本RC。

@@ -315,11 +315,15 @@ class OpenReceiptWorkflowTests(unittest.TestCase):
         for key in ("plan", "source", "stage", "final", "run", "delivery", "image"):
             with self.subTest(file=key):
                 operation, files = self.native_delivery_fixture(name="drift-" + key)
-                files[key].write_bytes(files[key].read_bytes() + b"\n")
-                before = self.state()
-                self.apply_error(operation)
-                self.assertEqual(self.state()["generation"], before["generation"])
-                self.assertEqual(self.state()["results"], before["results"])
+                original = files[key].read_bytes()
+                try:
+                    files[key].write_bytes(original + b"\n")
+                    before = self.state()
+                    self.apply_error(operation)
+                    self.assertEqual(self.state()["generation"], before["generation"])
+                    self.assertEqual(self.state()["results"], before["results"])
+                finally:
+                    files[key].write_bytes(original)
 
     def test_native_delivery_accepts_final_only_run_with_complete_original_stage_chain(self):
         operation, files = self.native_delivery_fixture(name="final-only")

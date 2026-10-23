@@ -109,7 +109,8 @@
     "connectorUuidUnchanged": true,
     "privateGitHistoryIncluded": false,
     "runtimeDataAndCredentialsIncluded": false,
-    "workflowCliValidation": "blocked during fixture initialization by permission error; assertions not reached",
+    "workflowCliValidation": "7 selected native-delivery and legacy CLI tests passed, 10.058s; formal per-command approval",
+    "workflowTestIsolationCommit": "7bba6f714d54c4b12248a34e8cb5f611fffb2586",
     "liveCandidateAcceptance": false,
     "existingDeployedReleaseUnchanged": true
   }
