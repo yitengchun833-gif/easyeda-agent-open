@@ -84,5 +84,17 @@
   "fullHardwareAcceptanceClaimed": false,
   "compiledGoDependencies": 13,
   "fixturePolicy": "native rule schema with synthetic Net membership; no private pilot board or runtime identity",
-  "localOriginalsChangedByExport": false
+  "localOriginalsChangedByExport": false,
+  "postExportCleanup": {
+    "sourceCommit": "76d0b2c0332fb975ff36d0a0e6b18deade1133d5",
+    "date": "2026-10-23",
+    "removedUnusedFiles": [
+      "extension/ws-file-server.mjs"
+    ],
+    "removedObsoleteExclusions": [
+      "extension/.edaignore: ws-file-server.mjs"
+    ],
+    "runtimePayloadChanged": false,
+    "releaseAssetsRetainedUnchanged": true
+  }
 }

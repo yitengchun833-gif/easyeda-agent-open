@@ -16,4 +16,3 @@
 .eslintcache
 debug.log
 *.log
-ws-file-server.mjs
