@@ -96,5 +96,22 @@
     ],
     "runtimePayloadChanged": false,
     "releaseAssetsRetainedUnchanged": true
+  },
+  "nativeDrawingCandidate": {
+    "date": "2026-10-23",
+    "publicBaseCommit": "aab485e1b527e75218555fcafcdece3c08c5bd36",
+    "openBaseCommit": "76d0b2c0332fb975ff36d0a0e6b18deade1133d5",
+    "openCandidateCommit": "8d0f1bc023557bb396b09d2b888e2b3068ce9a91",
+    "workflowProductCommit": "216922daec7f845cf863a93ef5e831d1ff563954",
+    "transfer": "reviewed hunks: 14 Open paths, 4 workflow-prefixed product paths; preserve public-only and anonymized files",
+    "coreVersion": "1.8.1-open.9.7-rc.1",
+    "connectorVersion": "1.8.1-open.9.7-rc.1-kb.33",
+    "connectorUuidUnchanged": true,
+    "privateGitHistoryIncluded": false,
+    "runtimeDataAndCredentialsIncluded": false,
+    "workflowCliValidation": "7 selected native-delivery and legacy CLI tests passed, 10.058s; formal per-command approval",
+    "workflowTestIsolationCommit": "7bba6f714d54c4b12248a34e8cb5f611fffb2586",
+    "liveCandidateAcceptance": false,
+    "existingDeployedReleaseUnchanged": true
   }
 }

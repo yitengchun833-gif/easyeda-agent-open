@@ -1153,7 +1153,7 @@ func AllActions() []ActionSpec {
 			NeedsConfirm: false,
 			Description:  "Place a footprint on the PCB and CONNECT it — the WORKING way to add ONE part to an existing board, since pcb.import_changes no-ops for API-added parts (#20). Creates the footprint (device {libraryUuid, uuid}) at x,y on a copper layer, links it to its schematic twin (uniqueId + designator), assigns each pad's net from the supplied `nets` map (padNumber→net) via pad-net writes, then recomputes ratlines. Net→pad assignment is what actually wires it (importChanges normally does that). Get `nets` (and the twin's uniqueId) from `sch read` — the netlist is only readable while the schematic is active, so the caller passes it. Workflow: place+wire the part in the schematic → `sch read` for its pin nets + uniqueId → `pcb add-component` with those nets.",
 			Inputs:       []string{"libraryUuid", "uuid", "x", "y", "layer optional (default 1=TOP)", "rotation optional", "designator optional", "uniqueId optional", "nets optional (object padNumber→net)"},
-			Outputs:      []string{"primitiveId", "designator", "uniqueId", "padCount", "assignedNets", "unmatchedPads"},
+			Outputs:      []string{"primitiveId", "designator", "uniqueId", "padCount", "assignedNets", "attemptedNetAssignments", "unmatchedPads", "bindingVerified", "verified", "partial", "netMapping.verified", "netMapping.readbackAvailable", "netMapping.matched[]", "netMapping.mismatched[]", "netMapping.missingPadNumbers[]", "netMapping.conflictingPadNumbers[]", "netMapping.unverifiedPadNumbers[]", "padWriteFailures[]"},
 			VerifyWith:   []string{"pcb.components.list", "pcb.nets.list", "pcb.drc.check"},
 		},
 		{
@@ -1246,7 +1246,7 @@ func AllActions() []ActionSpec {
 			NeedsWindow: true,
 			Description: "Translate components by a relative (dx, dy) offset — nudge a group without recomputing absolute coordinates. Operates on the current selection unless primitiveIds is given.",
 			Inputs:      []string{"dx", "dy", "primitiveIds optional"},
-			Outputs:     []string{"moved[].primitiveId", "moved[].from", "moved[].to", "count"},
+			Outputs:     []string{"moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)"},
 			VerifyWith:  []string{"pcb.components.list"},
 		},
 		{
@@ -1257,7 +1257,7 @@ func AllActions() []ActionSpec {
 			NeedsWindow: true,
 			Description: "Coarse auto-layout SEED: cluster by shared local nets (mode=cluster) or pack a flat grid (mode=grid), grid-packing each cluster into a tidy block with gutters; skips locked components. Mechanical first pass only — apply the placement priorities in pcb-layout-conventions.md afterward.",
 			Inputs:      []string{"mode optional (cluster|grid, default cluster)", "primitiveIds optional", "pitch optional", "gutter optional", "cols optional"},
-			Outputs:     []string{"mode", "groups", "moved[].primitiveId", "moved[].from", "moved[].to", "count"},
+			Outputs:     []string{"mode", "groups", "moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)"},
 			VerifyWith:  []string{"pcb.components.list"},
 		},
 		{

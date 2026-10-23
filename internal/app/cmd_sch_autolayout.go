@@ -33,7 +33,7 @@ import (
 type autolayoutRules struct {
 	AvoidTitleBlock   bool    // hard keep-out: never land a part in the title block
 	PreservePinFanout bool    // keep peripherals out of a core pin's lead-out lane
-	ModuleGap         float64 // nominal inter-module breathing room (informational/zone sizing)
+	ModuleGap         float64 // minimum edge-to-edge gap between functional module envelopes
 	RouteChannelGap   float64 // length of a preserved pin-fanout channel
 	PreferVertical    bool    // try above/below before left/right for dense peripherals
 	PartGap           float64 // minimum edge-to-edge gap between two parts
@@ -380,11 +380,68 @@ func findSlotNormalized(box layoutBBox, cx, cy, step float64, preferVertical boo
 	return box, len(cands), false
 }
 
+func alShiftBox(box layoutBBox, dx, dy float64) layoutBBox {
+	return layoutBBox{box.MinX + dx, box.MinY + dy, box.MaxX + dx, box.MaxY + dy}
+}
+
+// Reserve a complete functional group, including its empty interior. A rigid
+// grid translation preserves the internal placement, pin directions and spacing;
+// the envelope is a planning obstacle only, never a visible frame.
+func placeAutolayoutModule(members, obstacles, groups, priorLanes []layoutBBox, sheet, title *layoutBBox, rules autolayoutRules) (layoutBBox, float64, float64, int, bool) {
+	envelope := members[0]
+	for _, box := range members[1:] {
+		envelope.MinX = math.Min(envelope.MinX, box.MinX)
+		envelope.MinY = math.Min(envelope.MinY, box.MinY)
+		envelope.MaxX = math.Max(envelope.MaxX, box.MaxX)
+		envelope.MaxY = math.Max(envelope.MaxY, box.MaxY)
+	}
+	collides := func(candidate layoutBBox) bool {
+		for _, group := range groups {
+			if boxesOverlap(candidate, group) || rectGap(candidate, group) < rules.ModuleGap {
+				return true
+			}
+		}
+		for _, obstacle := range obstacles {
+			if boxesOverlap(candidate, obstacle) || rectGap(candidate, obstacle) < rules.PartGap {
+				return true
+			}
+		}
+		return false
+	}
+	inBounds := func(candidate layoutBBox) bool { return sheet == nil || boxInside(candidate, *sheet) }
+	hitsTitle := func(candidate layoutBBox) bool {
+		return rules.AvoidTitleBlock && title != nil && boxesOverlap(candidate, *title)
+	}
+	hitsLane := func(candidate layoutBBox) bool {
+		if rules.PreservePinFanout {
+			for _, lane := range priorLanes {
+				if boxesOverlap(candidate, lane) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	normalize := func(candidate layoutBBox) layoutBBox {
+		return alShiftBox(envelope, snapAnchor(candidate.MinX-envelope.MinX), snapAnchor(candidate.MinY-envelope.MinY))
+	}
+	cx, cy := bboxCenter(envelope)
+	w, h := bboxSize(envelope)
+	box, retries, ok := findSlotNormalized(envelope, cx, cy, math.Max(w, h)+math.Max(rules.ModuleGap, rules.PartGap),
+		rules.PreferVertical, normalize, collides, inBounds, hitsTitle, hitsLane)
+	return box, box.MinX - envelope.MinX, box.MinY - envelope.MinY, retries, ok
+}
+
 // planAutolayout is the PURE deterministic core. Given the modules (in spec
 // order), the placed parts, the sheet bbox (nil → derive usable area + skip the
 // title-block keep-out), and the rules, it returns the full placement report.
 func planAutolayout(modules []alModuleSpec, parts []alPart, sheet *layoutBBox, rules autolayoutRules) alReport {
 	rep := alReport{OK: true}
+	if math.IsNaN(rules.ModuleGap) || math.IsInf(rules.ModuleGap, 0) || rules.ModuleGap < 0 {
+		rep.OK = false
+		rep.Errors = append(rep.Errors, "moduleGap must be finite and nonnegative")
+		return rep
+	}
 
 	byDes := make(map[string]alPart, len(parts))
 	for _, p := range parts {
@@ -404,6 +461,7 @@ func planAutolayout(modules []alModuleSpec, parts []alPart, sheet *layoutBBox, r
 	var placed []layoutBBox      // obstacle boxes accumulated across all modules
 	var placedComps []layoutComp // parallel, for the final overlap validation
 	var coreLanes []layoutBBox   // preserved pin-fanout channels from placed cores
+	var moduleBoxes []layoutBBox // invisible functional group reservations
 
 	// Parts omitted from the template are fixed obstacles, not empty canvas.
 	// Without this seed a partial spec could legally place U1 on top of a
@@ -421,6 +479,11 @@ func planAutolayout(modules []alModuleSpec, parts []alPart, sheet *layoutBBox, r
 	collides := func(cand layoutBBox) bool {
 		for _, o := range placed {
 			if boxesOverlap(cand, o) || rectGap(cand, o) < rules.PartGap {
+				return true
+			}
+		}
+		for _, group := range moduleBoxes {
+			if boxesOverlap(cand, group) || rectGap(cand, group) < rules.ModuleGap {
 				return true
 			}
 		}
@@ -476,6 +539,7 @@ func planAutolayout(modules []alModuleSpec, parts []alPart, sheet *layoutBBox, r
 			rep.OK = false
 			continue
 		}
+		boxStart, compStart, placementStart, laneStart := len(placed), len(placedComps), len(rep.Placements), len(coreLanes)
 		cw, ch := bboxSize(core.BBox)
 		coreStep := math.Max(cw, ch) + rules.PartGap
 		corePlaced, cRetries, cok := findSlotNormalized(
@@ -540,6 +604,28 @@ func planAutolayout(modules []alModuleSpec, parts []alPart, sheet *layoutBBox, r
 			rep.Placements = append(rep.Placements, makePlacement(pt, pcx, pcy, m.Name, retries))
 			register(pt, box)
 		}
+		envelope, dx, dy, retries, ok := placeAutolayoutModule(placed[boxStart:], placed[:boxStart], moduleBoxes, coreLanes[:laneStart], sheet, tb, rules)
+		if !ok {
+			rep.OK = false
+			rep.Errors = append(rep.Errors, fmt.Sprintf("module %q: could not reserve its complete envelope with moduleGap %g", m.Name, rules.ModuleGap))
+			return rep
+		}
+		for i := placementStart; i < len(rep.Placements); i++ {
+			rep.Placements[i].X += dx
+			rep.Placements[i].Y += dy
+			rep.Placements[i].Retries += retries
+		}
+		for i := boxStart; i < len(placed); i++ {
+			placed[i] = alShiftBox(placed[i], dx, dy)
+		}
+		for i := compStart; i < len(placedComps); i++ {
+			box := alShiftBox(*placedComps[i].BBox, dx, dy)
+			placedComps[i].BBox = &box
+		}
+		for i := laneStart; i < len(coreLanes); i++ {
+			coreLanes[i] = alShiftBox(coreLanes[i], dx, dy)
+		}
+		moduleBoxes = append(moduleBoxes, envelope)
 	}
 
 	// ── validation summary ──────────────────────────────────────────────────

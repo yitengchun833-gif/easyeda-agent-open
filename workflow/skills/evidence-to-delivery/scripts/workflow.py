@@ -430,14 +430,15 @@ def check_evidence(root, plan, op, hashes=None, application_phase="after_reopen"
             require("open_receipt" in op, "Open verification needs its actual acceptance receipt")
             if "open_persistence" in op:
                 native = open_receipts.import_persistence(sys.modules[__name__], root, plan["open_plan"], op["open_persistence"], hashes)
-                require(drawing.get("acceptanceScope", "page") == "local_display"
+                require(native["summary"]["acceptanceScope"] == drawing.get("acceptanceScope", "page")
                         and resolve(root, native["summary"]["stageReceipt"]) == resolve(root, op["open_receipt"]),
-                        "Local display persistence cannot verify another stage or a page delivery")
+                        "Open persistence cannot verify another stage or acceptance scope")
                 require(any(c["id"] == "persistence" and c["status"] == "pass" for c in native["checks"]),
                         "Open save/reopen evidence did not pass")
                 paths.extend(native["paths"])
-                paths.extend(open_receipts.check_visual(sys.modules[__name__], root, plan["open_plan"],
-                                                       op["open_receipt"], rows.get("visual_review"), hashes))
+                if native["summary"]["acceptanceScope"] == "local_display":
+                    paths.extend(open_receipts.check_visual(sys.modules[__name__], root, plan["open_plan"],
+                                                           op["open_receipt"], rows.get("visual_review"), hashes))
             else:
                 require("persistence" in reports and drawing.get("acceptanceScope", "page") == "page",
                         "Open local display needs raw persistence evidence; page delivery needs its strict report")
@@ -918,8 +919,9 @@ def apply(root, state, op):
             saved = open_receipts.import_persistence(sys.modules[__name__], root, p["open_plan"], op["open_persistence"])
             require(resolve(root, saved["summary"]["stageReceipt"]) == resolve(root, op["open_receipt"]),
                     "Open persistence belongs to another stage receipt")
-            require(not any(c.get("id") == "persistence" for c in op.get("checks", []) if isinstance(c, dict)),
-                    "Open persistence check comes only from its original receipts")
+            generated = {check["id"] for check in saved["checks"]}
+            require(not any(c.get("id") in generated for c in op.get("checks", []) if isinstance(c, dict)),
+                    "Open persistence and visual checks come only from their original receipts")
             op = dict(op, checks=op.get("checks", []) + saved["checks"],
                       evidence=list(dict.fromkeys(op.get("evidence", []) + saved["paths"])), open_persistence_import=saved["summary"])
         require(isinstance(op.get("retry_decisions", False), bool), "retry_decisions must be boolean")

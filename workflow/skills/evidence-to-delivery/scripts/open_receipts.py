@@ -4,6 +4,7 @@ import re
 import json
 import zipfile
 import copy
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -69,7 +70,7 @@ def plan_inputs(w, root, binding, hashes=None):
                       for k in ('projectUuid', 'documentUuid'))
               and isinstance(plan.get('stages'), list) and plan['stages'], 'Open receipt needs a staged schematic plan')
     acceptance = plan.get('acceptanceScope', 'page')
-    w.require(acceptance in ('page', 'local_display'), 'Unsupported Open acceptance scope')
+    w.require(acceptance in ('page', 'module', 'local', 'local_display'), 'Unsupported Open acceptance scope')
     stage_ids = [stage.get('id') for stage in plan['stages'] if isinstance(stage, dict)]
     w.require(len(stage_ids) == len(plan['stages']) and all(isinstance(identifier, str) and identifier
               for identifier in stage_ids) and len(stage_ids) == len(set(stage_ids)),
@@ -297,6 +298,9 @@ def prefix_binding(w, root, plan, intended, packet):
         expected['requirementsSha256'] = w.digest(rules)
     if plan.get('layoutHints') is not None:
         expected['expressionSha256'] = w.digest(plan['layoutHints'])
+    if plan.get('taskKind'):
+        expected['acceptanceSha256'] = w.digest({'acceptanceScope': plan.get('acceptanceScope', 'page'),
+                                               'taskKind': plan['taskKind']})
     if plan.get('acceptanceScope') == 'local_display':
         expected['acceptanceSha256'] = w.digest({'acceptanceScope': 'local_display',
             'stages': [{'id': stage['id'], 'primitiveIds': stage['primitiveIds']} for stage in plan['stages']]})
@@ -1024,12 +1028,166 @@ def check_visual(w, root, binding, stage_filename, check, hashes=None):
     return list(dict.fromkeys(paths))
 
 
+def import_delivery(w, root, binding, filename, hashes=None):
+    """Import the existing Open verifier's result and its immutable delivery chain."""
+    hashes = {} if hashes is None else hashes
+    plan_path, plan, paths = plan_inputs(w, root, binding, hashes)
+    path = w.resolve(root, filename)
+    report = w.read(path)
+    scope = plan.get('acceptanceScope', 'local' if plan.get('taskKind') == 'local_edit' else 'page')
+    w.require(scope in ('page', 'module', 'local') and plan.get('confirmation', {}).get('status') == 'confirmed'
+              and isinstance(report, dict) and report.get('schemaVersion') == 'easyeda.delivery-verification/1'
+              and report.get('ok') is True and report.get('derivedOnly') is True and report.get('readOnly') is True
+              and report.get('target') == plan['target'] and report.get('acceptanceScope') == scope
+              and report.get('engineeringAccepted') is False
+              and all(report.get(key) is expected for key, expected in (
+                  ('wholePageComplete', scope == 'page'), ('moduleComplete', scope == 'module'), ('localComplete', scope == 'local'))),
+              'Open delivery verification must pass for the confirmed plan, target and exact acceptance scope')
+
+    def pinned_file(name, digest_value):
+        w.require(isinstance(name, str) and name.strip(), 'Open delivery needs an original evidence file')
+        dependency = w.resolve(root, name)
+        w.require(dependency.is_file() and w.file_hash(dependency, hashes) == digest_value,
+                  'Open delivery evidence changed: ' + name)
+        paths.append(str(dependency))
+        return dependency
+
+    delivery_path = pinned_file(report.get('deliveryFile'), report.get('deliverySha256'))
+    delivery = w.read(delivery_path)
+    directory = w.resolve(root, plan.get('executionReceipts', {}).get('directory', ''))
+    w.require(delivery_path == directory / 'delivery.json' and isinstance(delivery, dict)
+              and delivery.get('schemaVersion') == 'easyeda.delivery/1' and delivery.get('state') == 'settled'
+              and w.resolve(root, delivery.get('planFile', '')) == plan_path and delivery.get('sha256') == binding['sha256']
+              and delivery.get('target') == plan['target'], 'Open delivery belongs to another plan or target, or is unsettled')
+    receipt = delivery.get('receipt', {})
+    w.require(isinstance(receipt, dict) and receipt.get('saved') is True and receipt.get('partial') is not True
+              and receipt.get('target') == plan['target'] and receipt.get('sha256') == binding['sha256'],
+              'Open delivery needs its confirmed native save; unknown saves cannot be imported')
+    run_path = pinned_file(delivery.get('runResultFile'), delivery.get('runResultSha256'))
+    image_path = pinned_file(delivery.get('imagePath'), delivery.get('imageSha256'))
+    run, _, run_ok = value(w.read(run_path))
+    completed = run.get('completedStages')
+    w.require(run_ok and run.get('ok') is True and run.get('partial') is False and run.get('remainingStages') == []
+              and isinstance(completed, list) and completed and completed[-1] == plan['stages'][-1]['id']
+              and all(identifier in [stage['id'] for stage in plan['stages']] for identifier in completed)
+              and w.resolve(root, run.get('planFile', '')) == plan_path and run.get('sha256') == binding['sha256']
+              and run.get('target') == plan['target'], 'Open delivery run is incomplete or bound to another plan')
+    review = run.get('review', {})
+    visual_receipt = receipt.get('visualReviewReceipt', {})
+    w.require(isinstance(review, dict) and w.resolve(root, review.get('imagePath', '')) == image_path
+              and review.get('imageSha256') == delivery['imageSha256']
+              and isinstance(review.get('visualReview'), dict)
+              and isinstance(review.get('visualReview', {}).get('window'), str) and review['visualReview']['window']
+              and isinstance(visual_receipt, dict) and visual_receipt.get('isError') is not True
+              and isinstance(visual_receipt.get('structuredContent'), dict)
+              and visual_receipt.get('structuredContent', {}).get('ok') is True and report.get('visualAccepted') is True,
+              'Open delivery visual acceptance does not bind the unchanged run image')
+    links = report.get('stages')
+    w.require(isinstance(links, list) and len(links) == len(plan['stages']), 'Open delivery needs its complete stage chain')
+    stage_path = None
+    for index, (stage, link) in enumerate(zip(plan['stages'], links)):
+        w.require(isinstance(link, dict), 'Open delivery stage link is invalid')
+        stage_path = pinned_file(link.get('file'), link.get('sha256'))
+        original = directory / ('stage-%02d.json' % (index + 1))
+        w.require(stage_path == original or index == len(links) - 1 and stage_path == original.with_suffix('.recheck.json'),
+                  'Open delivery stage files are out of order')
+        w.require(w.read(stage_path).get('stage', {}).get('id') == stage['id'], 'Open delivery stage identity differs')
+    imported = import_receipt(w, root, binding, str(stage_path), hashes)
+    w.require(imported['summary']['stage'].get('check') == 'final'
+              and all(check['status'] == 'pass' for check in imported['checks']),
+              'Open delivery needs a passing original final receipt and all required stage evidence')
+    paths.extend(imported['paths'])
+
+    for diff in (receipt.get('preSaveDiff'), report.get('designDiff')):
+        w.require(isinstance(diff, dict) and diff.get('status') == 'synced', 'Open delivery design changed or was not compared')
+        checked, _, checked_ok = value(diff.get('checker'))
+        w.require(checked_ok and checked.get('status') == 'synced' and checked.get('coverage', {}).get('drawingCompared') is True,
+                  'Open delivery requires the existing full drawing difference checker')
+    final_report, _, _ = value(w.read(stage_path).get('receipt'))
+    snapshots = []
+    for observation in (final_report.get('finalReadback'), receipt.get('preSaveReadback'), report.get('readback')):
+        snapshot, context, read_ok = value(observation)
+        inventory, read_scope = snapshot.get('pagePrimitives'), snapshot.get('readScope', {})
+        w.require(read_ok and native_target(context, plan['target']) and snapshot.get('partial') is not True
+                  and snapshot.get('wiresAvailable') is True and isinstance(snapshot.get('components'), list)
+                  and isinstance(inventory, dict) and all(isinstance(inventory.get(key), list) for key in
+                      ('components', 'wires', 'buses', 'arcs', 'circles', 'rectangles', 'polygons', 'texts', 'attributes', 'objects'))
+                  and isinstance(read_scope, dict) and read_scope.get('complete') is True and read_scope.get('concurrentChange') is False
+                  and not read_scope.get('allPages') and not read_scope.get('primitiveIds') and not read_scope.get('missingIds')
+                  and all(isinstance(part, dict) and (part.get('componentType') != 'part'
+                          or part.get('pinsAvailable') is True and part.get('netlistAvailable') is True)
+                          for part in snapshot['components']), 'Open delivery requires complete fresh native page observations')
+        snapshots.append(snapshot)
+    # Match nativeDesignDiff's JavaScript number/string serialization, not Python's JSON formatting.
+    hash_script = """const {createHash}=require('node:crypto');let input='';
+process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>input+=chunk);
+process.stdin.on('end',()=>{const {snapshots,target}=JSON.parse(input);
+process.stdout.write(JSON.stringify(snapshots.map(snapshot=>createHash('sha256')
+.update(JSON.stringify({...snapshot,...target})).digest('hex'))));});"""
+    try:
+        hashed = subprocess.run(['node', '-e', hash_script], input=json.dumps({'snapshots': snapshots, 'target': plan['target']}),
+                                text=True, encoding='utf-8', capture_output=True, timeout=10, check=True)
+        native_hashes = json.loads(hashed.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        raise ValueError('Open delivery input hashing requires the existing Node runtime: ' + str(error)) from error
+    w.require(receipt['preSaveDiff'].get('inputSha256') == native_hashes[:2]
+              and report['designDiff'].get('inputSha256') == native_hashes[1:],
+              'Open delivery design difference proof does not bind its actual final, pre-save and reopened snapshots')
+    persistence = report.get('persistence', {})
+    w.require(isinstance(persistence, dict), 'Open delivery persistence proof is unavailable')
+    saved = receipt.get('finishReceipt', {})
+    saved_result, saved_context, saved_ok = value(saved)
+    save_packet = saved.get('structuredContent', {}) if isinstance(saved, dict) else {}
+    read_packet = report['readback'].get('structuredContent', {})
+    request_ids = persistence.get('requestIds', {})
+    w.require(persistence.get('status') == 'verified' and isinstance(request_ids, dict)
+              and set(request_ids) == {'save', 'close', 'open', 'readback'}
+              and all(isinstance(identifier, str) and identifier for identifier in request_ids.values())
+              and len(set(request_ids.values())) == 4 and type(persistence.get('generation')) is int and persistence['generation'] >= 0
+              and isinstance(persistence.get('instance'), str) and persistence['instance']
+              and saved_ok and isinstance(save_packet, dict) and save_packet.get('ok') is True and saved_result.get('saved') is True
+              and native_target(saved_context, plan['target'])
+              and request_ids['save'] == save_packet.get('requestId', save_packet.get('id'))
+              and request_ids['readback'] == read_packet.get('requestId', read_packet.get('id')),
+              'Open delivery lacks the native verifier save/close/open/readback proof')
+    try:
+        saved_at, completed_at, read_at, verified_at = (datetime.fromisoformat(stamp.replace('Z', '+00:00')) for stamp in
+            (save_packet['createdAt'], delivery['completedAt'], read_packet['createdAt'], report['verifiedAt']))
+        ordered = all(stamp.tzinfo is not None for stamp in (saved_at, completed_at, read_at, verified_at)) and saved_at <= completed_at <= read_at <= verified_at
+    except (KeyError, TypeError, ValueError, AttributeError):
+        ordered = False
+    w.require(ordered, 'Open delivery verification must follow its settled save and fresh reopened readback')
+    delivery_rules = [rule for rule in plan.get('requirements', []) if rule['when'] == 'delivery']
+    target, target_context, target_ok = value(report.get('targetCheck'))
+    target_valid = (target_ok and native_target(target_context, plan['target']) and target.get('status') == 'pass'
+                    and target.get('verified') is True and target.get('partial') is False)
+    fresh = requirement_results(dict(plan, requirements=delivery_rules), plan['stages'][-1], True, True, target_valid,
+                                report, plan['target'], {}, {})
+    w.require(target_valid and fresh and requirement_check(fresh, final=True) == 'pass'
+              and any(row['requirement']['check'] == 'drc' and row['status'] == 'pass' for row in fresh),
+              'Open delivery reopened target and every required DRC check must pass; unknown is not pass')
+    paths.extend(symbol_source_evidence(w, root, plan, report, hashes))
+    paths = list(dict.fromkeys(paths + [str(path)]))
+    coverage = {'scope': scope, 'checked': ['native_save_reopen', 'full_design_diff', 'reopened_target', 'native_drc', 'accepted_image'],
+                'notChecked': ['engineering_acceptance']}
+    checks = [{'id': key, 'status': 'pass', 'note': note, 'evidence': paths, 'coverage': coverage,
+               'binding': {'target': plan['target'], 'planRevision': plan['revision'], 'planSha256': binding['sha256']}}
+              for key, note in (('persistence', 'Original Open delivery and native verifier prove save/reopen within the declared scope.'),
+                                ('visual_review', 'Original accepted image is unchanged and bound to the verified delivery.'))]
+    return {'checks': checks, 'paths': paths, 'summary': {'target': plan['target'], 'planSha256': binding['sha256'],
+            'acceptanceScope': scope, 'stageReceipt': str(stage_path), 'receiptFile': str(path), 'deliveryFile': str(delivery_path),
+            'savedAt': save_packet['createdAt'], 'wholePageComplete': scope == 'page', 'moduleComplete': scope == 'module',
+            'localComplete': scope == 'local', 'engineeringAccepted': False, 'coverage': coverage}}
+
+
 def import_persistence(w, root, binding, filename, hashes=None):
     """Prove visible local display persistence from pinned native save/reopen receipts."""
     hashes = {} if hashes is None else hashes
     plan_path, plan, paths = plan_inputs(w, root, binding, hashes)
     path = w.resolve(root, filename)
     report = w.read(path)
+    if isinstance(report, dict) and report.get('schemaVersion') == 'easyeda.delivery-verification/1':
+        return import_delivery(w, root, binding, filename, hashes)
     w.require(isinstance(report, dict) and report.get('schemaVersion') == 'easyeda.persistence/1'
               and w.resolve(root, report.get('planFile', '')) == plan_path
               and report.get('planSha256') == binding['sha256'] and report.get('revision') == plan['revision']

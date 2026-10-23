@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { loadPlan, managedStageReceiptFile, stageReceiptBinding, verifyStagePrefix, executionSteps } from './project-files.mjs';
+import { placeWireLabels } from './label-placement.mjs';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -31,7 +32,7 @@ export async function compileLabels(input) {
   try { await access(targetReceipt); throw new Error('Target stage already has a receipt; labels cannot overwrite or replay it'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   await verifyStagePrefix(loaded, targetIndex);
-  let wires, wireIds, evidence, binding;
+  let wires, wireIds, evidence, binding, components = [];
   if (receiptMode) {
     const wireReceiptFile = path.resolve(input.wireReceiptFile);
     const wireReceiptBytes = await readFile(wireReceiptFile);
@@ -42,6 +43,8 @@ export async function compileLabels(input) {
     verifyWireReceipt(wireReceipt, loaded, plan.stages[wireStageIndex]);
     const executedSteps = await executionSteps(plan,plan.stages[wireStageIndex],wireReceipt.receipt,{planFile:loaded.planFile,planSha256:wireReceipt.sha256});
     wires = actualWires(wireReceipt.receipt,executedSteps); wireIds = wires.map(wire => wire.primitiveId);
+    const readback = wireReceipt.receipt.readback?.structuredContent ?? wireReceipt.receipt.readback;
+    components = readback?.result?.components ?? [];
     if (!wireIds.length) throw new Error('Wire receipt has no successful observed wire primitiveIds');
     binding = stageReceiptBinding(plan, plan.stages[wireStageIndex]);
     evidence = { wireReceiptFile, wireReceiptSha256: sha256(wireReceiptBytes), wireStage: { id: plan.stages[wireStageIndex].id, check: plan.stages[wireStageIndex].check } };
@@ -51,11 +54,13 @@ export async function compileLabels(input) {
     const readback = JSON.parse(wireReadbackBytes.toString('utf8'));
     wireIds = [...input.wireIds];
     wires = readbackWires(readback, plan, plan.stages[targetIndex], wireIds);
+    components = (readback.structuredContent ?? readback).result.components;
     binding = stageReceiptBinding(plan, plan.stages[targetIndex]);
     evidence = { wireReadbackFile, wireReadbackSha256: sha256(wireReadbackBytes), wireIds };
   }
   const visibleGroups = visible === undefined ? null : visibleWireGroups(wires, new Set(visible), new Set(plan.semanticTarget.nets.map(net => net.name)));
-  const labels = validateLabels(input.labels ?? visibleGroups.map(group => ({ wireId: group.wires[0].primitiveId })), new Set(wireIds));
+  const labels = validateLabels(input.labels ?? placeWireLabels(visibleGroups,
+    wires.filter(wire => Array.isArray(wire.line)).flatMap(wireSegments), components, plan.preservation?.region), new Set(wireIds));
   if (visibleGroups) {
     const byId = new Map(wires.map(wire => [wire.primitiveId, wire]));
     for (const label of labels) if (!visible.includes(byId.get(label.wireId).net)) throw new Error(`Label ${label.wireId} conflicts with confirmed visibleNetNames`);
@@ -71,7 +76,7 @@ export async function compileLabels(input) {
     ...evidence,
     ...(visible === undefined ? {} : { visibleNetNames: visible, uncoveredVisibleNetNames }),
     typedStep, typedSteps: [typedStep],
-    limits: ['Labels control Name visibility only; they do not change nets or recreate wires', 'Automatic selection shows one existing Name per observed same-net wire island; placement and readability still need current visual review', 'Apply this typed step only in the declared unexecuted stage; visual acceptance and saved persistence remain separate evidence'],
+    limits: ['Labels control Name visibility only; they do not change nets or recreate wires', 'Automatic selection ranks actual segments, observed bodies and other labels with estimated text reservations; native font/alignment and final readability still need current visual review', 'Apply this typed step only in the declared unexecuted stage; visual acceptance and saved persistence remain separate evidence'],
   };
   const outputFile = path.resolve(input.outputFile);
   await mkdir(path.dirname(outputFile), { recursive: true });
