@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// No appConfig is accepted. These commands cannot dispatch an editor action.
+// The solve/check children are offline; the caller registers native apply separately.
 func newPcbRouteCmd(stdout, stderr io.Writer) *cobra.Command {
-	group := &cobra.Command{Use: "route", Short: "Offline single-layer path solving and independent checking"}
+	group := &cobra.Command{Use: "route", Short: "Single-layer path solving, independent checking and checked native apply"}
 	for _, mode := range []string{"solve", "check"} {
 		var boardPath, fromPath, planPath, outPath string
 		cmd := &cobra.Command{
