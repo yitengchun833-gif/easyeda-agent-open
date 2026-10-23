@@ -137,6 +137,19 @@ func verifyRouteApplyLines(before *boardSnapshot, result map[string]any, c pcbRo
 		}
 		ids = append(ids, t.ID)
 	}
+	for _, a := range tracks {
+		if base[a.ID] != nil {
+			continue
+		}
+		for _, b := range tracks {
+			if a.ID == b.ID || base[b.ID] == nil && a.ID > b.ID {
+				continue
+			}
+			if routeApplyCollinearOverlap(a, b) > netPathGeomEps {
+				return nil, fmt.Errorf("new duplicate copper coverage from tracks %s and %s", a.ID, b.ID)
+			}
+		}
+	}
 	for i := 0; i < prefix; i++ {
 		if _, covered := matchingTrackCoverage(tracks, c.Net, c.Layer, c.WidthMil, c.Points[i], c.Points[i+1]); !covered {
 			return nil, fmt.Errorf("segment %d has no exact continuous fresh copper coverage", i)
@@ -144,6 +157,24 @@ func verifyRouteApplyLines(before *boardSnapshot, result map[string]any, c pcbRo
 	}
 	sort.Strings(ids)
 	return ids, nil
+}
+
+func routeApplyCollinearOverlap(a, b pcbTrack) float64 {
+	if a.Net != b.Net || a.Layer != b.Layer {
+		return 0
+	}
+	dx, dy := a.X2-a.X1, a.Y2-a.Y1
+	length := math.Hypot(dx, dy)
+	if length <= netPathGeomEps {
+		return 0
+	}
+	ux, uy := dx/length, dy/length
+	if math.Abs((b.X1-a.X1)*uy-(b.Y1-a.Y1)*ux) > netPathGeomEps || math.Abs((b.X2-a.X1)*uy-(b.Y2-a.Y1)*ux) > netPathGeomEps {
+		return 0
+	}
+	t0 := (b.X1-a.X1)*ux + (b.Y1-a.Y1)*uy
+	t1 := (b.X2-a.X1)*ux + (b.Y2-a.Y1)*uy
+	return math.Max(0, math.Min(length, math.Max(t0, t1))-math.Max(0, math.Min(t0, t1)))
 }
 
 func routeApplyNoExistingSplit(s *boardSnapshot, c pcbRouteCandidate) error {
@@ -215,12 +246,30 @@ func executePCBRouteApply(ctx context.Context, in pcbRouteRequest, before *board
 		receipt.Status = "ready"
 		return persist()
 	}
-	baseTracks, _, _, _ := crystalSnapshotRouting(before)
 	for i := 0; i+1 < len(c.Points); i++ {
 		if err := ctx.Err(); err != nil {
 			return stop("partial", err)
 		}
-		if _, covered := matchingTrackCoverage(baseTracks, c.Net, c.Layer, c.WidthMil, c.Points[i], c.Points[i+1]); covered {
+		latest, err := call("pcb.line.list", nil)
+		if err != nil {
+			status := "not_executed"
+			if receipt.Applied {
+				status = "unknown"
+			}
+			return stop(status, err)
+		}
+		if _, err := verifyRouteApplyLines(before, latest.Result, c, i); err != nil {
+			status := "not_executed"
+			if receipt.Applied {
+				status = "partial"
+			}
+			return stop(status, err)
+		}
+		currentTracks, _, err := parseNetPathLines(latest.Result)
+		if err != nil {
+			return stop("unknown", err)
+		}
+		if _, covered := matchingTrackCoverage(currentTracks, c.Net, c.Layer, c.WidthMil, c.Points[i], c.Points[i+1]); covered {
 			receipt.Steps = append(receipt.Steps, pcbRouteApplyStep{Index: i, Status: "already_present"})
 			receipt.Remaining = receipt.Remaining[1:]
 			continue

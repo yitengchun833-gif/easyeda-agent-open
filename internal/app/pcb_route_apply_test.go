@@ -19,6 +19,23 @@ func routeApplyTestLine(id, net string, x1, y1, x2, y2, width float64) map[strin
 	return map[string]any{"primitiveId": id, "net": net, "layer": 1.0, "startX": x1, "startY": y1, "endX": x2, "endY": y2, "lineWidth": width, "locked": false}
 }
 
+func routeApplyNativeTestComponents(t *testing.T, components []boardComp) []any {
+	var native []any
+	if err := json.Unmarshal(routeJSON(t, components), &native); err != nil {
+		t.Fatal(err)
+	}
+	// Native pad reads always include rotation; the offline schema omits zero.
+	for _, c := range native {
+		for _, raw := range c.(map[string]any)["pads"].([]any) {
+			p := raw.(map[string]any)
+			if _, ok := p["rotation"]; !ok {
+				p["rotation"] = 0.0
+			}
+		}
+	}
+	return native
+}
+
 func TestPCBRouteApplyExecutionBoundaries(t *testing.T) {
 	for _, mode := range []string{"success", "split-new-line", "already-present", "silent-noop", "second-write-error", "readback-error", "malformed-readback", "scope-changed", "drc-fail", "drc-error", "dry-run", "receipt-error", "post-receipt-error"} {
 		t.Run(mode, func(t *testing.T) {
@@ -49,10 +66,10 @@ func TestPCBRouteApplyExecutionBoundaries(t *testing.T) {
 					}
 					return &actionResult{ID: fmt.Sprintf("request-%d", writes), Result: map[string]any{"primitiveId": id}}, nil
 				case "pcb.line.list":
-					if mode == "readback-error" {
+					if mode == "readback-error" && writes > 0 {
 						return nil, fmt.Errorf("cannot read copper")
 					}
-					if mode == "malformed-readback" {
+					if mode == "malformed-readback" && writes > 0 {
 						return &actionResult{Result: map[string]any{"lines": state.Copper.Lines, "arcsAvailable": false}}, nil
 					}
 					return &actionResult{Result: map[string]any{"lines": state.Copper.Lines, "arcs": state.Copper.Arcs, "arcsAvailable": true}}, nil
@@ -173,7 +190,7 @@ func TestPCBRouteApplyPreservesLockedCopperAndAcceptsOnlyExactCoverage(t *testin
 	before.Copper.Lines = append(before.Copper.Lines, old)
 	r := routeApplyTestReceipt(in)
 	c := r.Candidate
-	for _, mode := range []string{"complete", "gap", "wrong-net", "old-lock-changed", "extra-track"} {
+	for _, mode := range []string{"complete", "gap", "wrong-net", "old-lock-changed", "extra-track", "duplicate-new-coverage", "legal-split"} {
 		t.Run(mode, func(t *testing.T) {
 			after := cloneEscapeSnapshot(before)
 			q := 150.0
@@ -185,6 +202,13 @@ func TestPCBRouteApplyPreservesLockedCopperAndAcceptsOnlyExactCoverage(t *testin
 				line["net"] = "OTHER"
 			}
 			after.Copper.Lines = append(after.Copper.Lines, line)
+			if mode == "duplicate-new-coverage" {
+				after.Copper.Lines = append(after.Copper.Lines, routeApplyTestLine("duplicate", in.Net, 50, 80, 150, 80, in.WidthMil))
+			}
+			if mode == "legal-split" {
+				after.Copper.Lines = after.Copper.Lines[:1]
+				after.Copper.Lines = append(after.Copper.Lines, routeApplyTestLine("split-a", in.Net, 50, 80, 100, 80, in.WidthMil), routeApplyTestLine("split-b", in.Net, 100, 80, 150, 80, in.WidthMil))
+			}
 			if mode == "old-lock-changed" {
 				after.Copper.Lines[0].(map[string]any)["locked"] = false
 			}
@@ -192,7 +216,7 @@ func TestPCBRouteApplyPreservesLockedCopperAndAcceptsOnlyExactCoverage(t *testin
 				after.Copper.Lines = append(after.Copper.Lines, routeApplyTestLine("extra", in.Net, 10, 10, 20, 10, in.WidthMil))
 			}
 			_, err := verifyRouteApplyLines(before, map[string]any{"lines": after.Copper.Lines, "arcs": []any{}, "arcsAvailable": true}, c, 1)
-			if (err == nil) != (mode == "complete") {
+			if (err == nil) != (mode == "complete" || mode == "legal-split") {
 				t.Fatalf("coverage %s: %v", mode, err)
 			}
 		})
@@ -214,7 +238,7 @@ func TestPCBRouteApplyCommandRefusesWrongTargetWithoutNavigation(t *testing.T) {
 	}
 	writeRouteJSON(t, plan, report)
 	cfg, calls, cleanup := newAutolayoutTestDaemon(t, func(_ int, call autolayoutTestCall) string {
-		if call.Action != "document.current" {
+		if call.Action != "pcb.components.list" {
 			t.Errorf("unexpected action %s", call.Action)
 		}
 		if target, ok := call.Payload["_target"].(map[string]any); !ok || target["projectUuid"] != "project" || target["documentUuid"] != "pcb" {
@@ -249,13 +273,35 @@ func TestPCBRouteApplyCommandNativeReadWriteRoundTrip(t *testing.T) {
 	}
 	lines := []any{}
 	writes := 0
+	boundCalls, foreignContext, changingSnapshot := false, false, false
+	componentReads := 0
 	cfg, calls, cleanup := newAutolayoutTestDaemon(t, func(_ int, call autolayoutTestCall) string {
+		if boundCalls {
+			if target, ok := call.Payload["_target"].(map[string]any); !ok || target["projectUuid"] != "project" || target["documentUuid"] != "pcb" {
+				t.Errorf("snapshot/write lost target on %s", call.Action)
+			}
+		}
 		var result any
 		switch call.Action {
 		case "document.current":
 			result = map[string]any{"uuid": "pcb"}
 		case "pcb.components.list":
-			result = map[string]any{"components": source.Components}
+			if boundCalls {
+				release, err := acquirePCBRouteApplyLock("project", "pcb")
+				if err == nil {
+					release()
+					t.Error("apply lease did not cover snapshot reads")
+				}
+			}
+			result = map[string]any{"components": routeApplyNativeTestComponents(t, source.Components)}
+			if boundCalls && changingSnapshot {
+				componentReads++
+				if componentReads >= 2 {
+					changed := cloneEscapeSnapshot(source)
+					changed.Components[0].Pads[0].X++
+					result = map[string]any{"components": routeApplyNativeTestComponents(t, changed.Components)}
+				}
+			}
 		case "pcb.outline.get":
 			result = map[string]any{"points": source.Outline.Points, "bbox": source.Outline.BBox, "outlineFormat": "polyline"}
 		case "pcb.layers.list":
@@ -274,6 +320,8 @@ func TestPCBRouteApplyCommandNativeReadWriteRoundTrip(t *testing.T) {
 			result = map[string]any{"regions": []any{}}
 		case "pcb.fill.list":
 			result = map[string]any{"fills": []any{}}
+		case "pcb.silk.list":
+			result = map[string]any{"texts": []any{map[string]any{"primitiveId": "silk-1", "kind": "string", "text": "U1", "layer": 3, "x": 40, "y": 45, "rotation": 0, "fontSize": 10}}}
 		case "pcb.line.create":
 			if target, ok := call.Payload["_target"].(map[string]any); !ok || target["documentUuid"] != "pcb" {
 				t.Fatal("write lost native target")
@@ -284,14 +332,26 @@ func TestPCBRouteApplyCommandNativeReadWriteRoundTrip(t *testing.T) {
 			lines = append(lines, routeApplyTestLine(id, in.Net, asFloat(p["startX"]), asFloat(p["startY"]), asFloat(p["endX"]), asFloat(p["endY"]), asFloat(p["lineWidth"])))
 			result = map[string]any{"primitiveId": id}
 		case "pcb.drc.check":
+			if boundCalls {
+				release, err := acquirePCBRouteApplyLock("project", "pcb")
+				if err == nil {
+					release()
+					t.Error("apply lease ended before the final native read")
+				}
+			}
 			result = map[string]any{"passed": false, "violations": []any{map[string]any{"net": "UNRELATED"}}}
 		default:
 			t.Fatalf("unexpected native action %s", call.Action)
 		}
-		return `{"ok":true,"result":` + string(routeJSON(t, result)) + `,"context":{"projectUuid":"project","documentUuid":"pcb","documentType":"pcb"}}`
+		project := "project"
+		if boundCalls && foreignContext && call.Action == "pcb.layers.list" {
+			project = "foreign-project"
+			foreignContext = false
+		}
+		return `{"ok":true,"result":` + string(routeJSON(t, result)) + `,"context":{"projectUuid":"` + project + `","documentUuid":"pcb","documentType":"pcb"}}`
 	})
 	defer cleanup()
-	before, err := fetchBoardSnapshot(cfg, "w1", boardSnapshotOpts{withRules: true, withLayers: true, withCopper: true})
+	before, err := fetchBoardSnapshot(cfg, "w1", boardSnapshotOpts{withSilk: true, withRules: true, withLayers: true, withCopper: true})
 	if err != nil || len(before.Partial) > 0 {
 		t.Fatalf("fixture snapshot: %+v %v", before, err)
 	}
@@ -310,6 +370,21 @@ func TestPCBRouteApplyCommandNativeReadWriteRoundTrip(t *testing.T) {
 	cfg.project, cfg.doc = "project", "pcb"
 	window := "w1"
 	var stdout, stderr bytes.Buffer
+	boundCalls = true
+	for _, mode := range []string{"A-B-A", "changed-during-read"} {
+		foreignContext = mode == "A-B-A"
+		changingSnapshot = mode == "changed-during-read"
+		componentReads = 0
+		refused := newPcbRouteApplyCmd(cfg, &window, &stdout, &stderr)
+		refused.SetArgs([]string{"--board", board, "--from", request, "--plan", plan, "--out", filepath.Join(dir, mode+".json")})
+		if err := refused.Execute(); err == nil || writes != 0 {
+			t.Fatalf("inconsistent bound snapshot accepted (%s): %v writes=%d", mode, err, writes)
+		}
+		if mode == "A-B-A" && calls.snapshot()[len(calls.snapshot())-1].Action != "pcb.layers.list" {
+			t.Fatal("continued reading after foreign target response")
+		}
+	}
+	foreignContext, changingSnapshot = false, false
 	if err := os.WriteFile(out+".tmp", []byte("unrelated existing file"), 0600); err != nil {
 		t.Fatal(err)
 	}

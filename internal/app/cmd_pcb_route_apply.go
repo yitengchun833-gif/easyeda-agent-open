@@ -100,22 +100,17 @@ unverified. --dry-run checks the live target and baseline without writes.`,
 				return res, nil
 			}
 			snapshot := func() (*boardSnapshot, error) {
-				if _, err := call("document.current", nil); err != nil {
-					return nil, err
-				}
-				snap, err := fetchBoardSnapshot(&localCfg, *window, boardSnapshotOpts{withSilk: before.Silk != nil, withRules: true, withLayers: true, withCopper: true})
-				if err != nil {
-					return nil, err
-				}
-				if _, err := call("document.current", nil); err != nil {
-					return nil, err
-				}
-				if len(snap.Partial) > 0 {
-					return nil, fmt.Errorf("fresh board read is incomplete: %v", snap.Partial)
-				}
-				return snap, nil
+				return stablePCBRouteApplySnapshot(call, before.Silk != nil)
 			}
-			err = executePCBRouteApply(cmd.Context(), in, &before, &receipt, call, snapshot, persist)
+			release, lockErr := acquirePCBRouteApplyLock(receipt.Target.ProjectUUID, receipt.Target.DocumentUUID)
+			if lockErr != nil {
+				receipt.Error = lockErr.Error()
+				_ = persist()
+				err = lockErr
+			} else {
+				defer release()
+				err = executePCBRouteApply(cmd.Context(), in, &before, &receipt, call, snapshot, persist)
+			}
 			if blob, encodeErr := marshalPCBRouteApplyReceipt(&receipt); encodeErr == nil {
 				_, _ = stdout.Write(blob)
 			}
