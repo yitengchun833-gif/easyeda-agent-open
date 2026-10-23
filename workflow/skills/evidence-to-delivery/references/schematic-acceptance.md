@@ -12,4 +12,8 @@
 
 结构化业务项目仍仅由workflow.py维护既有.workflow/state.json；将上述实际文件/检查结果挂到现有模块执行证据与required_checks。手工PWF短记同一产物、源commit、必要检查及未测事项，不重复手拼验收报告。
 
+业务 `result` 用 `open_receipt` 指向同一计划最后一个成功 final 阶段，用 `open_persistence` 指向 `verify_delivery(outputFile:...)` 保存的原始 `easyeda.delivery-verification/1` JSON。工作流核对计划、资料、阶段、delivery、run 和图像的哈希链，消费原生核验结果并自动生成 `persistence` 与 `visual_review` 检查，无需再制作旧式 `workflowSave` 报告。`required_checks` 保留 `open_stage_receipt`、`open_target_check`、`open_requirements`、`visual_review`、`persistence`；已有其他必要检查仍须通过。page、module、local 仅在各自范围内完成，工程师终审保持待确认。
+
+上述导入只读取现有证据，不保存、不关闭重开、不重试 EDA 动作。缺少原生核验、保存未知、阶段或来源漂移、设计差异未同步、DRC 未通过均拒绝 verified。旧 `local_display` 的 `easyeda.persistence/1` 与原有 page 验收入口保留。
+
 源码实现、临时离线构建、分发包、安装副本、当前宿主加载、真实EDA验收必须分开记录。只在明确采用任务中同步MCP/Go/Connector/Skill；本升级不自动采用或重启服务。

@@ -107,6 +107,7 @@ type journalEntry struct {
 	Ms       int64             `json:"ms"`
 	Captured map[string]string `json:"captured,omitempty"`
 	Error    string            `json:"error,omitempty"`
+	Result   map[string]any    `json:"result,omitempty"`
 }
 
 // ── command ─────────────────────────────────────────────────────────────────
@@ -898,7 +899,12 @@ func (r *applyRunner) execute() error {
 		}
 
 		// failure path
-		r.writeJournal(journalEntry{Idx: i + 1, ID: ref, Status: "fail", Ms: ms, Error: execErr.Error()})
+		failed := journalEntry{Idx: i + 1, ID: ref, Status: "fail", Ms: ms, Error: execErr.Error()}
+		var placementErr *unverifiedPCBComponentPlacementError
+		if errors.As(execErr, &placementErr) {
+			failed.Result = placementErr.result
+		}
+		r.writeJournal(failed)
 		_, _, contOnErr := r.policy(s)
 		onFail := s.OnFail
 		if onFail == "" {
@@ -911,6 +917,9 @@ func (r *applyRunner) execute() error {
 		fmt.Fprintf(r.stderr, "\n✗ step [%d/%d] %s failed: %v\n", i+1, len(r.pb.Steps), ref, execErr)
 		var silkErr *unverifiedSilkAlignmentError
 		if errors.As(execErr, &silkErr) {
+			return fmt.Errorf("playbook stopped at step %s: %w", ref, execErr)
+		}
+		if placementErr != nil {
 			return fmt.Errorf("playbook stopped at step %s: %w", ref, execErr)
 		}
 		var boundaryErr *unverifiedPourBoundaryError
@@ -974,6 +983,10 @@ func (r *applyRunner) executeStep(s *playbookStep, catalog map[string]protocol.A
 		result, err := r.executeOnce(s, timeout)
 		var silkErr *unverifiedSilkAlignmentError
 		if errors.As(err, &silkErr) {
+			return nil, err
+		}
+		var placementErr *unverifiedPCBComponentPlacementError
+		if errors.As(err, &placementErr) {
 			return nil, err
 		}
 		var boundaryErr *unverifiedPourBoundaryError
@@ -1103,6 +1116,9 @@ func (r *applyRunner) runAction(action string, payload map[string]any, timeout t
 	if err := silkAlignmentError(action, parsed.Result); err != nil {
 		return anyResult(parsed.Result), err
 	}
+	if err := pcbComponentPlacementError(action, parsed.Result); err != nil {
+		return anyResult(parsed.Result), err
+	}
 	if err := pourBoundaryError(action, parsed.Result); err != nil {
 		return anyResult(parsed.Result), err
 	}
@@ -1169,6 +1185,10 @@ func (r *applyRunner) runSubcommand(run string, flags map[string]any, args []str
 	if code != 0 {
 		var silkErr *unverifiedSilkAlignmentError
 		if errors.As(commandErr, &silkErr) {
+			return parseTrailingJSON(out.String()), fmt.Errorf("run %q: %w", run, commandErr)
+		}
+		var placementErr *unverifiedPCBComponentPlacementError
+		if errors.As(commandErr, &placementErr) {
 			return parseTrailingJSON(out.String()), fmt.Errorf("run %q: %w", run, commandErr)
 		}
 		var boundaryErr *unverifiedPourBoundaryError

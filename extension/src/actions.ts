@@ -15,6 +15,7 @@ import { armDeadline } from './deadlines';
 import { exactJSON, preservedInstance } from './preserve-instance';
 import { barePcbRuleConfiguration, pcbRulesEqual, planPcbConfig } from './pcb-config';
 import { pcbNetColorSet } from './pcb-net-color';
+import { pcbPadNetAssignments, verifyPcbPadNets, type PcbPadNetReadback } from './pcb-pad-net-mapping';
 import { documentTypeLabel, readResponseContext } from './eda-context';
 import { checkSchematicTarget } from './schematic-target';
 import { getSchematicNetlistFile, NetlistContextError } from './schematic-netlist-file';
@@ -10927,7 +10928,10 @@ const pcbAddComponent: Handler = async (payload) => {
 	const rotation = optionalNumber(payload, 'rotation');
 	const designator = optionalString(payload, 'designator');
 	const uniqueId = optionalString(payload, 'uniqueId');
-	const nets = (payload.nets && typeof payload.nets === 'object') ? payload.nets as Record<string, string> : {};
+	const nets = pcbPadNetAssignments(payload.nets);
+	if (![x, y, rotation ?? 0].every(Number.isFinite)) {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'PCB placement coordinates and rotation must be finite.');
+	}
 
 	// 1. Create the footprint on the PCB.
 	let comp;
@@ -10952,19 +10956,33 @@ const pcbAddComponent: Handler = async (payload) => {
 	}
 
 	// 3. Assign each pad's net from the supplied map.
-	let assignedNets = 0;
-	const unmatched: Array<string> = [];
+	let attemptedNetAssignments = 0;
+	const padWriteFailures: Array<{ primitiveId: string; padNumber: string; error: string }> = [];
 	let pads: Array<PcbPad> = [];
 	try { pads = (await eda.pcb_PrimitiveComponent.getAllPinsByPrimitiveId(id)) ?? []; }
 	catch { pads = []; }
 	for (const p of pads) {
 		const num = String(p.getState_PadNumber?.() ?? '');
-		const net = num ? nets[num] : undefined;
-		if (net) {
-			try { await eda.pcb_PrimitivePad.modify(p.getState_PrimitiveId(), { net }); assignedNets++; }
-			catch { unmatched.push(num); }
+		const net = nets.get(num);
+		if (net !== undefined) {
+			attemptedNetAssignments++;
+			try { await eda.pcb_PrimitivePad.modify(p.getState_PrimitiveId(), { net }); }
+			catch (error) { padWriteFailures.push({ primitiveId: p.getState_PrimitiveId(), padNumber: num, error: describeThrown(error) }); }
 		}
 	}
+	let padReadback: PcbPadNetReadback[] | null = null;
+	try {
+		const fresh = await eda.pcb_PrimitiveComponent.getAllPinsByPrimitiveId(id);
+		if (Array.isArray(fresh)) {
+			padReadback = fresh.map(p => {
+				const net = p.getState_Net();
+				return { primitiveId: p.getState_PrimitiveId(), padNumber: String(p.getState_PadNumber() ?? ''), net: typeof net === 'string' ? net : null };
+			});
+			pads = fresh;
+		}
+	}
+	catch { /* the created ID and unknown mapping remain available for recovery */ }
+	const netMapping = verifyPcbPadNets(nets, padReadback);
 
 	// 3b. Embedded-via net assignment (#118): a footprint can EMBED vias — QFN
 	// EPAD thermal vias are the canonical case. create() leaves them net:"", so
@@ -10981,8 +10999,9 @@ const pcbAddComponent: Handler = async (payload) => {
 		const rects: Array<PadRect> = [];
 		for (const p of pads) {
 			const num = String(p.getState_PadNumber?.() ?? '');
-			const net = num ? nets[num] : undefined;
+			const net = nets.get(num);
 			if (!net) continue;
+			if (!netMapping.matched.some(pad => pad.primitiveId === p.getState_PrimitiveId())) continue;
 			const ext = padExtent(p);
 			if (!ext) continue;
 			const px = p.getState_X(), py = p.getState_Y();
@@ -11058,6 +11077,7 @@ const pcbAddComponent: Handler = async (payload) => {
 	}
 	catch { /* preserve the placed ID for explicit recovery */ }
 	if (!bindingVerified) warnings.push('Placed component identity/link could not be verified; inspect this primitive ID before retrying.');
+	if (!netMapping.verified) warnings.push('Pad net mapping is incomplete or unverified; inspect the returned primitive ID and netMapping before any further placement.');
 
 	return {
 		result: {
@@ -11065,10 +11085,15 @@ const pcbAddComponent: Handler = async (payload) => {
 			designator: actualDesignator,
 			uniqueId: actualUniqueId,
 			bindingVerified,
-			...(!bindingVerified ? { partial: true } : {}),
+			verified: bindingVerified && netMapping.verified && padWriteFailures.length === 0,
+			...(!bindingVerified || !netMapping.verified || padWriteFailures.length ? { partial: true } : {}),
 			padCount: (pads ?? []).length,
-			assignedNets,
-			unmatchedPads: unmatched,
+			assignedNets: netMapping.matched.length,
+			attemptedNetAssignments,
+			netMapping,
+			padWriteFailures,
+			unmatchedPads: [...new Set([...netMapping.missingPadNumbers, ...netMapping.mismatched.map(p => p.padNumber),
+				...netMapping.unverifiedPadNumbers, ...padWriteFailures.map(p => p.padNumber)])],
 			...(embeddedVias ? { embeddedVias } : {}),
 		},
 		...(warnings.length ? { warnings } : {}),
@@ -12190,34 +12215,98 @@ const pcbGridSnap: Handler = async (payload) => {
 	return { result: { grid, snapped, count: snapped.length } };
 };
 
-/**
- * Translate components by a relative (dx, dy) — nudge a group. Operates on the
- * current selection unless primitiveIds is given.
- */
+type PcbCoordinateMove = { primitiveId: string; designator?: string; uniqueId?: string; x: number; y: number; rotation: number; layer: number; to: { x: number; y: number } };
+type PcbMoveSkipped = { primitiveId: string; reason: string };
+
+function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number }): PcbCoordinateMove {
+	const move = { primitiveId: component.getState_PrimitiveId(), designator: component.getState_Designator(), uniqueId: component.getState_UniqueId(),
+		x: component.getState_X(), y: component.getState_Y(), rotation: component.getState_Rotation(), layer: Number(component.getState_Layer()), to };
+	if (![move.x, move.y, move.rotation, to.x, to.y].every(Number.isFinite) || ![1, 2].includes(move.layer) || typeof component.getState_PrimitiveLock() !== 'boolean') {
+		throw new Error('Component coordinates, assembly layer or lock state are unavailable.');
+	}
+	return move;
+}
+
+async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbMoveSkipped[]) {
+	const moved: Array<Record<string, unknown>> = [];
+	const attempted: string[] = [];
+	const notApplied: Array<Record<string, unknown>> = [];
+	const unverified: Array<Record<string, unknown>> = [];
+	let next = 0;
+	for (; next < plans.length; next++) {
+		const plan = plans[next];
+		if (![plan.to.x, plan.to.y].every(Number.isFinite)) {
+			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Planned coordinates are non-finite; no write dispatched.' });
+			break;
+		}
+		let before: Record<string, unknown>;
+		try {
+			const current = await eda.pcb_PrimitiveComponent.get(plan.primitiveId);
+			if (!current) { skipped.push({ primitiveId: plan.primitiveId, reason: 'Component disappeared before write.' }); break; }
+			if (current.getState_PrimitiveLock() === true) { skipped.push({ primitiveId: plan.primitiveId, reason: 'locked' }); continue; }
+			before = serializePcbComponent(current);
+		}
+		catch (error) { skipped.push({ primitiveId: plan.primitiveId, reason: describeThrown(error) }); break; }
+		const unchanged = verifyPcbComponentPatch({ x: plan.x, y: plan.y, rotation: plan.rotation, layer: plan.layer, primitiveLock: false }, before);
+		if (before.primitiveId !== plan.primitiveId || before.uniqueId !== plan.uniqueId || unchanged.notApplied.length || unchanged.unverified.length) {
+			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Component changed after planning; no write dispatched.', actual: before });
+			break;
+		}
+		attempted.push(plan.primitiveId);
+		let writeError: string | undefined;
+		try { await eda.pcb_PrimitiveComponent.modify(plan.primitiveId, plan.to); }
+		catch (error) { writeError = describeThrown(error); }
+		let after: Record<string, unknown> | null = null;
+		try {
+			const fresh = await eda.pcb_PrimitiveComponent.get(plan.primitiveId);
+			if (fresh) after = serializePcbComponent(fresh);
+		}
+		catch { /* a dispatched write without readback remains unknown */ }
+		if (!after || after.primitiveId !== plan.primitiveId || after.uniqueId !== plan.uniqueId) {
+			unverified.push({ primitiveId: plan.primitiveId, expected: plan.to, actual: after, ...(writeError ? { error: writeError } : {}) });
+			next++;
+			break;
+		}
+		const verification = verifyPcbComponentPatch({ ...plan.to, rotation: plan.rotation, layer: plan.layer, primitiveLock: false }, after);
+		if (verification.notApplied.length || verification.unverified.length) {
+			notApplied.push({ primitiveId: plan.primitiveId, expected: plan.to, actual: after, ...verification, ...(writeError ? { error: writeError } : {}) });
+			next++;
+			break;
+		}
+		moved.push({ primitiveId: plan.primitiveId, designator: plan.designator, from: { x: plan.x, y: plan.y }, to: { x: after.x, y: after.y }, verified: true });
+		if (writeError) {
+			unverified.push({ primitiveId: plan.primitiveId, error: writeError, reason: 'Target coordinates were read back, but the write threw; no further writes dispatched.' });
+			next++;
+			break;
+		}
+	}
+	const remaining = plans.slice(next).map(plan => plan.primitiveId);
+	const partial = skipped.length > 0 || notApplied.length > 0 || unverified.length > 0 || remaining.length > 0;
+	return { moved, count: moved.length, attempted, skipped, notApplied, unverified, remaining, partial, verified: !partial,
+		...(unverified.length ? { executionState: 'unknown' } : {}) };
+}
+
+/** Translate the selected/explicit components while preserving locked objects. */
 const pcbComponentsMove: Handler = async (payload) => {
 	const dx = requireNumber(payload, 'dx');
 	const dy = requireNumber(payload, 'dy');
-	const ids = await resolvePcbTargetIds(payload);
+	if (![dx, dy].every(Number.isFinite)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'dx and dy must be finite.');
+	const ids = [...new Set(await resolvePcbTargetIds(payload))];
 	if (ids.length === 0) {
 		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'No target components; select components or pass primitiveIds.');
 	}
-	const moved: Array<Record<string, unknown>> = [];
+	const plans: PcbCoordinateMove[] = [];
+	const skipped: PcbMoveSkipped[] = [];
 	for (const id of ids) {
-		const component = await eda.pcb_PrimitiveComponent.get(id);
-		if (!component) continue;
-		const x = component.getState_X();
-		const y = component.getState_Y();
-		const nx = x + dx;
-		const ny = y + dy;
 		try {
-			await eda.pcb_PrimitiveComponent.modify(id, { x: nx, y: ny });
+			const component = await eda.pcb_PrimitiveComponent.get(id);
+			if (!component) { skipped.push({ primitiveId: id, reason: 'Component not found.' }); continue; }
+			if (component.getState_PrimitiveLock() === true) { skipped.push({ primitiveId: id, reason: 'locked' }); continue; }
+			plans.push(pcbCoordinateMove(component, { x: component.getState_X() + dx, y: component.getState_Y() + dy }));
 		}
-		catch (err) {
-			throw edaError(err, `Failed to move component ${component.getState_Designator() ?? id}.`);
-		}
-		moved.push({ primitiveId: id, designator: component.getState_Designator(), from: { x, y }, to: { x: nx, y: ny } });
+		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); }
 	}
-	return { result: { dx, dy, moved, count: moved.length } };
+	return { result: { dx, dy, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped) } };
 };
 
 // ─── PCB auto-layout seed: cluster by shared local nets + grid-pack (P6) ──
@@ -12238,6 +12327,7 @@ type ArrangeItem = {
 	box: PcbBox;
 	locked: boolean;
 	nets: Array<string>;
+	move: PcbCoordinateMove;
 };
 
 /** Union-find clustering: components sharing a non-global, low-fanout local net join one group. */
@@ -12279,17 +12369,30 @@ const pcbComponentsArrange: Handler = async (payload) => {
 	const pitch = optionalNumber(payload, 'pitch') ?? 50;    // gap between cells (mil)
 	const gutter = optionalNumber(payload, 'gutter') ?? 150;  // gap between cluster blocks (mil)
 	const colsIn = optionalNumber(payload, 'cols');
-	const ids = await resolvePcbTargetIds(payload);
+	if (!['cluster', 'grid'].includes(mode) || ![pitch, gutter].every(v => Number.isFinite(v) && v >= 0)
+		|| payload.cols !== undefined && (colsIn === undefined || !Number.isSafeInteger(colsIn) || colsIn < 1)) {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'arrange requires mode cluster/grid, finite nonnegative pitch/gutter, and positive integer cols.');
+	}
+	const ids = [...new Set(await resolvePcbTargetIds(payload))];
 	if (ids.length < 2) {
 		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, `arrange needs >= 2 components (got ${ids.length}); select components or pass primitiveIds.`);
 	}
 
 	const items: Array<ArrangeItem> = [];
+	const skipped: PcbMoveSkipped[] = [];
 	for (const id of ids) {
-		const component = await eda.pcb_PrimitiveComponent.get(id);
-		if (!component) continue;
-		const box = await eda.pcb_Primitive.getPrimitivesBBox([id]);
-		if (!box) continue;
+		let component, box, move;
+		try {
+			component = await eda.pcb_PrimitiveComponent.get(id);
+			if (!component) { skipped.push({ primitiveId: id, reason: 'Component not found.' }); continue; }
+			if (component.getState_PrimitiveLock() === true) { skipped.push({ primitiveId: id, reason: 'locked' }); continue; }
+			move = pcbCoordinateMove(component, { x: component.getState_X(), y: component.getState_Y() });
+			box = await eda.pcb_Primitive.getPrimitivesBBox([id]);
+			if (!box || ![box.minX, box.minY, box.maxX, box.maxY].every(Number.isFinite) || box.minX >= box.maxX || box.minY >= box.maxY) {
+				skipped.push({ primitiveId: id, reason: 'Rendered bounding box unavailable or invalid.' }); continue;
+			}
+		}
+		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); continue; }
 		let nets: Array<string> = [];
 		try {
 			const pads = await eda.pcb_PrimitiveComponent.getAllPinsByPrimitiveId(id);
@@ -12304,12 +12407,13 @@ const pcbComponentsArrange: Handler = async (payload) => {
 			box,
 			locked: component.getState_PrimitiveLock(),
 			nets,
+			move,
 		});
 	}
 
 	const movable = items.filter(i => !i.locked);
 	if (movable.length === 0) {
-		return { result: { mode, groups: 0, moved: [], count: 0, note: 'all target components are locked' } };
+		return { result: { mode, groups: 0, requestedCount: ids.length, ...await applyPcbCoordinateMoves([], skipped) } };
 	}
 
 	// Anchor at the top-left of the current movable region (y-up: top = max y).
@@ -12318,7 +12422,7 @@ const pcbComponentsArrange: Handler = async (payload) => {
 
 	const groups: Array<Array<ArrangeItem>> = mode === 'grid' ? [movable] : clusterByLocalNets(movable);
 
-	const moved: Array<Record<string, unknown>> = [];
+	const plans: PcbCoordinateMove[] = [];
 	let blockX = originX;
 	for (const group of groups) {
 		const cellW = Math.max(...group.map(i => i.box.maxX - i.box.minX)) + pitch;
@@ -12337,19 +12441,13 @@ const pcbComponentsArrange: Handler = async (payload) => {
 			// Preserve each component's anchor↔bbox-center offset.
 			const nx = cellCenterX - bcx + it.x;
 			const ny = cellCenterY - bcy + it.y;
-			try {
-				await eda.pcb_PrimitiveComponent.modify(it.id, { x: nx, y: ny });
-			}
-			catch (err) {
-				throw edaError(err, `Failed to arrange component ${it.designator ?? it.id}.`);
-			}
-			moved.push({ primitiveId: it.id, designator: it.designator, from: { x: it.x, y: it.y }, to: { x: nx, y: ny } });
+			plans.push({ ...it.move, to: { x: nx, y: ny } });
 		}
 		const usedCols = Math.min(cols, group.length);
 		blockX += usedCols * cellW + gutter;
 	}
 
-	return { result: { mode, groups: groups.length, moved, count: moved.length } };
+	return { result: { mode, groups: groups.length, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped) } };
 };
 
 // ─── PCB DRC ─────────────────────────────────────────────────────────

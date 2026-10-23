@@ -161,6 +161,70 @@ func TestPlanAutolayout_CollisionRetryAcrossModules(t *testing.T) {
 	}
 }
 
+func TestPlanAutolayoutModuleGapSeparatesCompleteGroups(t *testing.T) {
+	parts := []alPart{part("U1", 0, 0, 60, 60), part("C1", 0, 0, 10, 10), part("C2", 0, 0, 10, 10),
+		part("U2", 0, 0, 60, 60), part("C3", 0, 0, 10, 10), part("C4", 0, 0, 10, 10)}
+	modules := []alModuleSpec{
+		{Name: "A", Zone: "center", Core: "U1", Parts: []string{"U1", "C1", "C2"}},
+		{Name: "B", Zone: "center", Core: "U2", Parts: []string{"U2", "C3", "C4"}},
+	}
+	for _, gap := range []float64{0, 80, 140} {
+		rules := rulesAL()
+		rules.ModuleGap = gap
+		report := planAutolayout(modules, parts, a4Sheet(), rules)
+		if !report.OK || len(report.Placements) != len(parts) {
+			t.Fatalf("gap %g: incomplete plan: %+v", gap, report)
+		}
+		bounds := map[string]layoutBBox{}
+		for _, placement := range report.Placements {
+			for _, original := range parts {
+				if original.Designator != placement.Designator {
+					continue
+				}
+				box := alShiftBox(original.BBox, placement.X-original.AnchorX, placement.Y-original.AnchorY)
+				if bound, exists := bounds[placement.Module]; exists {
+					box = layoutBBox{math.Min(bound.MinX, box.MinX), math.Min(bound.MinY, box.MinY), math.Max(bound.MaxX, box.MaxX), math.Max(bound.MaxY, box.MaxY)}
+				}
+				bounds[placement.Module] = box
+				if math.Mod(placement.X, schAnchorGrid) != 0 || math.Mod(placement.Y, schAnchorGrid) != 0 || placement.Rotation != original.Rotation {
+					t.Fatalf("module packing changed orientation/grid: %+v", placement)
+				}
+			}
+		}
+		if boxesOverlap(bounds["A"], bounds["B"]) || rectGap(bounds["A"], bounds["B"]) < gap {
+			t.Fatalf("gap %g was not applied to group bounds: %+v", gap, bounds)
+		}
+	}
+}
+
+func TestAutolayoutModuleReservesInteriorAndPreservesRigidGeometry(t *testing.T) {
+	members := []layoutBBox{{0, 0, 20, 20}, {0, 80, 20, 100}}
+	obstacle := layoutBBox{0, 45, 20, 55}
+	rules := rulesAL()
+	envelope, dx, dy, _, ok := placeAutolayoutModule(members, []layoutBBox{obstacle}, nil, nil, nil, nil, rules)
+	if !ok || boxesOverlap(envelope, obstacle) || rectGap(envelope, obstacle) < rules.PartGap || dx == 0 && dy == 0 {
+		t.Fatalf("fixed object remained inside the functional group: box=%+v shift=(%g,%g)", envelope, dx, dy)
+	}
+	if math.Mod(dx, schAnchorGrid) != 0 || math.Mod(dy, schAnchorGrid) != 0 {
+		t.Fatalf("rigid translation was off grid: %g,%g", dx, dy)
+	}
+	// Existing title/page restrictions remain hard limits for the whole group.
+	sheet := layoutBBox{0, 0, 20, 100}
+	if _, _, _, _, ok := placeAutolayoutModule(members, []layoutBBox{obstacle}, nil, nil, &sheet, nil, rules); ok {
+		t.Fatal("impossible module envelope was accepted within a tight page")
+	}
+}
+
+func TestPlanAutolayoutRejectsInvalidModuleGap(t *testing.T) {
+	for _, gap := range []float64{-1, math.NaN(), math.Inf(1)} {
+		rules := rulesAL()
+		rules.ModuleGap = gap
+		if report := planAutolayout(nil, nil, a4Sheet(), rules); report.OK || len(report.Errors) == 0 {
+			t.Fatalf("invalid module gap %g passed", gap)
+		}
+	}
+}
+
 func TestPlanAutolayout_SkipsUnplacedPeripheral(t *testing.T) {
 	// A peripheral named in the spec but not placed is warned + skipped, not a
 	// hard error (v1 only moves existing parts).

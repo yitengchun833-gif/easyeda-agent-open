@@ -1,6 +1,6 @@
 {
   "name": "easyeda-agent-knowledge",
-  "version": "1.8.1-open.9.6",
+  "version": "1.8.1-open.9.7-rc.1",
   "private": true,
   "type": "module",
   "description": "Local hardware knowledge service for EasyEDA Agent Open",

@@ -54,12 +54,39 @@ test('compileLabels permits only explicit labels for observed wire IDs and rejec
   const labelled = path.join(input.dir, 'shown.json');
   const result = await compileLabels({ ...input, outputFile: labelled, wireReceiptFile: input.receiptFile, stage: 'labels', labels: [{ wireId: 'actual-wire', x: 10, y: 20, rotation: 0 }] });
   assert.equal(result.labelCount, 1);
+  assert.deepEqual(JSON.parse(await readFile(labelled, 'utf8')).typedStep.payload.labels,
+    [{ wireId: 'actual-wire', x: 10, y: 20, rotation: 0 }]);
   await assert.rejects(compileLabels({ ...input, outputFile: path.join(input.dir, 'forged.json'), wireReceiptFile: input.receiptFile, stage: 'labels', labels: [{ wireId: 'forged-wire' }] }), /outside/);
   await assert.rejects(compileLabels({ ...input, outputFile: labelled, wireReceiptFile: input.receiptFile, stage: 'labels', labels: [] }), /EEXIST/);
   await assert.rejects(compileLabels({ ...input, expectedHash: '0'.repeat(64), outputFile: path.join(input.dir, 'old.json'), wireReceiptFile: input.receiptFile, stage: 'labels', labels: [] }), /hash changed/);
   const wrong = structuredClone(input.receipt); wrong.target = { projectUuid: 'other', documentUuid: 'd' };
   await writeFile(input.receiptFile, JSON.stringify(wrong));
   await assert.rejects(compileLabels({ ...input, outputFile: path.join(input.dir, 'wrong.json'), wireReceiptFile: input.receiptFile, stage: 'labels', labels: [] }), /binding changed/);
+});
+
+test('compileLabels emits automatic positions from actual wire geometry without changing its net or ID', async t => {
+  const input = await fixture(t);
+  const { plan } = await loadPlan(input.planFile);
+  plan.layoutHints = { ...plan.layoutHints, visibleNetNames: ['VIN'] };
+  plan.stages[0].steps = [{ action: 'schematic.wire.create', payload: { net: 'VIN', points: [[0, 0], [200, 0]] } }];
+  await writeFile(input.planFile, JSON.stringify(plan));
+  const loaded = await loadPlan(input.planFile);
+  input.receipt.sha256 = loaded.sha256;
+  input.receipt.binding = stageReceiptBinding(loaded.plan, loaded.plan.stages[0]);
+  input.receipt.receipt.execution.structuredContent.result.results = [
+    { index: 0, action: 'schematic.wire.create', ok: true, result: { primitiveId: 'actual-wire', net: 'VIN', line: [[0, 0], [200, 0]] } },
+  ];
+  input.receipt.receipt.readback = { structuredContent: { result: { components: [
+    { componentType: 'part', bbox: { minX: 0, minY: 1, maxX: 200, maxY: 50 } },
+  ] } } };
+  await writeFile(input.receiptFile, JSON.stringify(input.receipt));
+  await compileLabels({ ...input, expectedHash: loaded.sha256, wireReceiptFile: input.receiptFile, stage: 'labels' });
+  const artifact = JSON.parse(await readFile(input.outputFile, 'utf8'));
+  assert.equal(artifact.typedStep.action, 'schematic.wire.labels.apply');
+  assert.deepEqual(artifact.typedStep.payload.wireIds, ['actual-wire']);
+  const [label] = artifact.typedStep.payload.labels;
+  assert.equal(label.wireId, 'actual-wire'); assert.equal(label.rotation, 0); assert.ok(label.y < 0);
+  assert.equal(Object.hasOwn(label, 'net'), false);
 });
 
 test('compileLabels rejects partial wire receipts and any target-stage receipt', async t => {
