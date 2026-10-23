@@ -13,6 +13,7 @@ async function fixture(run: (f: {
  registrations: Array<{ id: string; receive: Receiver }>; frames: Array<any>;
  timers: Map<number, () => void>; workers: Array<{ onmessage: (() => void) | null; terminated: boolean }>;
  deferContexts: () => void; contexts: Array<(project: any) => void>;
+ configs: Array<any>; toasts: string[];
 }) => Promise<void>): Promise<void> {
  const globals = globalThis as Record<string, any>;
  const original = { setTimeout: globals.setTimeout, clearTimeout: globals.clearTimeout,
@@ -23,6 +24,7 @@ async function fixture(run: (f: {
  const timers = new Map<number, () => void>();
  const registrations: Array<{ id: string; receive: Receiver }> = [];
  const frames: Array<any> = [];
+ const configs: Array<any> = [], toasts: string[] = [];
  let deferContext = false; const contexts: Array<(project: any) => void> = [];
  const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
  globals.setTimeout = (fn: () => void) => { timers.set(++nextTimer, fn); return nextTimer; };
@@ -40,8 +42,9 @@ async function fixture(run: (f: {
    register(id: string, _url: string, receive: Receiver) { registrations.push({ id, receive }); },
    send(_id: string, data: string) { frames.push(JSON.parse(data)); }, close() {},
   },
-  sys_Message: { showToastMessage() {} }, sys_I18n: { text: (s: string) => s },
-  sys_Log: { add() {} }, sys_Storage: { getExtensionUserConfig: () => true },
+  sys_Message: { showToastMessage(message: string) { toasts.push(message); } }, sys_I18n: { text: (s: string) => s },
+  sys_Log: { add() {} }, sys_Storage: { getExtensionUserConfig: () => true,
+   setExtensionUserConfig: async (key: string, value: any) => { configs.push({key,value}); } },
   sys_Environment: { getEditorCurrentVersion: () => '4.1.60-test' },
   dmt_Project: { getCurrentProjectInfo: () => deferContext ? new Promise(resolve => contexts.push(resolve)) : Promise.resolve(undefined) },
   dmt_SelectControl: { getCurrentDocumentInfo: async () => undefined },
@@ -49,7 +52,7 @@ async function fixture(run: (f: {
  delete require.cache[require.resolve('./transport')];
  const transport = require('./transport') as typeof import('./transport');
  try {
-  await run({ transport, registrations, frames, timers, workers, contexts, deferContexts: () => { deferContext = true; },
+  await run({ transport, registrations, frames, timers, workers, contexts, configs, toasts, deferContexts: () => { deferContext = true; },
    advance: (ms) => { now += ms; },
    tick: async (ms = 3000) => { now += ms; assert.ok(workerTick); workerTick(); await flush(); },
    receive: async (index, data = handshake) => { registrations[index].receive({ data }); await flush(); },
@@ -61,6 +64,78 @@ async function fixture(run: (f: {
   Object.assign(globals, { setTimeout: original.setTimeout, clearTimeout: original.clearTimeout, Worker: original.Worker, eda: original.eda });
  }
 }
+
+test('one registration prepares both connections and keeps credentials out of outbound frames', async () => fixture(async f => {
+ f.transport.start(); await f.tick(); await f.receive(0);
+ const registration=f.frames.find(frame=>frame.type==='register');
+ assert.equal(registration.knowledge,true);
+ assert.equal(f.transport.getConnectionStatus().knowledge,'connecting');
+ const token='private-credential'.repeat(4);
+ await f.receive(0,JSON.stringify({type:'knowledge_status',windowId:registration.windowId,ok:true,baseUrl:'http://127.0.0.1:60933',token}));
+ assert.equal(f.transport.getConnectionStatus().knowledge,'ready');
+ assert.deepEqual(f.configs,[{key:'knowledgeService',value:{baseUrl:'http://127.0.0.1:60933',token}}]);
+ assert.ok(f.toasts.includes('画图与知识库已连接。'));
+ assert.ok(!JSON.stringify(f.frames).includes(token));
+ f.transport.stop(false);
+ assert.equal(f.transport.getConnectionStatus().knowledge,'disconnected');
+}));
+
+test('knowledge registration works in a sandbox without URL', async () => fixture(async f => {
+ const globals=globalThis as any, original=globals.URL;
+ try {
+  f.transport.start(); await f.tick(); await f.receive(0);
+  globals.URL=undefined;
+  const registration=f.frames.find(frame=>frame.type==='register');
+  await f.receive(0,JSON.stringify({type:'knowledge_status',windowId:registration.windowId,ok:true,baseUrl:'http://127.0.0.1:60933',token:'x'.repeat(64)}));
+  assert.equal(f.transport.getConnectionStatus().knowledge,'ready');
+  assert.equal(f.configs.length,1);
+ } finally {globals.URL=original;}
+}));
+
+test('failed knowledge does not disconnect drawing and foreign/stale credentials are ignored', async () => fixture(async f => {
+ f.transport.start(); await f.tick(); await f.receive(0);
+ const registration=f.frames.find(frame=>frame.type==='register');
+ await f.receive(0,JSON.stringify({type:'knowledge_status',windowId:'another-window',ok:true,baseUrl:'http://127.0.0.1:60933',token:'x'.repeat(64)}));
+ assert.equal(f.configs.length,0);
+ await f.receive(0,JSON.stringify({type:'knowledge_status',windowId:registration.windowId,ok:false}));
+ assert.equal(f.transport.getConnectionStatus().connected,true);
+ assert.equal(f.transport.getConnectionStatus().knowledge,'failed');
+ for(const baseUrl of ['https://example.com','http://127.0.0.1:0','http://127.0.0.1:65536','http://127.0.0.1:60933/path','http://user@127.0.0.1:60933','http://127.0.0.1:60933?x','http://127.0.0.1:60933#x']) {
+  await f.receive(0,JSON.stringify({type:'knowledge_status',windowId:registration.windowId,ok:true,baseUrl,token:'x'.repeat(64)}));
+  assert.equal(f.configs.length,0);
+ }
+ f.transport.stop(false);
+ await f.receive(0,JSON.stringify({type:'knowledge_status',windowId:registration.windowId,ok:true,baseUrl:'http://127.0.0.1:60933',token:'x'.repeat(64)}));
+ assert.equal(f.configs.length,0);
+}));
+
+test('reconnect orders deferred configuration writes and does not accept a stale ready result', async () => fixture(async f => {
+ const held: Array<{value:any; resolve:()=>void}> = [];
+ (globalThis as any).eda.sys_Storage.setExtensionUserConfig = (_key:string,value:any) => new Promise<void>(resolve=>held.push({value,resolve}));
+ const status = (windowId:string,token:string) => JSON.stringify({type:'knowledge_status',windowId,ok:true,baseUrl:'http://127.0.0.1:60933',token});
+ f.transport.start(); await f.tick(); await f.receive(0);
+ const old=f.frames.find(frame=>frame.type==='register');
+ await f.receive(0,status(old.windowId,'old'.repeat(32)));
+ assert.equal(held.length,1);
+ f.transport.reconnect(); await f.tick(); await f.receive(1);
+ const current=f.frames.filter(frame=>frame.type==='register').at(-1);
+ await f.receive(1,status(current.windowId,'new'.repeat(32)));
+ assert.equal(held.length,1,'new configuration waits for uncancellable old host write');
+ held[0].resolve(); await f.receive(1,JSON.stringify({type:'pong'}));
+ assert.equal(held.length,2);
+ assert.equal(f.transport.getConnectionStatus().knowledge,'connecting','old completion must not claim new connection ready');
+ assert.equal(held[1].value.token,'new'.repeat(32));
+ held[1].resolve(); await f.receive(1,JSON.stringify({type:'pong'}));
+ assert.equal(f.transport.getConnectionStatus().knowledge,'ready');
+}));
+
+test('old daemon without knowledge reply yields partial failure while drawing remains connected', async () => fixture(async f => {
+ f.transport.start(); await f.tick(); await f.receive(0);
+ for(let i=0;i<12;i++){await f.receive(0,JSON.stringify({type:'pong'}));await f.tick();}
+ assert.equal(f.transport.getConnectionStatus().connected,true);
+ assert.equal(f.transport.getConnectionStatus().knowledge,'failed');
+ assert.equal(f.configs.length,0);
+}));
 
 test('worker can register and reconnect after lost pongs with main-thread timers frozen', async () => fixture(async f => {
  f.transport.start();

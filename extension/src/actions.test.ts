@@ -43,6 +43,24 @@ import {
 	summarizeActivePageConnectivity,
 } from './actions';
 
+test('selection export records actual IDs including automatically selected labels', async () => {
+	const globals = globalThis as any, previous = globals.eda;
+	try {
+		globals.eda = {
+			sch_SelectControl: {
+				doSelectPrimitives: async (ids: string[]) => assert.deepEqual(ids, ['wire']),
+				getAllSelectedPrimitives_PrimitiveId: async () => ['wire', 'wire-name'],
+			},
+			sch_ManufactureData: { getExportDocumentFile: async () => new File(['image'], 'selection.png', { type: 'image/png' }) },
+		};
+		const output = await runAction('schematic.export.image', { primitiveIds: ['wire'], scope: 'selection', format: 'png' });
+		assert.ok(output.result);
+		assert.equal(output.result.selectedCount, 2);
+		assert.deepEqual(output.result.selectedPrimitiveIds, ['wire', 'wire-name']);
+		assert.equal(output.artifacts?.length, 1);
+	} finally { globals.eda = previous; }
+});
+
 test('PCB pad serialization preserves source shape/rotation and computes shape-aware bbox extents', () => {
 	const pad: any = {
 		getState_PrimitiveId: () => 'p1',
@@ -3827,10 +3845,33 @@ test('device identity: cache never merges different instance provenance or model
 		try {
 			const res: any = await schematicComponentsList({ includeDeviceIdentity: true });
 			const second = res.result.components[1];
+			assert.equal(res.result.identityTiming.uniqueLookups, 2, 'each provenance/model keeps an independent identity proof');
 			if ('Footprint' in change || 'ManufacturerId' in change) assert.ok(second.deviceIdentityError);
-			else assert.equal(mock.calls.filter((c: any) => c[0] === 'getByLcscIds').length, 2);
+			else assert.equal(mock.calls.filter((c: any) => c[0] === 'getByLcscIds').length, 1, 'candidate inventory is batched, not identity proof');
 		} finally { delete (globalThis as any).eda; }
 	}
+});
+
+test('device identity batches distinct LCSC inputs and keeps separate proofs and duplicate provenance deduplicated', { timeout: 3000 }, async () => {
+	const mock = instanceIdentityEda();
+	mock.sch_PrimitiveComponent.getAll = async () => [mockComponent(mock.state), mockComponent({ ...mock.state, Designator: 'U2', ManufacturerId: 'other-model', SupplierId: 'C9999' }), mockComponent({ ...mock.state, Designator: 'U3' })];
+	const original = mock.lib_Device.getByLcscIds;
+	let release!: () => void, entered!: () => void, queries = 0;
+	const gate = new Promise<void>(resolve => { release = resolve; });
+	const concurrent = new Promise<void>(resolve => { entered = resolve; });
+	mock.lib_Device.getByLcscIds = async (...args: unknown[]) => { queries++; entered(); await gate; return original(...args); };
+	(globalThis as any).eda = mock;
+	try {
+		const read = schematicComponentsList({ includeDeviceIdentity: true });
+		await concurrent;
+		assert.equal(queries, 1);
+		release();
+		const result: any = await read;
+		assert.deepEqual((mock.calls.find((c: any) => c[0] === 'getByLcscIds') as any)[1].sort(), ['C6186', 'C9999']);
+		assert.equal(result.result.components.length, 3);
+		assert.equal(result.result.identityTiming.uniqueLookups, 2);
+		assert.ok(result.result.components[1].deviceIdentityError);
+	} finally { release(); delete (globalThis as any).eda; }
 });
 
 test('device identity: hung candidate query reports its stage without hydrating or waiting forever', async () => {
@@ -3842,7 +3883,21 @@ test('device identity: hung candidate query reports its stage without hydrating 
 	await entered;
 	sweepDeadlines(Date.now() + 8000);
 	const part = await read;
-	assert.match(part.deviceIdentityError, /getByLcscIds.*timed out/);
+	assert.match(part.deviceIdentityError, /identity batched LCSC query.*timed out/);
+	assert.equal(part.device.uuid, '6e8a0f3cb342d055');
+	assert.equal(part.deviceResolution, undefined);
+});
+
+test('device identity: hung detail lookup remains unresolved after its deadline', async () => {
+	const mock = instanceIdentityEda();
+	let started!: () => void;
+	const entered = new Promise<void>(resolve => { started = resolve; });
+	mock.lib_Device.get = () => { started(); return new Promise(() => {}); };
+	const read = readInstanceIdentity(mock);
+	await entered;
+	sweepDeadlines(Date.now() + 8000);
+	const part = await read;
+	assert.match(part.deviceIdentityError, /device.get.*timed out/);
 	assert.equal(part.device.uuid, '6e8a0f3cb342d055');
 	assert.equal(part.deviceResolution, undefined);
 });

@@ -129,6 +129,9 @@ func TestSchDesignatorsOutputAliasesRejected(t *testing.T) {
 				alias = dir + "/./source.json"
 			case "symlink":
 				if err := os.Symlink(input, alias); err != nil {
+					if os.PathSeparator == '\\' {
+						t.Skipf("symlink unavailable: %v", err)
+					}
 					t.Fatal(err)
 				}
 			case "hardlink":

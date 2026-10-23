@@ -17,7 +17,7 @@ func TestRuntimeReadOnlyBatchRetainsDrcEvidence(t *testing.T) {
 }
 
 func TestRuntimeExportEvidenceRequiresFileFreshnessAndScope(t *testing.T) {
-	for _, name := range []string{"valid", "missing-file", "stale", "partial", "wrong-scope"} {
+	for _, name := range []string{"valid", "expanded-selection", "missing-requested-id", "unproven-expansion", "missing-file", "stale", "partial", "wrong-scope"} {
 		t.Run(name, func(t *testing.T) {
 			s := New(Options{})
 			ctx := &protocol.Context{ProjectUUID: "p", DocumentUUID: "d"}
@@ -35,6 +35,15 @@ func TestRuntimeExportEvidenceRequiresFileFreshnessAndScope(t *testing.T) {
 			if name == "partial" {
 				e.Result["partial"] = true
 			}
+			switch name {
+			case "expanded-selection":
+				e.Result["selectedCount"] = 2
+				e.Result["selectedPrimitiveIds"] = []any{id, "net-label"}
+			case "missing-requested-id":
+				e.Result["selectedPrimitiveIds"] = []any{"other"}
+			case "unproven-expansion":
+				e.Result["selectedCount"] = 2
+			}
 			s.runtime.observe(e)
 			if name == "stale" {
 				d.Generation++
@@ -42,7 +51,7 @@ func TestRuntimeExportEvidenceRequiresFileFreshnessAndScope(t *testing.T) {
 			body := fmt.Sprintf(`{"operation":"visual_review","window":"w","requestId":"task","generation":%d,"screenshotRequestId":"image","source":"ai"}`, d.Generation)
 			got := runtimeTestControl(s, body).Code
 			want := 409
-			if name == "valid" {
+			if name == "valid" || name == "expanded-selection" {
 				want = 200
 			}
 			if got != want {

@@ -1,0 +1,6 @@
+interface:
+  display_name: "资料到交付"
+  short_description: "在同一任务分析资料并确认方案，再由独立任务专业执行与验收"
+  default_prompt: "使用 $evidence-to-delivery，由协调任务依次安排资料分析与方案制定、专业执行与验收两个任务；分析与方案保留两个内部检查点，方案经我确认后执行。"
+policy:
+  allow_implicit_invocation: true

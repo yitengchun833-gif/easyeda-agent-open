@@ -2,8 +2,35 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { apiReference, callAction, control, imageResult, screenshotCode, snapshotSteps } from '../src/open.mjs';
+import { apiReference, callAction, control, imageResult, screenshotCode, snapshotSteps, runtimeRequest } from '../src/open.mjs';
 import { DOMAIN_NAMES, toMcpResult } from '../src/core.mjs';
+
+test('scoped state bounds history without losing objects or the explicit full evidence path', async () => {
+  const data = { documents: [{ objects: { r: { data: { x: 1 }, staleFields: { pins: true } } } }],
+    receipts: Array.from({ length: 20 }, (_, i) => ({ requestId: String(i) })), edaReads: 0 };
+  const server = createServer((_req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(data)); }).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const compact = await runtimeRequest({ primitiveIds: ['r'] }, url);
+    assert.deepEqual(compact.structuredContent.documents, data.documents);
+    assert.deepEqual(compact.structuredContent.receipts, data.receipts.slice(-12));
+    assert.equal(compact.structuredContent.receiptCoverage.omitted, 8);
+    const full = await runtimeRequest({ primitiveIds: ['r'], includeObjects: true }, url);
+    assert.deepEqual(full.structuredContent, data);
+  } finally { server.closeAllConnections(); server.close(); }
+});
+
+test('electrical snapshot text is opt-in and does not request unrelated wire geometry', () => {
+  const options = { profile: 'electrical', primitiveIds: ['r'] };
+  const electrical = snapshotSteps('schematic', false, false, false, options)[1].payload;
+  assert.equal(electrical.includeTexts, false); assert.equal(electrical.includeWires, false);
+  assert.equal(electrical.includeBBox, false); assert.equal(electrical.includeDeviceIdentity, false);
+  assert.equal(electrical.includePinNets, true);
+  const withText = snapshotSteps('schematic', false, false, false, { ...options, includeTexts: true })[1].payload;
+  assert.equal(withText.includeTexts, true); assert.equal(withText.includeBBox, true);
+  assert.equal(withText.includeWires, false); assert.deepEqual(withText.primitiveIds, ['r']);
+});
 
 test('one HTTP request per batch, no replay on connection failure, errors stay errors', async () => {
   const requests = [];

@@ -1,5 +1,7 @@
 # 快速开始 & 使用注意事项
 
+> 上游兼容分支的历史快速开始。当前 Open 安装、连接、端口和专业 Skill 统一见 [当前 README](../README.md) 与 [Open Skill](../skills/easyeda-agent-open/SKILL.md)；下文旧版本步骤不作为 Open 更新或执行前置。
+
 easyeda-agent 有三个配套组成部分；EasyEDA Pro 是运行宿主：
 
 | 部件 | 是什么 | 装在哪 |

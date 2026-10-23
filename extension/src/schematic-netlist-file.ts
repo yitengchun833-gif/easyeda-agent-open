@@ -1,6 +1,7 @@
 /// <reference types="@jlceda/pro-api-types" />
 import { ActionError, ErrorCodes } from './protocol';
 import { captureSchematicReadiness, waitForSchematicReady } from './schematic-readiness';
+import { readAnalysisNetlist, type NetlistFile } from './schematic-analysis-netlist';
 
 export class NetlistContextError extends ActionError {
 	constructor(message: string) { super(ErrorCodes.INVALID_STATE, message); }
@@ -10,7 +11,7 @@ export class NetlistContextError extends ActionError {
  * Export may finish while its annotation updates are still being synchronized.
  * Preserve identity and await the observed transaction; input focus is unrelated.
  */
-export async function getSchematicNetlistFile(fileName?: string, type?: ESYS_NetlistType): Promise<File | undefined> {
+export async function getSchematicNetlistFile(fileName?: string, type: ESYS_NetlistType = 'JLCEDA' as ESYS_NetlistType): Promise<NetlistFile | undefined> {
 	let before;
 	try { before = await eda.dmt_SelectControl.getCurrentDocumentInfo(); }
 	catch (err) { throw new NetlistContextError(`Cannot identify schematic before netlist export: ${String(err)}`); }
@@ -18,9 +19,15 @@ export async function getSchematicNetlistFile(fileName?: string, type?: ESYS_Net
 	let readiness;
 	try { readiness = captureSchematicReadiness({ uuid: before.uuid, tabId: before.tabId }); }
 	catch (err) { throw new NetlistContextError(`Cannot verify schematic readiness before netlist export: ${String(err)}`); }
-	let file: File | undefined;
+	try { await waitForSchematicReady({ uuid: before.uuid, tabId: before.tabId }, 5000, readiness); }
+	catch (err) { throw new NetlistContextError(`Cannot verify schematic readiness before netlist export: ${String(err)}`); }
+	let file: NetlistFile | undefined;
 	try {
 		file = await eda.sch_ManufactureData.getNetlistFile(fileName, type);
+		if (!file && (type === 'JLCEDA' || type === 'EasyEDA')) {
+			await waitForSchematicReady({ uuid: before.uuid, tabId: before.tabId }, 5000, readiness);
+			file = await readAnalysisNetlist({ uuid: before.uuid, tabId: before.tabId }, fileName);
+		}
 	}
 	finally {
 		try {

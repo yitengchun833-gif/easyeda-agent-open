@@ -140,6 +140,9 @@ let currentPort: number | null = null;
 // it is the hint that makes a reconnect a single attempt instead of a sweep.
 let lastGoodPort: number | null = null;
 let handshakeVerified = false;
+type KnowledgeStatus = 'disconnected' | 'connecting' | 'ready' | 'failed';
+let knowledgeStatus: KnowledgeStatus = 'disconnected';
+let knowledgeDeadline: DeadlineHandle | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let cancelPendingAttempt: (() => void) | null = null;
 let watchdogStarted = false;
@@ -190,6 +193,7 @@ export interface ConnectionStatus {
 	connecting: boolean;
 	port: number | null;
 	windowId: string | null;
+	knowledge: KnowledgeStatus;
 }
 
 interface SharedTransportRuntime {
@@ -268,6 +272,7 @@ function localGetConnectionStatus(): ConnectionStatus {
 		connecting: isConnecting,
 		port: currentPort,
 		windowId,
+		knowledge: knowledgeStatus,
 	};
 }
 
@@ -416,6 +421,8 @@ function cancelConnectionFlow(resetRetryCount = true): void {
 	clearRetryTimer();
 	stopHeartbeat();
 	handshakeVerified = false;
+	knowledgeDeadline?.cancel();
+	knowledgeStatus = 'disconnected';
 	currentPort = null;
 	windowId = null;
 	if (resetRetryCount) {
@@ -726,13 +733,19 @@ function tryConnectToPort(port: number, sessionId: number): Promise<boolean> {
 							if ((msg as { service?: string }).service === SERVICE_ID) {
 								handshakeVerified = true;
 								windowId = crypto.randomUUID();
+								knowledgeStatus = 'connecting';
+								knowledgeDeadline = armDeadline(35000, () => {
+									if (isConnectionSessionActive(sessionId) && knowledgeStatus === 'connecting') {
+										knowledgeStatus = 'failed';
+										eda.sys_Message.showToastMessage('画图已连接，知识库未就绪。请用同一菜单重连。');
+									}
+								});
 								lastContextSig = '';
 								sendRegister();
 								void sendContext(true);
 								if (!connectionAnnounced) {
-									connectionAnnounced = true;
 									eda.sys_Message.showToastMessage(
-										`${eda.sys_I18n.text('Connected to easyeda-agent')} (port ${port})`,
+										'画图已连接，正在连接知识库…',
 									);
 								}
 								settle(true);
@@ -778,6 +791,7 @@ function sendRegister(): void {
 		connectorVersion: CONNECTOR_VERSION,
 		easyedaVersion: readEasyEdaVersion(),
 		capabilities: CAPABILITIES,
+		knowledge: true,
 	};
 	sendFrame(frame);
 	observeSceneChanges(stamp => sendFrame({type:'event',payload:{kind:'scene_changed',stamp}}));
@@ -1039,6 +1053,38 @@ function clearRetryTimer(): void {
 
 async function handleMessage(msg: InboundFrame): Promise<void> {
 	switch (msg.type) {
+		case 'knowledge_status': {
+			if (msg.windowId !== windowId) return;
+			const session = connectionSessionId;
+			knowledgeDeadline?.cancel();
+			try {
+				if (msg.ok !== true) throw new Error('画图已连接，知识库启动失败。请检查后重连。');
+				if (typeof msg.baseUrl !== 'string' || typeof msg.token !== 'string' || msg.token.length < 32) throw new Error('知识库连接配置无效。');
+				// The extension sandbox may omit URL; accept only our exact loopback service address.
+				const address = /^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})\/?$/.exec(msg.baseUrl);
+				if (!address || Number(address[1]) > 65535) throw new Error('知识库连接地址无效。');
+				// The host cannot cancel an in-flight storage write. Order writes across
+				// reconnects/bundle reloads so old credentials cannot finish after new ones.
+				const host = eda as unknown as Record<string, unknown>;
+				const write = Promise.resolve(host.__easyedaAgentKnowledgeWrite).catch(() => {}).then(async () => {
+					if (!isConnectionSessionActive(session) || !handshakeVerified || msg.windowId !== windowId) return;
+					await eda.sys_Storage.setExtensionUserConfig('knowledgeService', {baseUrl: msg.baseUrl, token: msg.token});
+				});
+				host.__easyedaAgentKnowledgeWrite = write;
+				await write;
+				if (!isConnectionSessionActive(session) || !handshakeVerified || msg.windowId !== windowId) return;
+				knowledgeStatus = 'ready';
+				if (!connectionAnnounced) {
+					connectionAnnounced = true;
+					eda.sys_Message.showToastMessage('画图与知识库已连接。');
+				}
+			} catch {
+				if (!isConnectionSessionActive(session) || !handshakeVerified || msg.windowId !== windowId) return;
+				knowledgeStatus = 'failed';
+				eda.sys_Message.showToastMessage('画图已连接，知识库连接失败。请检查本地服务后重连。');
+			}
+			return;
+		}
 		case 'ping':
 			// Reply to a daemon-initiated ping.
 			sendFrame({ type: 'pong', id: (msg as { id?: string }).id });

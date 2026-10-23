@@ -318,7 +318,6 @@
   },
   "files": {
     "apply": "candidate-03.apply.json",
-    "candidate": "candidate-03.json",
-    "preview": "candidate-03.svg"
+    "candidate": "candidate-03.json"
   }
 }

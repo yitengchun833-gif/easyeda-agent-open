@@ -926,10 +926,13 @@ func stripArtifactNesting(p string) string {
 		if segs[i] == ".easyeda" && segs[i+1] == "artifacts" {
 			trimmed := strings.Join(segs[:i], sep)
 			if trimmed == "" {
-				if filepath.IsAbs(clean) {
+				if strings.HasPrefix(clean, sep) {
 					return sep
 				}
 				return "."
+			}
+			if trimmed == filepath.VolumeName(clean) {
+				return trimmed + sep
 			}
 			return trimmed
 		}

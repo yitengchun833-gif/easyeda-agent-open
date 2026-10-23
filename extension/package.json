@@ -1,6 +1,6 @@
 {
   "name": "easyeda-agent-connector",
-  "version": "1.8.1-open.9.5",
+  "version": "1.8.1-open.9.6-kb.32",
   "description": "EasyEDA Agent Open：通过官方 eda.* API 连接 AI Agent 与嘉立创 EDA 专业版。",
   "author": "yitengchun833-gif; based on zhoushoujianwork/easyeda-agent",
   "license": "(MIT AND Apache-2.0)",
@@ -12,8 +12,9 @@
     "test": "node --require ts-node/register --test src/*.test.ts",
     "typecheck": "tsc --noEmit",
     "compile": "rimraf ./dist/ && ts-node ./config/esbuild.prod.ts",
-    "build": "npm run compile && ts-node ./build/packaged.ts",
-    "package": "ts-node ./build/packaged.ts",
+    "build": "npm run compile && npm run sync:knowledge-ui && ts-node ./build/packaged.ts",
+    "package": "npm run compile && npm run sync:knowledge-ui && ts-node ./build/packaged.ts",
+    "sync:knowledge-ui": "node ./scripts/sync-knowledge-ui.mjs",
     "bump": "node ./scripts/bump.mjs",
     "release": "node ./scripts/bump.mjs && npm run typecheck && npm run build"
   },

@@ -235,6 +235,9 @@ func TestLayoutReportRefusesPathAliasesBeforeWriting(t *testing.T) {
 	}
 	linkedDir := filepath.Join(dir, "linked-dir")
 	if err := os.Symlink(dir, linkedDir); err != nil {
+		if os.PathSeparator == '\\' {
+			t.Skipf("symlink unavailable: %v", err)
+		}
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "not-created.json")

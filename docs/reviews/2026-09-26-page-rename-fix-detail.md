@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # 页面改名失败传播修复详细记录
 
 [简版结论](2026-09-26-page-rename-fix.md)。本轮证据为
@@ -57,7 +59,7 @@ SHA-256 `1ca46b9ffc2b2d0f235f06e0966e6b0c96961ab5667daccdd820ff69a1628092`。
 `a33c220975e43489c2ced2e9d69f1c2ba42024c92bbf1e630b59a9e0f483a891`。
 09 使用仓库授权的受限开发热更新脚本，验证旧 dev.7 哈希、已有 UUID/权限，再事务更新与读回，
 未扩大权限；升级前显式保存，升级后完整 result/context 与升级前全等。
-10 health 确认目标 `81d1f3ef-9113-49a4-a7fb-e6d76858e510` 的三方版本 dev.8、
+10 health 确认目标 `UUID-32110454041a` 的三方版本 dev.8、
 宿主 4.1.60、目标工程/文档/tab。另一个 dev.1 空文档窗口不计入目标验证。
 
 ## 单次现场对照
@@ -104,7 +106,7 @@ A00 blocked、A01–A06 not-run；根因尚未查明，不用私有工程写入�
 ## 用户重新打开页面后的续测
 
 新增证据 `artifacts/cli-resume-dev178-20260926/`；源码仍为 `f73b071`、运行包仍为 dev.8。
-00 health 的原目标窗口 `81d1f3ef-9113-49a4-a7fb-e6d76858e510` 自 11:06 UTC 保持连接；
+00 health 的原目标窗口 `UUID-32110454041a` 自 11:06 UTC 保持连接；
 它与原授权工程和 P1 一致。03 完整 result/context 与前轮 30-original-sch 全等。
 
 05 在原工程父原理图 `8e23e98d3613f6cd` 新建临时页 `2d7ae65a72f977d8`，

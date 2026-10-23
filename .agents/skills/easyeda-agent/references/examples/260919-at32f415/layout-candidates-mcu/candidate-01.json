@@ -644,7 +644,6 @@
   },
   "files": {
     "apply": "candidate-01.apply.json",
-    "candidate": "candidate-01.json",
-    "preview": "candidate-01.svg"
+    "candidate": "candidate-01.json"
   }
 }

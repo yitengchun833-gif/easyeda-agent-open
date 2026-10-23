@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { knowledgeTools } from '../src/knowledge-tools.mjs';
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverPath = process.env.EASYEDA_MCP_SERVER || path.join(packageDir, 'src', 'server.mjs');
@@ -17,6 +18,11 @@ test('stdio MCP initializes, lists tools, and invokes offline discovery', async 
     let text = ''; for await (const chunk of req) text += chunk;
     calls.push(JSON.parse(text));
     res.setHeader('content-type', 'application/json');
+    if (calls.at(-1).operation === 'recovery_open_document' && calls.at(-1).acceptance.reason === 'mock unknown') {
+      res.statusCode = 409;
+      res.end(JSON.stringify({ ok: false, executionState: 'unknown', retryable: false }));
+      return;
+    }
     res.end(JSON.stringify({ ok: true, result: { value: 'mock-result' } }));
   }).listen(0, '127.0.0.1');
   await once(mock, 'listening');
@@ -31,9 +37,25 @@ test('stdio MCP initializes, lists tools, and invokes offline discovery', async 
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    assert.equal(listed.tools.length, 22);
+    assert.equal(new Set(listed.tools.map(tool => tool.name)).size, listed.tools.length);
+    assert.equal(listed.tools.filter(tool => tool.name.startsWith('knowledge_')).length, knowledgeTools.length);
     assert.ok(listed.tools.some(tool => tool.name === 'easyeda_plan'));
+    const planSchema = listed.tools.find(tool => tool.name === 'easyeda_plan').inputSchema;
+    for (const operation of ['compile_routes', 'compile_labels']) {
+      assert.ok(planSchema.properties.operation.enum.includes(operation));
+      const rejected = await client.callTool({ name: 'easyeda_plan', arguments: { operation } });
+      assert.equal(rejected.isError, true);
+    }
+    assert.equal(calls.length, 0, 'offline compilers reject incomplete inputs without contacting EDA');
     assert.ok(listed.tools.find(tool => tool.name === 'easyeda_runtime').inputSchema.properties.operation.enum.includes('task_replace'));
+    const runtimeSchema = listed.tools.find(tool => tool.name === 'easyeda_runtime').inputSchema;
+    assert.ok(runtimeSchema.properties.operation.enum.includes('task_accept_current_baseline'));
+    assert.ok(runtimeSchema.properties.operation.enum.includes('recovery_open_document'));
+    assert.equal(runtimeSchema.properties.acceptance.properties.expectedBaselineSha256.type, 'string');
+    assert.equal(runtimeSchema.properties.acceptance.additionalProperties, false);
+    assert.match(listed.tools.find(tool => tool.name === 'easyeda_runtime').description, /view-changing native navigation/);
+    assert.match(runtimeSchema.properties.generation.description, /source-page/);
+    assert.match(runtimeSchema.properties.expectedRevision.description, /source-page/);
     assert.deepEqual(listed.tools.find(tool=>tool.name==='easyeda_snapshot').inputSchema.properties.profile.enum, ['full','geometry','electrical']);
     assert.ok(listed.tools.some(tool=>tool.name==='easyeda_runtime'));
     assert.ok(listed.tools.some((tool) => tool.name === 'easyeda_pcb'));
@@ -85,6 +107,29 @@ test('stdio MCP initializes, lists tools, and invokes offline discovery', async 
       arguments: { operation: 'search', query: 'led' },
     });
     assert.equal(blocks.isError, false);
+
+    const navigation = {
+      operation: 'recovery_open_document', window: 'current-window',
+      target: { projectUuid: 'p', documentUuid: 'destination-D' }, generation: 7, expectedRevision: 3,
+      acceptance: {
+        acceptCurrentState: true, requestIds: ['old-request'], connectionEpoch: 'current-epoch',
+        expectedBaselineSha256: 'a'.repeat(64), reason: 'user accepted source A and ended old instance',
+        attempts: [{ requestId: 'old-request', revision: 2, sha256: 'b'.repeat(64), scopeKey: 'p/source-A', windowId: 'old-window' }],
+        unsavedScopes: [{ key: 'p/source-A', revision: 2, connectionEpoch: 'old-epoch' }],
+        nativeEndEvidence: { type: 'manual_session_termination_attestation', attestedBy: 'user', oldWindow: 'old-window', statement: 'old native instance ended',
+          terminal: [{ requestId: 'old-request', statusRequestId: 'terminal-status', sha256: 'c'.repeat(64), initialStatusRequestId: 'initial-status', initialSha256: 'd'.repeat(64) }] },
+      },
+    };
+    const beforeNavigation = calls.length;
+    const navigated = await client.callTool({ name: 'easyeda_runtime', arguments: navigation });
+    assert.equal(navigated.isError, false);
+    assert.equal(calls.length, beforeNavigation + 1, 'one runtime dispatch, with no client-side task acceptance or replay');
+    const { signal, ...dispatchedNavigation } = calls.at(-1);
+    assert.deepEqual(dispatchedNavigation, navigation, 'destination and source evidence pass unchanged through the existing runtime transport');
+    const unknown = await client.callTool({ name: 'easyeda_runtime', arguments: { ...navigation, acceptance: { ...navigation.acceptance, reason: 'mock unknown' } } });
+    assert.equal(unknown.isError, true);
+    assert.equal(calls.length, beforeNavigation + 2, 'unknown navigation is never retried');
+    assert.match(unknown.content[0].text, /unknown/);
   }
   finally {
     await client.close();

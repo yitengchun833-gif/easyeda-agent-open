@@ -30,4 +30,11 @@ func TestArtifactDirIdempotent(t *testing.T) {
 	if got := s.artifactDir(three); got != want {
 		t.Errorf("3-level nested: got %q, want %q", got, want)
 	}
+	if sep == `\` {
+		for _, root := range []string{`\`, `C:\`, `\\server\share\`} {
+			if got := stripArtifactNesting(filepath.Join(root, ".easyeda", "artifacts")); got != root {
+				t.Errorf("volume root: got %q, want %q", got, root)
+			}
+		}
+	}
 }

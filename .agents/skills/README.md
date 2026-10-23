@@ -1,17 +1,17 @@
 # Skills 的规范源与维护约定
 
-本目录是全部 Skill 的唯一源码位置。`.claude` 通过相对链接共享 `.agents`，根目录不再保留
-`skills/` 副本或兼容链接。
+当前 Open 操作规范的唯一源码是 [easyeda-agent-open](../../skills/easyeda-agent-open/SKILL.md)。本目录保留上游设计资源和仓库协作 Skill；旧设计资源仍被 CLI、样例和发布检查使用，不能整体删除或覆盖当前 Open 规则。
 
 | Skill | 任务 | 分发方式 |
 |---|---|---|
-| [easyeda-agent](easyeda-agent/SKILL.md) | 参数化电路设计、typed 执行与回读 | 唯一公开设计包；Release、ClawHub、SkillHub |
+| [easyeda-agent-open](../../skills/easyeda-agent-open/SKILL.md) | 当前 Open MCP、原生 API、局部返工与验收方法 | 当前 Open 分发包的 `skills/` |
+| [easyeda-agent](easyeda-agent/SKILL.md) | 上游设计流程、CLI 资源及兼容样例 | 旧独立 Skill 包；不作为 Open 默认操作规范 |
 | [easyeda-repo-lookup](easyeda-repo-lookup/SKILL.md) | 跨项目只读查询实现、样例、证据 | 链接源码 checkout |
 | [easyeda-repo-maintain](easyeda-repo-maintain/SKILL.md) | 修改工具、知识、验证与 Git 贡献 | 链接源码 checkout |
 
 ## 安装与打包
 
-发布版仍通过根目录 `install.sh` 或 `easyeda update` 安装 CLI 与公开设计 Skill。
+Open 安装与打包沿 [当前 README](../../README.md) 和 [分发说明](../../README-OPEN.md)。下面的 `install.sh`、`easyeda update`、`pack-skill.py` 和设计 scope 属于保留的上游独立 Skill 接入，不能用它们替换 Open 的专业 Skill。
 源码链接使用 `python3 scripts/install-agent-skills.py`，默认只安装仓库协作入口；
 `--scope design` 选择公开设计 Skill，`--scope all` 选择全部，`--dry-run` 预览。
 目标选择、旧链接迁移和冲突保护见 [Agent 协作设计](../../docs/agent-collaboration.md)。
@@ -26,8 +26,8 @@
 
 - 保留实测硬知识；精简只做去重、下沉或结构化。确认同一事实仍有明确维护位置后才能移除旧文。
 - 信息只有一个家：入口保留任务路由与关键约束，正文放到按需读取的 reference；不要重复规则表。
-- 改 CLI、daemon、typed action、connector 或块库时，同步公开 Skill 的命令签名、例子和限制。
-- 公共入口保持完整设计工作流，不重新拆成原理图、PCB、规则等多个互相漂移的公开 Skill。
+- 改 Open 接口时同步 `skills/easyeda-agent-open`；涉及兼容 CLI 资源时再同步本目录相关文件，不复制第二份 Open 正文。
+- 原理图、PCB、规则等专业方法沿各自现有入口维护；上游固定阶段不自动约束 Open 任务。
 - `SKILL.md` 保留合法 frontmatter 与已有 `metadata.version`，版本行维持两空格缩进。
   name 使用稳定英文 slug；description 清晰区分触发任务，正文语言保持自洽。
 - references 给出明确加载场景；长文提供目录。安装/开发历史不塞进设计入口。

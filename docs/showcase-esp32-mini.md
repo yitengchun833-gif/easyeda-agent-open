@@ -32,11 +32,9 @@ BOM               13 行全带 LCSC C 号,直接可下单
 
 **原理图**(库优先选型,`sch autoconnect` 批量落 64 个网络标志):
 
-![schematic](images/showcase-esp32-mini/schematic.png)
 
 **PCB 终态**(左上天线禁铜区、四角对称 M3、右侧电源链、底边 USB-C):
 
-![pcb](images/showcase-esp32-mini/pcb-final.png)
 
 ## 流程亮点
 

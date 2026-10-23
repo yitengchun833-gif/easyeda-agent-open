@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # PCB 导入失败、清理及候选证据
 
 [简版结论](2026-09-27-pcb-import-confirm-fix.md)。现场均为 Web 4.1.60、connector 1.7.1-dev.11、
@@ -91,7 +93,7 @@ CLI包、bin和PATH均为 `fa12e2dd8295953f2b594536b4927ce63e46b811db945369a3f9f
 四页 typed 保存均 saved:true；旧 CLI/daemon 为 git-describe dev 戳，与旧 connector dev.11 的
 精确版本不同，差异保留。只读核对已安装 UUID、原权限、旧 bundle 与独立 dev.11 包哈希一致后，
 通过仓库已提交的专用热更新脚本原子替换同 UUID 两个扩展记录，保持权限并安排网页重载。
-新注册 `51b3eeb2-6cc7-457a-b3c5-02a454da312f`、目标工程/PCB、connector dev.12 与本地 package check READY 对齐；
+新注册 `UUID-757b071fb0e5`、目标工程/PCB、connector dev.12 与本地 package check READY 对齐；
 daemon PID 14017，CLI/daemon 精确版本 v1.7.1-dev.12。没有 GUI 工程写入或任意 JS 设计动作。
 
 重载后三页全部非属性 result 原值一致。global 属性按 ParentPrimitiveId+Key 配对，字段完全相同，

@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # CLI 重连修复详细记录
 
 [简版结论](2026-09-26-cli-reconnect-fix.md)。本轮与已通过的删除定向修复分开，不修改其冻结证据。
@@ -6,7 +8,7 @@
 ## dev.4 B02 现场事实
 
 重启前 P1 `e453c0063919726b` 与 PCB `3037fc1dfa4965d2` 均 typed save=true。
-测试工程 `0f46d4361c4741a9ab7a9ed62164ca9b`，旧目标窗口 `db0fb7fd-68ea-4996-9d1c-cfaebcb8b822`。
+测试工程 `0f46d4361c4741a9ab7a9ed62164ca9b`，旧目标窗口 `UUID-39d25609c163`。
 只重启同版 `/usr/local/bin/easyeda` daemon，未改包和工程。13 次 health 在有界观察中未见目标。
 完整约 177.919 秒新 daemon 日志只见 dev.1 无文档窗口；相应期间 audit 为 0 action。
 没有同页重开、浏览器刷新或 GUI 工程操作，B02 记 blocked，不把原因猜成已证明的宿主故障。
@@ -88,7 +90,7 @@ queued tick/error 在 stop 后失效。连接 stop 保留 action deadline sweep�
 新 bundle SHA-256 为 `58c88d9edd000596bd9445ff6492053520f0f25de13244d578b2c3ac35b68066`。
 
 CLI/daemon/目标 connector 均为 dev.7，Web 4.1.60。新目标窗口
-`d8d8ad86-ae7a-4ddc-9c3b-43cb3c61664e`，项目/文档仍为原基线。
+`UUID-d5089a63c495`，项目/文档仍为原基线。
 `dev7-setup/16-runtime-logs.command.json` 首次明确记录 `host worker ticker started`；
 启动后一次 liveness lost 的重连从发起到 register 约 648 ms，随后完成注册。
 这不是独立的 B02 正式复跑，完整基础门禁另开批次。
@@ -118,7 +120,7 @@ P1 升级前后完整 result/context 全等；PCB semanticSha256 同为
 代码提交 `011a631`，包内 CLI SHA 与冻结源码身份保持一致。正式新批次在
 `artifacts/cli-basic-dev177-20260926/B02/`；所有测试页先 saved:true，停止 PID1943
 后由同版 CLI 启动 PID12826。2026-09-26 10:46:58.373870 UTC 新目标
-`7db4d79b-75b5-4c36-9f89-591ba40f6e90` 注册，距旧进程停止 **10.277034 秒**。
+`UUID-b34262603466` 注册，距旧进程停止 **10.277034 秒**。
 未刷新、GUI 或重开恢复；停机到 ready health 的审计区间为 0 调用。
 SCH result 完整相同，PCB 全部 JSON 仅 capturedAt 不同；最终回 P1。
 执行及独立 B02 均 pass，旧 dev.4 B02 仍 blocked。

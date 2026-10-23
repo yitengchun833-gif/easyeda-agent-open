@@ -732,6 +732,8 @@ type dispatchFn func(ctx context.Context, req protocol.Request) (*protocol.Respo
 
 // adaptiveHooks are the side effects of the retry protocol, injected for tests.
 type adaptiveHooks struct {
+	// Recovery navigation is a single evidenced attempt, even on native failure.
+	noRetry bool
 	// observe records one attempt's outcome in the rolling health window.
 	observe func(o outcome)
 	// auditFirst logs the superseded first attempt so audit-derived failure
@@ -752,7 +754,7 @@ func forwardWithAdaptiveRetry(ctx context.Context, req protocol.Request, dispatc
 	if h.observe != nil {
 		h.observe(outcome{Action: req.Action, RequestID: req.ID, OK: ok, Verdict: effectFromResponse(&req, resp), ErrorCode: responseErrorCode(resp)})
 	}
-	if ok || errors.Is(err, errConnectorDisconnected) || !retryableOnFailure[req.Action] {
+	if ok || h.noRetry || errors.Is(err, errConnectorDisconnected) || !retryableOnFailure[req.Action] {
 		return resp, err, false
 	}
 

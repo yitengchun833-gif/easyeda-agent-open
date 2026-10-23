@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 [返回当前执行报告](test-report.md)。以下保存整理前的各批执行、失败、修复及有限复核记录；当前状态以主报告为准。
 
 最新三页 F1/F2/E1、图签 L2 及过期 sourceScene N1 的有限独立结论与全部差分边界见
@@ -19,7 +21,7 @@
 
 ```bash
 python3 scripts/cli-live-smoke.py --expected-version v1.7.1-dev.11 \
-  --window be65ae0d-4680-41f1-b94d-681fd7eb653b \
+  --window UUID-da785805fe2e \
   --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b \
   --type schematic --out artifacts/release-v1.8.0-preflight-20260927/readonly-smoke
 ```
@@ -294,7 +296,7 @@ P3 第 21 步已返回实际线段 ID，但即时完整读取的 wires 为空，
 
 目标工程 `0f46d4361c4741a9ab7a9ed62164ca9b`（ceshi-cli-basic-20260924），P1 `e453c0063919726b`、P2 `5c21ec9b670a7bb5`、P3 `b137c508566450c2`，PCB `3037fc1dfa4965d2`。全程使用内置浏览器 Web EasyEDA Pro 4.1.60 和 typed CLI。
 
-原理图批 CLI/daemon `v1.7.0-45-g2c6cd35`，connector `1.7.1-dev.11`；窗口 `8f2f5dfa-b722-46f6-8f58-c993546c2671`，该批最后现场调用结束于 2026-09-26 UTC 20:46:08。bin/PATH SHA-256 均为 `8f49eac5e699482a6102895ec891f88f998ff163a844b8ebdbed8a5936f0a0a0`。当前续测已为dev.13，详见下文；开发戳不代表正式v1.8.0。
+原理图批 CLI/daemon `v1.7.0-45-g2c6cd35`，connector `1.7.1-dev.11`；窗口 `UUID-73082f33cc5f`，该批最后现场调用结束于 2026-09-26 UTC 20:46:08。bin/PATH SHA-256 均为 `8f49eac5e699482a6102895ec891f88f998ff163a844b8ebdbed8a5936f0a0a0`。当前续测已为dev.13，详见下文；开发戳不代表正式v1.8.0。
 
 最新 146 件冻结材料清单 SHA-256 `1410c197c426231d34f8638146d516aa1d0ccbed9ca77dc3d37a0fee78567ed8`，根任务重算全部文件大小与哈希一致。三页 195 脚（158 connected / 37 NC）、33 网、41 条外围归属和 15 个 direct 物理树与自主源及官方原生网表一致。每页 save→真实 reload→fresh 后布局、连接和 SDK strict 均通过，SDK 各为 0 fatal / 0 error / 0 warn；原 PCB 184 条原生记录未变。原生备份 ZIP 有效，重新导入恢复仍未验证。
 

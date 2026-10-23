@@ -34,7 +34,28 @@ func (r *runtimeReceipt) observeEvidence(entry auditEntry, current bool) {
 						}
 					}
 				}
-				if len(r.ImageScope) == 0 || runtimeNumber(result["selectedCount"]) != int64(len(r.ImageScope)) {
+				if len(r.ImageScope) == 0 {
+					return
+				}
+				if selected, reported := result["selectedPrimitiveIds"]; reported {
+					ids := make(map[string]bool)
+					for _, value := range runtimeArray(selected) {
+						id := runtimeString(value)
+						if id == "" || ids[id] {
+							return
+						}
+						ids[id] = true
+					}
+					if int64(len(ids)) != runtimeNumber(result["selectedCount"]) {
+						return
+					}
+					for _, id := range r.ImageScope {
+						if !ids[id] {
+							return
+						}
+					}
+				} else if runtimeNumber(result["selectedCount"]) != int64(len(r.ImageScope)) {
+					// Older connectors have no ID evidence; do not accept extra objects by count alone.
 					return
 				}
 			} else if scope != "page" {

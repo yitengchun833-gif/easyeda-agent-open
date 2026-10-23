@@ -1,0 +1,5 @@
+interface:
+  display_name: "Planning with Files"
+  short_description: "为长任务提供有界文件化上下文恢复"
+policy:
+  allow_implicit_invocation: true

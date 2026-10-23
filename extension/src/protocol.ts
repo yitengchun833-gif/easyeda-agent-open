@@ -61,6 +61,7 @@ export interface RegisterFrame {
 	connectorVersion: string;
 	easyedaVersion: string;
 	capabilities: Array<string>;
+	knowledge?: boolean;
 }
 
 export interface ContextFrame {

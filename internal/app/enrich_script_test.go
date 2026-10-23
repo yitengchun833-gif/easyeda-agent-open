@@ -26,6 +26,7 @@ func isolate(t *testing.T) (home string) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("EASYEDA_SKILLS_DIR", "")
 	t.Setenv("PATH", "")
 	t.Chdir(t.TempDir())

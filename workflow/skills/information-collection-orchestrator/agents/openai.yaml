@@ -1,0 +1,4 @@
+interface:
+  display_name: "信息采集总控技能包"
+  short_description: "Unified routing, provenance, dedupe, quality, compliance."
+  default_prompt: "帮我建立一次可追溯的信息采集任务：发现、抓取、去重、质量评分并输出结果。"

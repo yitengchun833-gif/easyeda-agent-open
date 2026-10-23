@@ -74,6 +74,7 @@ export async function readProjectNativeSourceArchive(file: Blob): Promise<string
 export async function readProjectFootprintSourceArchive(
 	file: Blob,
 	documentUuid: string,
+	assetKind: 'FOOTPRINT' | 'SYMBOL' = 'FOOTPRINT',
 ): Promise<Array<{ footprintUuid: string; documentSource: string }>> {
-	return projectFootprintSourceInventory(await readProjectNativeSourceArchive(file), documentUuid);
+	return projectFootprintSourceInventory(await readProjectNativeSourceArchive(file), documentUuid, assetKind);
 }

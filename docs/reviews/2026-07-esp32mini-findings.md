@@ -42,7 +42,7 @@ Clearance 26→**0**、`pcb check` **0**、`layout-lint` **100/100**。残留 1 
   分类重试+verify 块、复写优先级;12 单测 + 真机三路径。
 - [x] **`audit export --playbook` 录制导出**——已落地:变更步骤过滤、autosave 挤压、
   capture 自动接线、raw-id 边界警告;真机全环验证(昨日会话 1920 行 → 27 步提取 →
-  18 步区间回放,lint 保持 100)。首个样例 `examples/esp32-mini/moves.playbook.json`。
+  18 步区间回放,lint 保持 100)。首个样例为历史 ESP32 mini 移件 playbook（原路径 `examples/esp32-mini/moves.playbook.json`；演示文件已从当前源码清理，可从 Git 历史查阅）。
   后续小改进:exporter stamp `meta.doc`;`pcb via-hop` 宏步骤仍待做(见下)。
 > **B/P0 四项真机验证通过(2026-07-07,ceshi/PCB1,agent 全程自驱)**:环境由 agent 用
 > chrome-devtools MCP 自举(开 web 编辑器 → #id 直达开工程 → IndexedDB 热重载连接器

@@ -78,6 +78,12 @@ export async function runtimeRequest(input = {}, url = daemonURL) {
     for await(const chunk of response.body){length+=chunk.length;if(length>32*1024*1024)throw new Error('Response exceeds 32 MiB; request primitiveIds');chunks.push(chunk)}
     const raw = Buffer.concat(chunks).toString('utf8');
     let result;try{result=JSON.parse(raw)}catch{result={message:raw}}
+    if (response.ok && operation === 'state' && input.includeObjects !== true && Array.isArray(result.receipts)) {
+      const total = result.receipts.length;
+      result.receipts = result.receipts.slice(-12);
+      result.receiptCoverage = { total, returned: result.receipts.length, omitted: total - result.receipts.length,
+        fullHistory: 'Use includeObjects:true for full cached evidence; this does not perform an EDA read.' };
+    }
     return toMcpResult(response.ok?{ok:true,result:publicReceipt(result)}:{ok:false,error:publicReceipt(result)});
   } catch(error) { return toMcpResult({ok:false,error:{message:error.message,executionState:'unknown',retryable:false,recovery:'Inspect the task receipt; a control timeout is not proof that no continuation was sent.'}}); }
 }
@@ -115,9 +121,12 @@ export function imageResult(result) {
 export function snapshotSteps(domain, routing = false, detail = false, allPages = false, options = {}) {
   const profile = options.profile ?? 'full';
   if (!['full', 'geometry', 'electrical'].includes(profile)) throw new Error('Unknown snapshot profile');
-  const geometry = profile !== 'electrical' || options.includeTexts === true;
+  const includeTexts = options.includeTexts === true;
+  // Electrical stays pin/net-only unless a caller explicitly requests text.
+  // captureSnapshot decides whether an archived snapshot needs that extra view.
+  const geometry = profile !== 'electrical' || includeTexts;
   const names = domain === 'schematic' ? ['document.current', detail || options.primitiveIds || options.profile ? 'schematic.components.list' : 'schematic.read']
     : ['document.current', 'pcb.components.list', 'pcb.layers.list', 'pcb.nets.list',
       ...(routing ? ['pcb.line.list', 'pcb.via.list', 'pcb.pour.list'] : [])];
-  return names.map(action => ({ action, payload: action === 'schematic.read' ? { includeCheck: false, allPages } : action === 'schematic.components.list' ? { allPages, includePins: true, includePinNets: profile !== 'geometry', includeDeviceIdentity: profile === 'full', includeBBox: geometry, includeWires: geometry, includeNetIndex:profile !== 'geometry',includeTexts:options.includeTexts===true, ...(options.primitiveIds?{primitiveIds:options.primitiveIds}:{includePagePrimitives:profile === 'full' && !allPages}) } : {} }));
+  return names.map(action => ({ action, payload: action === 'schematic.read' ? { includeCheck: false, allPages } : action === 'schematic.components.list' ? { allPages, includePins: true, includePinNets: profile !== 'geometry', includeDeviceIdentity: profile === 'full', includeBBox: geometry, includeWires: profile !== 'electrical', includeNetIndex:profile !== 'geometry',includeTexts, ...(options.primitiveIds?{primitiveIds:options.primitiveIds}:{includePagePrimitives:profile === 'full' && !allPages}) } : {} }));
 }

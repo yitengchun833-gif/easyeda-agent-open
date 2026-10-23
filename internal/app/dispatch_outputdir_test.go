@@ -41,6 +41,13 @@ func TestStripArtifactNesting(t *testing.T) {
 	if got := stripArtifactNesting(filepath.Join(sep+".easyeda", "artifacts")); got != sep {
 		t.Errorf("rooted pair: got %q, want %q", got, sep)
 	}
+	if sep == `\` {
+		for _, root := range []string{`C:\`, `\\server\share\`} {
+			if got := stripArtifactNesting(filepath.Join(root, ".easyeda", "artifacts")); got != root {
+				t.Errorf("volume root: got %q, want %q", got, root)
+			}
+		}
+	}
 }
 
 // TestResolveOutputDir: after stripping, the dir anchors to the nearest

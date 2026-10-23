@@ -55,24 +55,33 @@ func TestRuntimeCheckpointTaskAndLocalRecovery(t *testing.T) {
 	if err := s.runtime.flushCheckpoint(); err != nil {
 		t.Fatal(err)
 	}
-	restarted := New(opts)
-	d := restarted.runtime.documents[restarted.runtime.current["old"]]
-	if d == nil || d.Task.Goal != "调整 R1 标签" || d.Task.Revision != 1 || len(d.Objects) != 2 || d.Objects["r1"].Data["x"] != float64(30) || !d.Objects["r2"].StaleFields["geometry"] || !d.Restored {
-		t.Fatalf("state not safely restored: %+v", d)
+	if err := s.runtime.closeRecovery(); err != nil {
+		t.Fatal(err)
 	}
-	if len(restarted.runtime.requests) != 0 || len(restarted.runtime.baselines) != 0 || d.Checks != nil || len(d.Coverage) != 0 {
+	restarted := New(opts)
+	t.Cleanup(func() { _ = restarted.runtime.closeRecovery() })
+	if len(restarted.runtime.documents) != 0 || len(restarted.runtime.receipts) != 0 {
+		t.Fatal("startup loaded history into active caches")
+	}
+	stored, err := restarted.runtime.recovery.LoadScope("old|p|d")
+	if err != nil || stored == nil || stored.Document.Task.Goal != "调整 R1 标签" || stored.Document.Task.Revision != 1 || len(stored.Document.Objects) != 2 || stored.Document.Objects["r1"].Data["x"] != float64(30) {
+		t.Fatal("historical intent or cache was lost", err)
+	}
+	if len(restarted.runtime.requests) != 0 || len(restarted.runtime.baselines) != 0 {
 		t.Fatal("restored proof or queue")
 	}
+	observe(restarted, "new", "read3", []any{map[string]any{"primitiveId": "r1", "x": float64(35)}})
 	for _, receipt := range restarted.runtime.receipts {
-		if !receipt.Historical || receipt.ImageAvailable || receipt.DRCPassed || receipt.ObservedFacts != nil {
+		if receipt.RequestID != "read3" && (!receipt.Historical || receipt.ImageAvailable || receipt.DRCPassed || receipt.ObservedFacts != nil) {
 			t.Fatal("historical receipt trusted")
 		}
 	}
-	if restarted.runtime.receipts[1].Status != "needs_readback" {
-		t.Fatal("interrupted write treated as running or complete")
+	for _, receipt := range restarted.runtime.receipts {
+		if receipt.RequestID == "batch" && receipt.Status != "needs_readback" {
+			t.Fatal("interrupted write treated as running or complete")
+		}
 	}
-	observe(restarted, "new", "read3", []any{map[string]any{"primitiveId": "r1", "x": float64(35)}})
-	d = restarted.runtime.documents[restarted.runtime.current["new"]]
+	d := restarted.runtime.documents[restarted.runtime.current["new"]]
 	if len(restarted.runtime.documents) != 1 || d.Restored || d.Task.Revision != 1 || d.Objects["r1"].StaleFields["geometry"] || !d.Objects["r2"].StaleFields["geometry"] {
 		t.Fatal("rebinding lost scope or refreshed unrelated objects")
 	}
@@ -92,10 +101,11 @@ func TestRuntimeCheckpointTaskAndLocalRecovery(t *testing.T) {
 
 func TestRuntimeCheckpointLoopAndFailure(t *testing.T) {
 	s := newRuntimeStore()
-	path := filepath.Join(t.TempDir(), "runtime.json")
-	if s.restoreCheckpoint(path) {
-		t.Fatal("missing file restored")
+	path := filepath.Join(t.TempDir(), "recovery.sqlite")
+	if err := s.initializeRecovery(path, ""); err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.recovery.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { s.checkpointLoop(ctx); close(done) }()
@@ -117,22 +127,23 @@ func TestRuntimeCheckpointLoopAndFailure(t *testing.T) {
 	}
 	cancel()
 	<-done
-	var saved runtimeCheckpoint
-	data, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(data, &saved) != nil || len(saved.Receipts) != 1 {
+	saved, err := s.recovery.LoadScope("w|p|d")
+	if err != nil || saved == nil || len(saved.Receipts) != 1 {
 		t.Fatal("shutdown did not flush", err)
 	}
-	// A damaged checkpoint must not be accepted as a fresh empty state.
+	if err := s.closeRecovery(); err != nil {
+		t.Fatal(err)
+	}
+	if s.flushCheckpoint() == nil || s.checkpointError == "" {
+		t.Fatal("persistence failure hidden")
+	}
+	// A damaged database must not become a fresh empty runtime or JSON fallback.
 	if err := os.WriteFile(path, []byte(`{"version":999}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	next := newRuntimeStore()
-	if next.restoreCheckpoint(path) || next.checkpointError == "" {
-		t.Fatal("bad checkpoint hidden")
-	}
-	next.checkpointPath = filepath.Join(path, "unwritable.json")
-	if next.flushCheckpoint() == nil || next.checkpointError == "" {
-		t.Fatal("persistence failure hidden")
+	if next.initializeRecovery(path, "") == nil || next.checkpointError == "" {
+		t.Fatal("bad recovery storage hidden")
 	}
 }
 

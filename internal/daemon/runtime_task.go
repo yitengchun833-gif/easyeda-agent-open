@@ -1,58 +1,16 @@
 package daemon
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/zhoushoujianwork/easyeda-agent/internal/protocol"
 )
-
-// Restore only this branch's task receipts from the existing audit. Never
-// restore fresh facts, verification passes, or permission to replay a write.
-func (s *Server) restoreRuntimeReceipts() {
-	if s.audit == nil || s.audit.disabled {
-		return
-	}
-	file, err := os.Open(s.audit.Path(time.Now()))
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return
-	}
-	start := info.Size() - 4*1024*1024
-	if start < 0 {
-		start = 0
-	}
-	_, _ = file.Seek(start, io.SeekStart)
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 65536), 4*1024*1024)
-	if start > 0 {
-		scanner.Scan()
-	} // skip the partial leading JSONL row
-	for scanner.Scan() {
-		var entry auditEntry
-		if json.Unmarshal(scanner.Bytes(), &entry) != nil {
-			continue
-		}
-		if runtimeMap(entry.Result["rules"])["version"] != "open-local-1" {
-			continue
-		}
-		original := entry.Result
-		entry.OK = false
-		entry.Result = map[string]any{"completed": original["completed"], "total": original["total"], "results": original["results"]}
-		s.runtime.observe(entry)
-	}
-}
 
 // Apply both full ring stamps on responses and one-change event deltas. A
 // missing sequence or changed connector instance invalidates every old fact.
@@ -117,13 +75,25 @@ func (s *runtimeStore) connectorEvent(window string, data map[string]any) {
 		s.emit("scene_changed", map[string]any{"windowId": window, "sequence": stamp["sequence"], "coverage": "beta-unverified"})
 	}
 }
-func (s *runtimeStore) connectionChanged(window, kind string, ctx *protocol.Context) {
+func (s *runtimeStore) connectionChanged(window, kind string, ctx *protocol.Context, epochs ...string) {
 	if window == "" {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(epochs) > 0 && epochs[0] != "" {
+		if kind != "registered" && s.connectionEpoch[window] != epochs[0] {
+			return
+		}
+		if kind == "registered" {
+			s.connectionEpoch[window] = epochs[0]
+		}
+	}
 	previous := s.current[window]
+	// Disconnect releases routing only; unfinished work retains its own protection.
+	if kind == "disconnected" {
+		delete(s.current, window)
+	}
 	var current *runtimeDocument
 	if ctx != nil {
 		if ctx.ProjectUUID == "" || ctx.DocumentUUID == "" {
@@ -180,6 +150,7 @@ type runtimeDispatchProof struct {
 func (s *Server) runtimeDispatch(w http.ResponseWriter, r *http.Request, req protocol.Request, baseline ...any) {
 	if len(baseline) > 0 {
 		if proof, ok := baseline[0].(runtimeDispatchProof); ok && proof.ParentID != "" {
+			defer s.runtime.releaseUnsentClaim(req, proof.ParentID)
 			if req.Payload == nil {
 				req.Payload = map[string]any{}
 			}
@@ -208,16 +179,17 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		SourceWindow        string            `json:"sourceWindow"`
-		Target              *protocol.Context `json:"target"`
-		ExpectedRevision    *uint64           `json:"expectedRevision"`
-		Task                *runtimeTask      `json:"task"`
-		Operation           string            `json:"operation"`
-		Window              string            `json:"window"`
-		RequestID           string            `json:"requestId"`
-		Generation          uint64            `json:"generation"`
-		ScreenshotRequestID string            `json:"screenshotRequestId"`
-		Source              string            `json:"source"`
+		SourceWindow        string                  `json:"sourceWindow"`
+		Target              *protocol.Context       `json:"target"`
+		ExpectedRevision    *uint64                 `json:"expectedRevision"`
+		Task                *runtimeTask            `json:"task"`
+		Operation           string                  `json:"operation"`
+		Window              string                  `json:"window"`
+		RequestID           string                  `json:"requestId"`
+		Generation          uint64                  `json:"generation"`
+		ScreenshotRequestID string                  `json:"screenshotRequestId"`
+		Source              string                  `json:"source"`
+		Acceptance          *runtimeAcceptanceInput `json:"acceptance"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&input); err != nil || input.Window == "" {
 		http.Error(w, "Explicit window and valid control body required", 400)
@@ -243,16 +215,44 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 		s.replaceRuntimeTask(w, r, input.Window, input.Target, input.ExpectedRevision, input.Task)
 		return
 	}
+	if input.Operation == "task_accept_current_baseline" {
+		s.acceptCurrentRuntimeBaseline(w, r, input.Window, input.Target, input.ExpectedRevision, input.Generation, input.Task, input.Acceptance)
+		return
+	}
+	if input.Operation == "recovery_open_document" {
+		s.recoveryOpenDocument(w, r, input.Window, input.Target, input.ExpectedRevision, input.Generation, input.Acceptance)
+		return
+	}
 	if input.Operation == "restore" {
 		s.restoreRuntimeTask(w, input.Window, input.SourceWindow, input.Target, input.Generation)
 		return
 	}
+	var liveContext *protocol.Context
+	if connection, found := s.hub.target(input.Window); found {
+		context := connection.snapshot().Context
+		liveContext = &context
+	}
 	s.runtime.mu.Lock()
+	if s.runtime.documents[s.runtime.current[input.Window]] == nil && liveContext != nil && s.runtime.recovery != nil {
+		key := runtimeScopeKey(input.Window, *liveContext)
+		if loaded, err := s.runtime.lazyLoadScopeLocked(key); err == nil && loaded != nil {
+			s.runtime.current[input.Window] = key
+		}
+	}
 	d := s.runtime.documents[s.runtime.current[input.Window]]
 	var receipt *runtimeReceipt
 	for _, item := range s.runtime.receipts {
 		if item.RequestID == input.RequestID && item.WindowID == input.Window {
 			receipt = item
+		}
+	}
+	if receipt == nil && d != nil && (input.Operation == "resume" || input.Operation == "retry") {
+		var err error
+		receipt, err = s.runtime.loadPausedAttemptLocked(d, input.RequestID)
+		if err != nil {
+			s.runtime.mu.Unlock()
+			http.Error(w, "Persisted continuation unavailable or stale; no continuation sent", http.StatusConflict)
+			return
 		}
 	}
 	if d == nil || receipt == nil || receipt.Historical || receipt.DocumentUUID != d.Context.DocumentUUID || receipt.ProjectUUID != d.Context.ProjectUUID {
@@ -365,6 +365,11 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Claim before releasing the lock: another resume cannot replay these steps.
+	if err := s.runtime.saveScopeLocked(d); err != nil {
+		s.runtime.mu.Unlock()
+		http.Error(w, "Paused recovery evidence could not be committed; no continuation sent", http.StatusServiceUnavailable)
+		return
+	}
 	receipt.Status = "resuming"
 	s.runtime.emit("task_resuming", map[string]any{"requestId": receipt.RequestID, "windowId": input.Window})
 	saved.Payload = runtimeMap(runtimeClone(saved.Payload))
@@ -385,7 +390,7 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 	// superseded tasks still fail in the Connector rather than becoming new work.
 	clear := protocol.Request{Envelope: protocol.Envelope{ID: s.nextRequestID(), WindowID: input.Window}, Action: "debug.control", TimeoutMs: 5000, Payload: map[string]any{"operation": "resume"}}
 	probe := &runtimeResponseWriter{header: http.Header{}}
-	s.runtimeDispatch(probe, r, clear)
+	s.runtimeDispatch(probe, r, clear, runtimeDispatchProof{ParentID: input.RequestID, TaskRevision: &receipt.TaskRevision})
 	var acknowledgement protocol.Response
 	if probe.status >= 400 || json.Unmarshal(probe.body.Bytes(), &acknowledgement) != nil || !acknowledgement.OK || acknowledgement.Result["paused"] == true {
 		s.runtime.mu.Lock()
@@ -404,10 +409,7 @@ func (s *Server) handleRuntimeControl(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Task changed while resuming; no continuation sent", 409)
 		return
 	}
-	// The original stays consumed even when transport outcome is unknown.
-	// A new child receipt records the continuation and any further pause.
-	receipt.Status = "continued"
-	receipt.Progress = map[string]any{"continuationRequestId": saved.ID, "completed": completed, "total": len(steps)}
+	// start consumes the parent only after reserving the child's evidence slots.
 	s.runtime.mu.Unlock()
 	s.runtimeDispatch(w, r, saved, runtimeDispatchProof{Baseline: baseline, Observed: observed, ParentID: input.RequestID, TaskRevision: &receipt.TaskRevision})
 }

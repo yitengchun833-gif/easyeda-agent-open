@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # 回归与判据可信度测试 — 2026-08-16
 
 > 历史证据说明（2026-09-14）：本文保留当时输入、执行与结果，不重写旧验收事实。
@@ -349,13 +351,13 @@ audit cost — 回归测试 subagent · 2026-08-15 18:16:03→18:21:52 UTC
     schematic.titleblock.modify    0.2s( 0.8%)   3 次  均 0.07s  失败 3
   失败 top:
     schematic.titleblock.modify   3/3(100%)
-✓ 已记入台账 /Users/mikas/.easyeda-agent/cost-ledger.jsonl
+✓ 已记入台账 /Users/USER/.easyeda-agent/cost-ledger.jsonl
 ```
 
 三笔对比:
 
 ```
-cost ledger — 3 笔(/Users/mikas/.easyeda-agent/cost-ledger.jsonl)
+cost ledger — 3 笔(/Users/USER/.easyeda-agent/cost-ledger.jsonl)
 
   label                        day             墙钟m     机器m      调用     探测%      失败%    token
   esp32Mini 原理图 E2E            2026-08-15     97.2    27.2    5466     64%     1.4%        0

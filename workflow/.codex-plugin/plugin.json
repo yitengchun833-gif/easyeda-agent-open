@@ -1,0 +1,21 @@
+{
+  "name": "evidence-to-delivery-workflow",
+  "version": "1.1.0-dev.21",
+  "description": "Evidence-to-delivery workflow with current EasyEDA guidance and source-managed MCP integration.",
+  "author": {
+    "name": "Workflow Maintainers"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "硬件资料到交付工作流",
+    "shortDescription": "资料、PCB约束、EasyEDA执行和验证的统一入口",
+    "longDescription": "复用现有结构化状态、资料库和任务交接，接入当前EasyEDA执行与检查；运行依赖和现场验收独立核对。",
+    "developerName": "Workflow Maintainers",
+    "category": "Productivity",
+    "capabilities": [
+      "skills",
+      "hooks"
+    ],
+    "defaultPrompt": "请根据我提供的目标和资料，启动资料到交付工作流。"
+  }
+}

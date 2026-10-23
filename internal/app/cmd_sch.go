@@ -1851,6 +1851,7 @@ check for a faster read.`,
 	// eyeballed. Exits non-zero when overlaps exist → usable as a gate.
 	{
 		var minGap, pinEps float64
+		var from string
 		var asJSON, allPages, includeNonParts, strict bool
 		c := &cobra.Command{
 			Use:   "layout-lint",
@@ -1893,10 +1894,15 @@ combine it with neither --all-pages (inactive-page data is shallow) nor
   easyeda sch layout-lint --min-gap 5.08
   easyeda sch layout-lint --all-pages --json`,
 			RunE: func(cmd *cobra.Command, args []string) error {
+				if from != "" {
+					if allPages || includeNonParts { return fmt.Errorf("offline layout-lint requires one page of real parts") }
+					return offlineLayoutLint(from,minGap,pinEps,strict,asJSON,stdout)
+				}
 				return runLayoutLint(cfg, window, minGap, pinEps, allPages, asJSON, includeNonParts, strict, stdout, stderr)
 			},
 		}
 		c.Flags().Float64Var(&minGap, "min-gap", 2.54, "minimum gap between component bboxes in mm (closer = WARN)")
+		c.Flags().StringVar(&from, "from", "", "offline native components/bbox/pins snapshot; no daemon or EDA calls")
 		c.Flags().Float64Var(&pinEps, "pin-eps", 0, "max distance in mm for two pins of DIFFERENT components to count as coincident (implicit short → ERROR); 0 = strict equality")
 		c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON")
 		c.Flags().BoolVar(&allPages, "all-pages", false, "lint components across all schematic pages (WARNING: non-active pages return shallow data — components with no bbox are SKIPPED from overlap checks, not confirmed clear; use `doc switch` to that page for accurate linting)")

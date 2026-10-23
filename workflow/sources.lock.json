@@ -1,0 +1,1806 @@
+{
+  "format": 1,
+  "note": "Imported file hashes; local modifications tracked by Git, not upstream HEAD alone. No binaries or dependencies bundled.",
+  "easyeda_head": "dfb940526e0364eaf7f7a563437a966889cad514",
+  "easyeda_worktree_modified": true,
+  "files": [
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/codex_hook_adapter.py",
+      "file": ".codex/hooks/codex_hook_adapter.py",
+      "sha256": "065876cc91931f95429165ad8b6b351c5c392dc04e13f2aa3206f0e5fd25177a"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/context_frame.py",
+      "file": ".codex/hooks/context_frame.py",
+      "sha256": "e391bb3f4007db1dc455e2ba6d6dc6a31057336e24bbcf8471c220f503f31147"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/permission_request.py",
+      "file": ".codex/hooks/permission_request.py",
+      "sha256": "38e0fb6ea5bbd9f51653b6d1b88ebf806cd46eb5edace1b82d44a1392c3229b0"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/plugin_dispatch.py",
+      "file": ".codex/hooks/plugin_dispatch.py",
+      "sha256": "b61e70191ab30a7f8f80e50f972d3853637a2cb26a924f7807d03a63ca95e195"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/post-tool-use.sh",
+      "file": ".codex/hooks/post-tool-use.sh",
+      "sha256": "4298278f3422b2f720f370c2fbc58d50ba993771e644ef8b1f038210381eb2b7"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/post_tool_use.py",
+      "file": ".codex/hooks/post_tool_use.py",
+      "sha256": "1b15bcde9aed4ebed31286e1949cee0aea950ed079d47b0b2452bc51db84e45b"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/pre-compact.sh",
+      "file": ".codex/hooks/pre-compact.sh",
+      "sha256": "f24bef12e0a0288b5d6431014fc8b1bc37fa3b01c0621e46eafee363ecabb2f2"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/pre-tool-use.sh",
+      "file": ".codex/hooks/pre-tool-use.sh",
+      "sha256": "15a28d87a372735096f20b64821a6badc4363aa6d605af43af6047f3502e59ba"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/pre_tool_use.py",
+      "file": ".codex/hooks/pre_tool_use.py",
+      "sha256": "1aa3f59d401249ff9ac98acf72f5331d57a3691dcc43b3659e9f1d81d0480778"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/pwf-hook.cmd",
+      "file": ".codex/hooks/pwf-hook.cmd",
+      "sha256": "3cb29c79355906ec6adbfe6403fd49a6083ae11d23cb182898bac8d282e23c2a"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/resolve-plan-dir.sh",
+      "file": ".codex/hooks/resolve-plan-dir.sh",
+      "sha256": "d28945a6be942526daf7a4ae6407468fd572ad8ccabbcf5c00f9ad4f68534a20"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/run_sh.py",
+      "file": ".codex/hooks/run_sh.py",
+      "sha256": "2d46219ad1ca9c4dedcd6f6f1d8c29114dc2f9df63668800a1d31ed54c608083"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/session-start.sh",
+      "file": ".codex/hooks/session-start.sh",
+      "sha256": "4c2b6aa3d2fd1e578a37b274eb10f3cdcddb9b0ec46cdd9dd781cc89bb550045"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/stop.py",
+      "file": ".codex/hooks/stop.py",
+      "sha256": "7fe23d40db9ed691bbeb1c5cd89af16a4431661e2bdcbf311443f5d1c406af64"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/stop.sh",
+      "file": ".codex/hooks/stop.sh",
+      "sha256": "97a8d4872d247f502738ca4c23cc292492d59a6165b83a612c71e9a37f96270c"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks/user-prompt-submit.sh",
+      "file": ".codex/hooks/user-prompt-submit.sh",
+      "sha256": "8735d6068633e4092cdb896b63f7d94231a348d41b8bfacf3e57f538901e07f3"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "plugin.json",
+      "file": ".codex-plugin/plugin.json",
+      "sha256": "22a38a34d2d26128f46aa94757e39bbe7412de31372caa001c747805b99abacc"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "hooks.json",
+      "file": "hooks/hooks.json",
+      "sha256": "8dead1e98f0949ed088caa8d725a0ed165e5f6a9c7bfcc8a3b06d61128186c17"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "easyeda-agent-LICENSE",
+      "file": "licenses/easyeda-agent-LICENSE",
+      "sha256": "6663f1963e9763cf0cfc45776a2bb2ee31c6a2ab37e31451d3b14ceec576e00d"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "planning-with-files-LICENSE",
+      "file": "licenses/planning-with-files-LICENSE",
+      "sha256": "566e8511508dfbc95de6e9ea11bfc41d0956e5414c398fc63ae4a8fef9b1338f"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "agents/openai.yaml",
+      "file": "skills/document-intake/agents/openai.yaml",
+      "sha256": "1321a90af4c1e4ddbcb8d2de742e007857851b323fe6dab244a80165844072e2"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/runtime.md",
+      "file": "skills/document-intake/references/runtime.md",
+      "sha256": "e34f21e17c3fe5209970807cea96d8fc0f4a6de739378ed3935526ced8f99be3"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/docling_convert.py",
+      "file": "skills/document-intake/scripts/docling_convert.py",
+      "sha256": "cda6a1ecd8800cf56f291c6947bd8c664ee9978cd2ac9619833b92d271c9d562"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/intake.py",
+      "file": "skills/document-intake/scripts/intake.py",
+      "sha256": "60ea8cbd8cfe9d4057bf7440511ab02942b4e150ea97e97219d424c05abe169c"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/library.py",
+      "file": "skills/document-intake/scripts/library.py",
+      "sha256": "a65774472c0f1eec90602d41d47485b8a571185a859c29ec377b06c238591729"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/document-intake/SKILL.md",
+      "sha256": "817515c59e8462ddadb91311b139f6a7b86da2406dc399edb9220fb996176135"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "agents/openai.yaml",
+      "file": "skills/evidence-to-delivery/agents/openai.yaml",
+      "sha256": "47c172c531f61f5a0f4f2f35810266d9e77d6b45824752cfffe36f5f6f6934d4"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "assets/findings.md",
+      "file": "skills/evidence-to-delivery/assets/findings.md",
+      "sha256": "2d4acb0515cae1a41cd41fc6fb97223493e775862a5dc6644f8fc939cccdc963"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "assets/progress.md",
+      "file": "skills/evidence-to-delivery/assets/progress.md",
+      "sha256": "c6d26a6d3a957ea63fea8db91df7f09e59e8874310ab19448ba883f159c38c63"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "assets/task_plan.md",
+      "file": "skills/evidence-to-delivery/assets/task_plan.md",
+      "sha256": "cd9fa4063c1517357f0d4cfe0ae6a845e0dbe09066e95033a9bbfb20b396594b"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/stage-contract.md",
+      "file": "skills/evidence-to-delivery/references/stage-contract.md",
+      "sha256": "5277dd88a2dac9fb81fb0c32749b0497c87917a67b67ecb3fff2e194d0efa234"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/structured-workflow.md",
+      "file": "skills/evidence-to-delivery/references/structured-workflow.md",
+      "sha256": "a503fb06ad803ed79a2aeabb712c65db740b497c20926b7fb463b3d8891ac214"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/test_workflow.py",
+      "file": "skills/evidence-to-delivery/scripts/test_workflow.py",
+      "sha256": "00b7a3a436274bcf29a2d05544e2d6bff369e7f0c4b419a609ac36e6fdbd9e2a"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/workflow.py",
+      "file": "skills/evidence-to-delivery/scripts/workflow.py",
+      "sha256": "069ca48e99bd610608cf750cb34320b401f53fc8bcfa4ba975a00f0e5109ba8d"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/evidence-to-delivery/SKILL.md",
+      "sha256": "7529fc1f34843c44f75c27e23cb264333e76450b1722489fcdcea77c8298832f"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "agents/openai.yaml",
+      "file": "skills/information-collection-orchestrator/agents/openai.yaml",
+      "sha256": "1b86766c0bf34412c3821fa1ad5bc1c16d9a488fc4423a254c046f87782ec02e"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "config.example.json",
+      "file": "skills/information-collection-orchestrator/config.example.json",
+      "sha256": "aac9a0f1507b1cf387229af33634e27bb8e92652e330e2ed36614b9be6771728"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/recruiting-workflow.md",
+      "file": "skills/information-collection-orchestrator/references/recruiting-workflow.md",
+      "sha256": "1653d62418342dd73ecc2fdb0ff7953efdb128e7aaec396451a949700c4ad74e"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/router.md",
+      "file": "skills/information-collection-orchestrator/references/router.md",
+      "sha256": "f9d11c862b6b3e08fa0eaecf445653dc13083594baeb148ecfffab445859fb74"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/schema.json",
+      "file": "skills/information-collection-orchestrator/references/schema.json",
+      "sha256": "366241983fdea10dabe92455ea33bc10c4f91c8b9ba1f5edc66a1edaa2b2fe95"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "references/task.example.json",
+      "file": "skills/information-collection-orchestrator/references/task.example.json",
+      "sha256": "b90a22dc0170bdcef76243052f2e7014d23818a6a217747963717b75e135815c"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/process_records.py",
+      "file": "skills/information-collection-orchestrator/scripts/process_records.py",
+      "sha256": "9f5071bc2677085bfe2106b1f35546dfbe820c21ab2b23ecbc2cddab53e0485b"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/information-collection-orchestrator/SKILL.md",
+      "sha256": "59a583a29ea976fb743f4522dc3ac9c43be68da4624dbc1a9c93ea9952d73125"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/pdf-intake/SKILL.md",
+      "sha256": "4cc7cf91d6f8e60e955553565a9a0ff8f98dfc49b232a25f019a478f0b902f20"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "agents/openai.yaml",
+      "file": "skills/planning-with-files/agents/openai.yaml",
+      "sha256": "a884133f5d1afe9403b6cb409134fd7ce48eae18c5bdac84472bed1be02b136d"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "examples.md",
+      "file": "skills/planning-with-files/examples.md",
+      "sha256": "930b18a2360cfce582080dc89cf13de81e25ad5fd623264a5b75f4fc98d899ac"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "reference.md",
+      "file": "skills/planning-with-files/reference.md",
+      "sha256": "cf1c0639ce33373d812449bbc7897a5bbf671099d5d6896f6adbaca0ef068f97"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/attest-plan.ps1",
+      "file": "skills/planning-with-files/scripts/attest-plan.ps1",
+      "sha256": "568c3e5fce3b9614465e8b738bf758844aa171a8b9faa18f08b2c9f144bb5653"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/attest-plan.sh",
+      "file": "skills/planning-with-files/scripts/attest-plan.sh",
+      "sha256": "280d4ce9ba303d656f654da9ed6f49d1eeed76fb04936e9c7c7274eb05adf855"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/check-complete.ps1",
+      "file": "skills/planning-with-files/scripts/check-complete.ps1",
+      "sha256": "c325e999c29190b9f1bc7b00e048d20a6fda98f13d510af0deabb74eae0bff76"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/check-complete.sh",
+      "file": "skills/planning-with-files/scripts/check-complete.sh",
+      "sha256": "f2ea29577555243f9a0fcb98da574c0c4088e0e0eecfa64a0f59f872f3428c95"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/gate-stop.sh",
+      "file": "skills/planning-with-files/scripts/gate-stop.sh",
+      "sha256": "ed4f138ccd9ec727ccc5d966a523c8f8506779d93a30ec0329282b23c511c0e6"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/init-session.ps1",
+      "file": "skills/planning-with-files/scripts/init-session.ps1",
+      "sha256": "4d854b872b9255412fee506b2438029c58b9cb4edcbae4fd29a60732cc83a4f6"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/init-session.sh",
+      "file": "skills/planning-with-files/scripts/init-session.sh",
+      "sha256": "c35d70ab28338eef36ef74c472fdcfd5ea044098a5a4b553a6022ddd9ad14559"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/inject-plan.py",
+      "file": "skills/planning-with-files/scripts/inject-plan.py",
+      "sha256": "3d42048b9166a2b227d50ad89cde9c86134a95f5a856a653f48edd03962af4b3"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/inject-plan.sh",
+      "file": "skills/planning-with-files/scripts/inject-plan.sh",
+      "sha256": "ab52341164d2ed6ef5d8df895990d2349719dc09985b9930dd53b4e0367b80cf"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/ledger-append.ps1",
+      "file": "skills/planning-with-files/scripts/ledger-append.ps1",
+      "sha256": "8d78d0f451f645f426fa3c6d2bff2bb22b5f7f63fb97c3a988cbdef728e21534"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/ledger-append.sh",
+      "file": "skills/planning-with-files/scripts/ledger-append.sh",
+      "sha256": "d918315f8b73a2a1e1dddef1c76798d1fd72f5f99644ff34115d0e7ac7e69290"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/ledger-summary.ps1",
+      "file": "skills/planning-with-files/scripts/ledger-summary.ps1",
+      "sha256": "5f483af95e0253688e7e5d14fba4da8c316a3568fa47d887edb6da0deb78de80"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/ledger-summary.sh",
+      "file": "skills/planning-with-files/scripts/ledger-summary.sh",
+      "sha256": "064486ba5c0519eb9df7e5fb2f8c98e121b9d4b454ccaa1550bab6dffb047839"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/phase-status.ps1",
+      "file": "skills/planning-with-files/scripts/phase-status.ps1",
+      "sha256": "59d8e7d8232931177105155d2b2d3211c45b63f4a41e11c3ed1bb00278524fa6"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/phase-status.sh",
+      "file": "skills/planning-with-files/scripts/phase-status.sh",
+      "sha256": "3eb6cee61556bc238411304fcf1052ef7920de3b719dba36f7a0c23d8ede61d3"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/plan-doctor.sh",
+      "file": "skills/planning-with-files/scripts/plan-doctor.sh",
+      "sha256": "5eb43fdc3da4f94f5e4f7e0fc912e508e0cc382b1f1150f5d51075f22c6ff0f5"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/resolve-plan-dir.ps1",
+      "file": "skills/planning-with-files/scripts/resolve-plan-dir.ps1",
+      "sha256": "324afa73a0c08fe4df3f8f3e9b203c0cc86f33fb9cf386bbe80b0d52bbe42ad5"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/resolve-plan-dir.sh",
+      "file": "skills/planning-with-files/scripts/resolve-plan-dir.sh",
+      "sha256": "e3ae9980527500b563dacd2b6e3d4d2b4709089d6f6b875538f31d5d68468e72"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/session-catchup.py",
+      "file": "skills/planning-with-files/scripts/session-catchup.py",
+      "sha256": "a4a30a4de2d5513690f966eec80d823b5e2af8406205b65f6d23887a0b8f3ef3"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/set-active-plan.ps1",
+      "file": "skills/planning-with-files/scripts/set-active-plan.ps1",
+      "sha256": "93b2b9cf85bff131c1a078dbc2a26fc01851e02a7a4baa2f4cf511fb2f92f3e3"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/set-active-plan.sh",
+      "file": "skills/planning-with-files/scripts/set-active-plan.sh",
+      "sha256": "e9f5423c884e0e5387ec74026e3357e0a0c69eadb4aea36b480ea45ce7091386"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "scripts/skill-hook.sh",
+      "file": "skills/planning-with-files/scripts/skill-hook.sh",
+      "sha256": "923aa675c840c7cb9a89202c4185d9472fbb66288e742302090360c497e3a961"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/planning-with-files/SKILL.md",
+      "sha256": "88af42fcc1a0441322d3fc8c1b9d99bac3f0d7da1b237f68f470e62ee14f1dd9"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/analytics_findings.md",
+      "file": "skills/planning-with-files/templates/analytics_findings.md",
+      "sha256": "5dcb1bf6737c737646ec3fd173e107ed2fa12eec9a68d32e63ba3e0a0d1d59a9"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/analytics_task_plan.md",
+      "file": "skills/planning-with-files/templates/analytics_task_plan.md",
+      "sha256": "bad1925d959bfa154c079e61246efa0ddb61151dd8829121d38c0d2a8e20414d"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/findings.md",
+      "file": "skills/planning-with-files/templates/findings.md",
+      "sha256": "880a3a776c6ccff2410262c29e6d8d895e96f74cf7d2a179f32bc56c3f1fb124"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/loop.md",
+      "file": "skills/planning-with-files/templates/loop.md",
+      "sha256": "26b3f2bd8094c6e2e2e6c47a6548a1f6506eaa02f857870922d855659bc8c31c"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/progress.md",
+      "file": "skills/planning-with-files/templates/progress.md",
+      "sha256": "57fe4d0859b1eed8d086a554553609d42a9516c5fb0143f63b09be0b2e7ec342"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/task_plan.md",
+      "file": "skills/planning-with-files/templates/task_plan.md",
+      "sha256": "62f271622866a36d5db3c18cc8accc823af08782c40db92c87c9378ca3f4d72a"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "templates/task_plan_autonomous.md",
+      "file": "skills/planning-with-files/templates/task_plan_autonomous.md",
+      "sha256": "9c0706bdd664d96fae303ad1477c088775a3eec08a44274d6f627b197651fa31"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "agents/openai.yaml",
+      "file": "skills/research/agents/openai.yaml",
+      "sha256": "9e9dbd1c0d0ec21c762c541acfd828b9739fb156a7a1f04ea7a4e38437003b73"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/research/SKILL.md",
+      "sha256": "e1aeaf606905bc63ae58f86efcd958d350bcec93b8a274c2cbfa3309952a31f5"
+    },
+    {
+      "source": "evidence-workflow-1.0.0+codex.20260916133532",
+      "source_file": "SKILL.md",
+      "file": "skills/spreadsheet-intake/SKILL.md",
+      "sha256": "cbbda1b7210ab4c0bc915cbdc492f7d815e06ca472e0e9bcf341b6d58a5b6fa9"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "agents/openai.yaml",
+      "file": "skills/easyeda-agent/agents/openai.yaml",
+      "sha256": "d63736e16f1c3c565ed84a97c8c2fed00afa89dfa68e8985ad1f42c51350cb4c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/addressable-rgb-indicator.topology.json",
+      "file": "skills/easyeda-agent/library/modules/addressable-rgb-indicator.topology.json",
+      "sha256": "ed992e269f7e9204fc410789c7fe50cc9653b792d143506f2794a64b157e5ab0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/ams1117-3v3.layout-input.json",
+      "file": "skills/easyeda-agent/library/modules/ams1117-3v3.layout-input.json",
+      "sha256": "7ab1bc89f76b3d50e9ae207d5b2e5922a7aabd1a754f697cc4728329afe0e54d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/catalog.json",
+      "file": "skills/easyeda-agent/library/modules/catalog.json",
+      "sha256": "35bf07db218510839a3eefaa6a2c63bcf687d31d260f702de751d034336fc71f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/co2-temperature-humidity.topology.json",
+      "file": "skills/easyeda-agent/library/modules/co2-temperature-humidity.topology.json",
+      "sha256": "8106bcb51c464bee8bac0b9adc4f707b56e518b285b00fdd8e4e8a3915c1d53b"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/esp32s3-module-system.topology.json",
+      "file": "skills/easyeda-agent/library/modules/esp32s3-module-system.topology.json",
+      "sha256": "328c739c709a5997d33409bdde1eab35682fb91def9ca92451d6e6b2faa3e144"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/hlk-ld2401-switched.topology.json",
+      "file": "skills/easyeda-agent/library/modules/hlk-ld2401-switched.topology.json",
+      "sha256": "432b6e866884f37c67a0dfc80c41d98ab95ca731e64b0b0514188e07921071d1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/README.md",
+      "file": "skills/easyeda-agent/library/modules/README.md",
+      "sha256": "b87942cb267b6365e31fb499ecf452a065379905eaedc44ab25d6ac2339eb24c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/reverse-current-ideal-diode.topology.json",
+      "file": "skills/easyeda-agent/library/modules/reverse-current-ideal-diode.topology.json",
+      "sha256": "58478eb464c179604f94f85437d2632fac503d7224f4436a478686c86c6366cd"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/rotary-encoder-input.topology.json",
+      "file": "skills/easyeda-agent/library/modules/rotary-encoder-input.topology.json",
+      "sha256": "8621d209458afb836e4661a82ae681f9f2111b508084e9d8d79c38a648b2bcf9"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/spi-tft-backlight-driver.topology.json",
+      "file": "skills/easyeda-agent/library/modules/spi-tft-backlight-driver.topology.json",
+      "sha256": "21555d4246222f876cf7dded5d8e4ddc59327ae56134c46c5ddb76e722a6cfc7"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/sy8089-buck-3v3.topology.json",
+      "file": "skills/easyeda-agent/library/modules/sy8089-buck-3v3.topology.json",
+      "sha256": "59cd9f02eaeca423b93330bfc5159d6b4d4a33c617a666006b823c048f9e59f3"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/transistor-buzzer-driver.topology.json",
+      "file": "skills/easyeda-agent/library/modules/transistor-buzzer-driver.topology.json",
+      "sha256": "37405db76ef42c306cd302c24de7df1ca24baaf44e9e38ba1cf0692c3a4278a0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/usbc-debug-device.topology.json",
+      "file": "skills/easyeda-agent/library/modules/usbc-debug-device.topology.json",
+      "sha256": "6efe8d8bc6fb8cfd118a3a1218cde2cbeda371201ff82c60ba085b2b9631e490"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "library/modules/usbc-power-receptacle.topology.json",
+      "file": "skills/easyeda-agent/library/modules/usbc-power-receptacle.topology.json",
+      "sha256": "dc9e281c7393ebff45c9634a9b7b48547318e972e84d4f57021f9b0e860f552f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "LICENSE",
+      "file": "skills/easyeda-agent/LICENSE",
+      "sha256": "318eaed0d2c51c78bed7ec51c9ccb284a452e963668acc2fe478087a22a88e44"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/actions.md",
+      "file": "skills/easyeda-agent/references/actions.md",
+      "sha256": "3fda697004108c80884df0fa3f9d836888f0c76e49b0bab41d51c2a273d1d89c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/auto-layout-sop.md",
+      "file": "skills/easyeda-agent/references/auto-layout-sop.md",
+      "sha256": "b44c418eafc99cf895c4f7b509cf55bfc4482679dfd89f2602d5fdd9094dc064"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/beginner-troubleshooting.md",
+      "file": "skills/easyeda-agent/references/beginner-troubleshooting.md",
+      "sha256": "bd4c8582f5932b721763d13c51a75de5c232e88ec3848793bb4b8d45de7ab9c2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/design-decisions.md",
+      "file": "skills/easyeda-agent/references/design-decisions.md",
+      "sha256": "2574544bd38ad717c21e5563edb572351b15b1cb00be8b4bf5468affad7a6993"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/design-flow.md",
+      "file": "skills/easyeda-agent/references/design-flow.md",
+      "sha256": "625e3df483a0d7e4aa140ab5370c384f87fe613693311a1d3a4bb436df5d2acb"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/design-pre-analysis.md",
+      "file": "skills/easyeda-agent/references/design-pre-analysis.md",
+      "sha256": "094383f08094726cdaedfeee6d00e9d2de2508cd65413d162d7ed48893c06ba5"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/environment-setup.md",
+      "file": "skills/easyeda-agent/references/environment-setup.md",
+      "sha256": "bdb540da22904e8f30f14d51f37159ca1c397ccc3814ecb83fe52690b20231a8"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/bom-instances.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/bom-instances.json",
+      "sha256": "6ac2b9d8435587ef05fe8473ec60767c7ef8adfadd07a2d1f90a8272503aacb7"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/can-placement-iteration-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/can-placement-iteration-live.json",
+      "sha256": "8bab7dd97605f5dd8794f6fbda7079a6180de05a1e02bf7d46433f054fab2cfe"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/can-route-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/can-route-live.json",
+      "sha256": "acd2959d297178b76f898f3eefc001c41dc13fa9092f71a3b4ead08f077bfde1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/can-route-plan-negative-report.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/can-route-plan-negative-report.json",
+      "sha256": "f400e8f3a8759c959c0e8beb28825611da8c7d215616148644cbef88e5f91550"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/can-route-plan-negative.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/can-route-plan-negative.json",
+      "sha256": "703b47ee30da46c94eedd32c4b9b33d341aae2fcb2f283f6f95dd2ad16383525"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/can-route-plan-pair-negative-report.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/can-route-plan-pair-negative-report.json",
+      "sha256": "1d1de74b6f3e7bd4b5ea3e01f78886ed23d6389fecc0e9102beb71ba176c0e90"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/can-route-plan-pair-negative.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/can-route-plan-pair-negative.json",
+      "sha256": "5f17cc3aaabb5c47af2f9e7f33dda95e9fc8f1d0eb0ba25e2e1056b92021900d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/critical-routing.md",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/critical-routing.md",
+      "sha256": "2f67eb81548334c41443335a35585e031afcbe48d94b7f14a78c7e44e9b19aa0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-guard-plan-negative.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-guard-plan-negative.json",
+      "sha256": "0fc51bd43dafa74ca5430c8c2940a6b7a05f28919643cf11c684361a420db62c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-guard-plan.md",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-guard-plan.md",
+      "sha256": "e8c1c465398b3c52fc800c897bbe6d7304318a700f3da620ac906b975e6a983d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-guard-requirement.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-guard-requirement.json",
+      "sha256": "b77f17c2ce30321bd29bb509dd457e856064876118b4e65ffc136348a29a375e"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-offset-search-negative.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-offset-search-negative.json",
+      "sha256": "0e5dc5b6f42509578fa2628d24c666c38f4f064b91eb3af85f0b5d95e9a4e5d0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-placement-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-placement-live.json",
+      "sha256": "51870dd05815db97430e108a5c6f96f01bf4d926ff79eb4b661833f969d7e4e5"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-protection-search-negative.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-protection-search-negative.json",
+      "sha256": "6dcc998e14e4d3b01f820389d610800193d2bbaf73b2c37703ea4f2711fbe3ea"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-protection-search-positive.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-protection-search-positive.json",
+      "sha256": "f8ff9047f5ce8053c06d8d44acf243cc315f2844c01c72ec74f4eadc220d1a72"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/crystal-route-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/crystal-route-live.json",
+      "sha256": "51750826e03492ae372ed85ea0d2d07d271bbee2af8d5c24063fb2623cd1dfe1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/current-board-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/current-board-live.json",
+      "sha256": "a0de8c86e298b89c7e62bd969c20e284c06eb62101d71ced174c9411a8aa3778"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/example-catalog.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/example-catalog.json",
+      "sha256": "d2d829973f891b5ea3ad6f09a8c8c8f988930c5c5bde1a769ee885094439eae8"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/fixed-mechanics.md",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/fixed-mechanics.md",
+      "sha256": "5a3119ba135b878256b2059f1dad2ed29276e2cb4c05238e54aaf8dc1c91e7fa"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/index.md",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/index.md",
+      "sha256": "2904eeea2ffac406e8f653fcbf62315a41fbf8259fc7c4024f72d459c474e5c2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/initial-placement.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/initial-placement.json",
+      "sha256": "8f9e25115c3af2300ee9dff840addc1ca04131885f32ccc36c6ba4dd1441eeb6"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-browser-reopen-verification-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-browser-reopen-verification-live.json",
+      "sha256": "ccbe65345bd5c4eb64147a0beee8bffff46a57e0a44581be41f53bd47cb4fb77"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-led-mcu-lint-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-led-mcu-lint-live.json",
+      "sha256": "1ea6e89bba646249cd813c561ded09fe04bd223a37029d70ec900c6a169b26d6"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-led-mcu-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-led-mcu-live.json",
+      "sha256": "11f82706797d1d94390ee7a9f984f97002a1b8bd4a29399174e1b3623ff20c9e"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-led-mcu-tracks-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-led-mcu-tracks-live.json",
+      "sha256": "f907cc09f707f138013297be300dd2ff849a8b639e7ec3841c5e70701ae738cb"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-peripherals-lint-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-peripherals-lint-live.json",
+      "sha256": "6b6c4b44d0866752488f7e86fe8ad0a0f34cadba26e45152765b89432c20ae97"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-peripherals-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-peripherals-live.json",
+      "sha256": "a4c2dcee6caf67023775feec951a1a9f4cfe8f629affb7e6c324578bfe4d7f6a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-after-peripherals-tracks-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-after-peripherals-tracks-live.json",
+      "sha256": "a2c0b793f3555e75ea575ae7a11fb602bfac476ae3fae49a5ba5e59f546ef164"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-01.apply.json",
+      "sha256": "b984df054b69a7b0d5ae4500d8eee3e0d645e2ea3d667e0730ae950abc77cc00"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-01.json",
+      "sha256": "a6174143b33862da76f41716a26920298f9dccccc092f693a685855b5050e0b2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-01.svg",
+      "sha256": "56cd9cb112b23d7e270ec46e308d3e37ca56f5a5c4474427db08844a1cc10dc9"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-02.apply.json",
+      "sha256": "39e368aa95f9386afc6ef985b88a069ae6d8e180b78ad210117e81b6534b276c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-02.json",
+      "sha256": "f301ed9d24991e505b48cd262d27653b50cd2b4934c029353f61268df08e9372"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-02.svg",
+      "sha256": "b70cf605fd095083df3843335967dbc2932e07f572a4aba0ed4966945e407ad4"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-03.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-03.apply.json",
+      "sha256": "1e720869770d2629a45a12651e16aaec7a0835b5361eb9602aa607cf4815e433"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-03.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-03.json",
+      "sha256": "0c56ea4f610edc14239facc76344f09df28cf8d88b60ebcafd45a2be6084e29b"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-03.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/candidate-03.svg",
+      "sha256": "501393830d204c9d973cf051f771e96dcff68f07eceb43fdd6ff6154b8831a02"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-current-board/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-current-board/manifest.json",
+      "sha256": "cbbe4a81caf36aad6ced0caf22729dc250f0723c0fefa0ddf7adf02fa425cfd4"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-01.apply.json",
+      "sha256": "5301be0a15c53a9d08fb399d7ac9064f23d3409d72e94047eb0dbd4cab1f20d0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-01.json",
+      "sha256": "c8c5e2f9fb47d0fc035643fc2d0d9db43e699615a931bd6f38039d470cb4fd01"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-01.svg",
+      "sha256": "3acba6768679da5fce397977430a1eafb2f437fe73e59d8eb250eb8be5b199a0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-02.apply.json",
+      "sha256": "6299ea3e5d4a768ddae83e5ceb142d4cc017ffe64e521fd6aeb0c5c9fdac4bbf"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-02.json",
+      "sha256": "92891a9b87b686e6264932bb1d168af10dad628d6de72278d9e42d4b7227dfb9"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-02.svg",
+      "sha256": "764fe35b73a2ac7312a68f332d07b134b249e984e60155c5c36f5921a7ee65d4"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-03.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-03.apply.json",
+      "sha256": "86b6415540412f4c0cf01a14741d9d468569bcbd51db6595a70f094c91a2029a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-03.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-03.json",
+      "sha256": "a9d8b49175518449721f0dfb76184bc80be1ffb660f54671aeb04378822860f1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-03.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/candidate-03.svg",
+      "sha256": "14125ae7a7ed6528d0eb320c1b930c40847e2e6a62b14eb1b2956db2fd0a5890"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-can-decoupling/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-can-decoupling/manifest.json",
+      "sha256": "31e873be083f72287352f7acc5372ce0f8a998c3d32fc4a9c06df13bb393a3fa"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-01.apply.json",
+      "sha256": "834fb0b66510511bc90d50093c5ce53978cc06bcd034e7f1faf67dc796da43cb"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-01.json",
+      "sha256": "ec4a1f9010a3e39aa42b941f50bc54c2a460f7d11203aa255e86035695067347"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-01.svg",
+      "sha256": "a385af7151c2ae7380e915c41489847b55e650e9325343868280937a363f7ccf"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-02.apply.json",
+      "sha256": "9c35f10d8ca372250d8a8fd1def5f30cbbd5e595b82f27661fa91d7c00ac62fc"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-02.json",
+      "sha256": "0926dad50c52f879caf5342cd8c3637b7e7b89cbbbb9a1621674c0deab1c75c5"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/candidate-02.svg",
+      "sha256": "aa391ceb2a6b8dd7feca9e31a15da0fb440aef828cc4b4e2bdbd9692d10555ef"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-lcd-peripherals/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-lcd-peripherals/manifest.json",
+      "sha256": "f292c28e5caa9bd9e778d023e78ba589369f697e098c55a7751a3c471786350c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-ldo-current-board/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-ldo-current-board/manifest.json",
+      "sha256": "23dca262451fd117e3c42556a30c8800621d2c870a1e0db1285d5cacd1e2630a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-01.apply.json",
+      "sha256": "704833a3f29eb4a844b90033d306afd42d23acbaadc8d23a08e46c2e96fd736e"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-01.json",
+      "sha256": "0eea5e8b13bc558272cd9f18dffd28705905a7de859c3846a8ad8748162bf98b"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-01.svg",
+      "sha256": "5202979ecd6142050f3b42040dcc83f3e0d1ae2d3abd2f468ebea3ceef9b141c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-02.apply.json",
+      "sha256": "13ed26ed8e0c1e65ce4d79485dfe9e51b992f8f6882317df38cac50d66bb5155"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-02.json",
+      "sha256": "d9aa6e8e08a0b1510fbcc864dd832899c380bfd6242484a00f7426774c5a978a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-02.svg",
+      "sha256": "c0f7a49936251b9c14ce07561b0444c8e81d8e97da7c70f95da27ec8bd9fb233"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-03.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-03.apply.json",
+      "sha256": "4f54b773233863eaa5550806e1904f0c252720d2513fc6c24565bceab1f346a6"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-03.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-03.json",
+      "sha256": "30aa3dd79e4bfddbfc09b924991b2e952b6d94fd6546b480d09ced5d77c834f0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/candidate-03.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/candidate-03.svg",
+      "sha256": "3ed649d83b5323f30ed4bbbf95c861d55e30cbbf04f61977ef6d48d3078efc6d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-led/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-led/manifest.json",
+      "sha256": "db7aafddf7fdc6d56d0dfd4c20b55a3c0ecffbe94403ec059d71e7eda461c6b2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-01.apply.json",
+      "sha256": "9fe5cac609548c406287d70ec000dc45b7eff103e5d282ff36b020336090d4b9"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-01.json",
+      "sha256": "cdde26692775a4097e224de535b082fdb8b92394133fc17c394bd6c051570bab"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-01.svg",
+      "sha256": "028ca6baae93bec84c778f3c372c364c1dd34e3713fae10dd5657b7fc8c7fb55"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-02.apply.json",
+      "sha256": "0e66aafed34f92315d83807dd781c291edd9d5d3792d33c6d48793b09d86c9ea"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-02.json",
+      "sha256": "d8bf837414aba01d1b2eceb952b3cd228fd9be687dc0d649acd8defe923c9e3d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-02.svg",
+      "sha256": "87c3306fcd7125f383e4f373d06112d349ba097d1eaa03c7f1633d7b2d6665c8"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-03.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-03.apply.json",
+      "sha256": "fb0ba9395807c5659f7c4c4147deafffa8de7f9704f9076a1eefae0bcb607802"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-03.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-03.json",
+      "sha256": "4d4245a9c9538a08c8eb5615b2efb9ee538e9c039624d682f115821e9f93aa03"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/candidate-03.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/candidate-03.svg",
+      "sha256": "1f35322f6b654bcb96fa40e4dd2cd498f87af39a2bbca52fe4b2c4ad3be61b54"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-mcu/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-mcu/manifest.json",
+      "sha256": "5ef0becb5df747ffe839ddc68aa96b250c3c6558a18c09e45baa653a1c54abf7"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-01.apply.json",
+      "sha256": "c8d22cec445c9aefd3efb0337d2e94aa3965a6ceb3261127587208174f45b3e1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-01.json",
+      "sha256": "2d6b12a62d6100d8cf8ad7f266ed5d42e5bf00e854cc7648b9c62920b2fa3e1d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-01.svg",
+      "sha256": "fe5b4f1ff222c28db32967293c6d68a824401c3e47e5f1ef45ce88f943415dea"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-02.apply.json",
+      "sha256": "a68623d756140eae1e2f82205f6ffc75779cb3728dcdf7acff292cd72eba4104"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-02.json",
+      "sha256": "1e0d5cd3229ebbe653595c778eacbb2fc2e5779d398fee1a011c9fd85bef75fa"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/candidate-02.svg",
+      "sha256": "58a48e0f2b716cc37ce99a31ec8238a4c1b6cf7d166ffc7ef8b2afa70c60e9c7"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-sd-decoupling/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-sd-decoupling/manifest.json",
+      "sha256": "a7b6ba10a4607a0ef76acee98a2da0229c38d07ec904d352f057b5e017a49ab3"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-01.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-01.apply.json",
+      "sha256": "11bc333c3f956d097cc6b5df0b408415b92b732e6e0298bda76433d34cc3df67"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-01.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-01.json",
+      "sha256": "8224ee0e7619b84d7a8de87cf51fe72f0c67d83fe10da0f071514edc542a81c1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-01.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-01.svg",
+      "sha256": "8cb794cc323d59e75a457a5de9b1777e45cbd8f472447bf74544d0cbb2340ec4"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-02.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-02.apply.json",
+      "sha256": "d6eff8d36e0f76f768c009f87555192fc2ffe5c568888c76875ec99e70009ac2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-02.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-02.json",
+      "sha256": "bb4337a4626119e5ad98e81d72b5ba6caaa0d807c3c84ce1fca5553c5acdda2c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-02.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-02.svg",
+      "sha256": "17f7243aeec1e59977580b54ea88aeca3959c4114816dc5dfb96fdede3004eac"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-03.apply.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-03.apply.json",
+      "sha256": "ff6f68d30d20a7762907b860b00d31d27e564b82e27e87875c6a722e81e0c01a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-03.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-03.json",
+      "sha256": "5683de991abaa9bbc097d1ff7ba7cf4d87d240038ba9e320c760dc9806c9c49f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-03.svg",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/candidate-03.svg",
+      "sha256": "5c73140e3590cbeb14380ac496b34ea880be88a2c8b4271592a0d8addd6281cc"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates-usb-uart-decoupling/manifest.json",
+      "sha256": "bc56bb3bb8b53a6bd9ccc99cb17322398cee831dfbeca1589dfe559ae1f34cd2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-candidates.md",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-candidates.md",
+      "sha256": "f7aebfad43218467cbde95c08e7c722cbaf9466a7aca0949a86c4c7059512b05"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-can-decoupling.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-can-decoupling.json",
+      "sha256": "a83c1f1c140f7c54dda777aa45f5f55910b321a83e14f58bc2b7a23737e68093"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-can-rigid.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-can-rigid.json",
+      "sha256": "dcaaf74b6c7c281060eede544f318faf9bcf4d2c4e62cca78414357a51fde25a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-crystal-guard.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-crystal-guard.json",
+      "sha256": "618f06160d25ca5d1f70360833579862acf382c717002a32108ca8953fce2a13"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-lcd-peripherals.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-lcd-peripherals.json",
+      "sha256": "5848a53e8bb291128a2974f6b589abb0f9ff40fb6d56b2f5f2b5753eb74874d2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-ldo-rigid.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-ldo-rigid.json",
+      "sha256": "70a6965ba4d1e09c31c5b61a1ea65e33b7e827f3b01d3a21f7702ce4f0db22bf"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-led-edge.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-led-edge.json",
+      "sha256": "9ea9411fe41827fa7c5122b16e6d70da90fbc62468046477250b14ccf4b25dd2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-mcu-decoupling.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-mcu-decoupling.json",
+      "sha256": "9af5fa988eb01e742be22ca0d073b1fc5a38a4b449ad6269493d350421c31e02"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-sd-decoupling.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-sd-decoupling.json",
+      "sha256": "a209470f27de28046f93f64c83199acded06803bec15a21b5ffecc46cef70cd3"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-plan-usb-uart-decoupling.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-plan-usb-uart-decoupling.json",
+      "sha256": "91e0c282930d9ae18e4ffde08248d643ce98a01674e17168ba3c0fc93a924a66"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/layout-prewrite-tracks-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/layout-prewrite-tracks-live.json",
+      "sha256": "a7b494d98c10092276a297536f4f6cff907b8b5d149df195660882630aa892ea"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/ldo-layout-candidate.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/ldo-layout-candidate.json",
+      "sha256": "e2df70b26fba267d5dcff55d19e429399174fbde22430561eba79b42bed16e16"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/ldo-placement.md",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/ldo-placement.md",
+      "sha256": "2201c13b8f0063c4a96752d7392a5a9a8cf02021c69496e9b99f198a96809d75"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/ldo-route-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/ldo-route-live.json",
+      "sha256": "58fa3bb64d5f8caab3f58432a6ec4f15b1381700674b5ef8eb29c2775faa74e6"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/live-validation.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/live-validation.json",
+      "sha256": "604487075c10d08e26e7a1b5f28f1cb62fb7c657ce53e5a8c0e781887f678ec7"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/schematic-u3-recovery-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/schematic-u3-recovery-live.json",
+      "sha256": "fa6199eef19bf6cc14eb74e63bb92ac413ae7a7b5af13a6392983f0c5e640ae8"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/source-connectivity.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/source-connectivity.json",
+      "sha256": "776940cbff0e0aaad8b8a28f0731b6485ca534141162544dd7e8771837f7fc05"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/source-manifest.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/source-manifest.json",
+      "sha256": "bc196ff393ac3e5843039007b153d239275ecd6e9dc8626181cd999d1560411f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/u3-existing-model-binding-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/u3-existing-model-binding-live.json",
+      "sha256": "eaa1e2d19afa79c2995e9cb54fd95a6ff80686fd873cc1dd1d5b2972ac2dbbad"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/u3-identity-reconcile-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/u3-identity-reconcile-live.json",
+      "sha256": "49753b818d220cafd7ca1d7d32844a54412dff2c4d6d590557c25734b052b817"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/u3-instance-region-negative-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/u3-instance-region-negative-live.json",
+      "sha256": "fb9e3752e7e931b3887a67dfe4f45207c338b56664f896c5739655f6968841b0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/260919-at32f415/usb-route-live.json",
+      "file": "skills/easyeda-agent/references/examples/260919-at32f415/usb-route-live.json",
+      "sha256": "089ccc2eeb37ce574b22fa9ec31ce68d1aac4fc6d8c9022d72a2acba7c491471"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/exam-differences.md",
+      "file": "skills/easyeda-agent/references/examples/exam-differences.md",
+      "sha256": "a0b2ab445923e6ad9ea0aa501d0459f32625d731dd3cda99643ff0715e0fbc22"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/examples/index.md",
+      "file": "skills/easyeda-agent/references/examples/index.md",
+      "sha256": "470985384da3f8916e9641698e4884e735ff8c4b2fd848312cc9e14f37acea5c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/fab-rules-jlcpcb.json",
+      "file": "skills/easyeda-agent/references/fab-rules-jlcpcb.json",
+      "sha256": "9205c4866084d7ba299bced55f9e9f751a1cfb07446f4045da59ed1babb95344"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/library-authoring.md",
+      "file": "skills/easyeda-agent/references/library-authoring.md",
+      "sha256": "8bbd0c7be6921374c2e0ca1f588e3cdb59c361b37c7e49ad56f9febd8ff09e1c"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/library-device-example.json",
+      "file": "skills/easyeda-agent/references/library-device-example.json",
+      "sha256": "d0198a1736ff1e58fd59b3d28e9ff62bd0ebfc00a38630543299a3fb7df5874f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/mcp-tasks.md",
+      "file": "skills/easyeda-agent/references/mcp-tasks.md",
+      "sha256": "c0d922be62fe8537e8af1d0ae164376ef7567f8bb86df529d765119a3c672ee0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/module-owned-objects.md",
+      "file": "skills/easyeda-agent/references/module-owned-objects.md",
+      "sha256": "29af06c50c764da7c29adfa7b2f2d9e7753b8c576841587ce719705eb4323d9f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/orientation.json",
+      "file": "skills/easyeda-agent/references/orientation.json",
+      "sha256": "099d358555071364a9a46213bcb05cfe57a615992c1f470f8377ff5dcb8607b7"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/part-selection.md",
+      "file": "skills/easyeda-agent/references/part-selection.md",
+      "sha256": "760d816b521bf2037ae9c203f48a2e85b36c5f84f714e70c2c8558b5173bf5d4"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/pcb-config.md",
+      "file": "skills/easyeda-agent/references/pcb-config.md",
+      "sha256": "98fb9b95b15690a587609a34ace9db3131d469352dabf5ad5aa08dd02da6533f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/pcb-design-rules.md",
+      "file": "skills/easyeda-agent/references/pcb-design-rules.md",
+      "sha256": "0f07c352728858b4e479d76c9a33a17b627832a5e5f9860ced40f065757d634a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/pcb-layout-conventions.md",
+      "file": "skills/easyeda-agent/references/pcb-layout-conventions.md",
+      "sha256": "9a2844854027ede00a46fbd504b66ef63b7cdecbd304db76b1879d853a783004"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/pcb-layout.md",
+      "file": "skills/easyeda-agent/references/pcb-layout.md",
+      "sha256": "a3d2a42fb1715fe3ff5778b456fc822324c35a62f91a2c6aa40bfa8e8f58cc98"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/pcb-routing.md",
+      "file": "skills/easyeda-agent/references/pcb-routing.md",
+      "sha256": "509a0ccb21c2193cb2c1281a0ae14a1710b99ebade96d85d67f86b4b220b6019"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/pcb.md",
+      "file": "skills/easyeda-agent/references/pcb.md",
+      "sha256": "8109df8bf070bf20bb23785950cf3b7899c1a52c3912747cddbf6f765476d9ac"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/project-import.md",
+      "file": "skills/easyeda-agent/references/project-import.md",
+      "sha256": "aeff7ba1bfaff0075e0262ac9859c3e8356d446d151a2dda36c6ea73d0545a12"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/reusable-module-library.md",
+      "file": "skills/easyeda-agent/references/reusable-module-library.md",
+      "sha256": "0cbe52e792be18541912c2dfa9d7315cc37381fea4dff952df3192fece5fdc63"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/schematic-data.md",
+      "file": "skills/easyeda-agent/references/schematic-data.md",
+      "sha256": "280f2b2ab754e23ef92e91b11d6f8cfd6da4bfef2e87d01f006f5adad00e961d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/schematic-layout-conventions.md",
+      "file": "skills/easyeda-agent/references/schematic-layout-conventions.md",
+      "sha256": "18d2aea60fb2f0ecf024bc6c7c91f690a02c2526c75e2640d1b472674f67ed7a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/schematic-placement.md",
+      "file": "skills/easyeda-agent/references/schematic-placement.md",
+      "sha256": "b56700dca96deb2b078b40988e745ecf47d6a92133ca30be5c48674089036dfb"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/schematic-wiring.md",
+      "file": "skills/easyeda-agent/references/schematic-wiring.md",
+      "sha256": "38a3e5edc25b3e323356551a8c3acd5278e85b87c905197282eda4f9c7531d68"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/schematic.md",
+      "file": "skills/easyeda-agent/references/schematic.md",
+      "sha256": "953fff16088827964e37b32af1fa67d95797cc2816aaeec717cc1070437eabae"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/sheet-templates.json",
+      "file": "skills/easyeda-agent/references/sheet-templates.json",
+      "sha256": "6aa7ab84d571d1c7cf38cdef87d78a37a11849fc06a98045c0f26c30b884767b"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/standard-blocks-contributing.md",
+      "file": "skills/easyeda-agent/references/standard-blocks-contributing.md",
+      "sha256": "100de340e744097d77f750bbdd24a04fd9fe6b4839ac288437d5f84d7e8be341"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/standard-parts.json",
+      "file": "skills/easyeda-agent/references/standard-parts.json",
+      "sha256": "26a1e62d95d08bcc885ae29971c539cb12f26d508d6fd49012f83321f20d1de0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "references/symbol-pins.json",
+      "file": "skills/easyeda-agent/references/symbol-pins.json",
+      "sha256": "9d55c674c337616d63ac6f1341abdedd016e7d746098601ee3261417eaf4d331"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/audit-baseline.py",
+      "file": "skills/easyeda-agent/scripts/audit-baseline.py",
+      "sha256": "64755aae99e5720b4c6f786630b8859715fb955624eb2cbafea86126abdd7d71"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/blocks-pin-audit.py",
+      "file": "skills/easyeda-agent/scripts/blocks-pin-audit.py",
+      "sha256": "08e1d8dcf8c97cbff3a52dc031e7e828f9a5729e797d80d825fb4967e69b8af1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/bom-enrich.py",
+      "file": "skills/easyeda-agent/scripts/bom-enrich.py",
+      "sha256": "2097ebd50256a2d722789862180f5f75d9e2667b258b4a648220215399e21be1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/bulk-connect.py",
+      "file": "skills/easyeda-agent/scripts/bulk-connect.py",
+      "sha256": "a70ffb6345b8aa39c16b9c88702b119b535ad8f2613400fd032b67059cf7eb0d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/bulk-place.py",
+      "file": "skills/easyeda-agent/scripts/bulk-place.py",
+      "sha256": "388948c4d1206a6eb769b1b283b07a2ce5a64215ffe202aec994a9786ecd717f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/calibrate.js",
+      "file": "skills/easyeda-agent/scripts/calibrate.js",
+      "sha256": "e02cd83001f03c9c2792d052bba33ce8823911dac52351f286e5d59fb7494f36"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/diff.py",
+      "file": "skills/easyeda-agent/scripts/diff.py",
+      "sha256": "00cda20ed279577443486323c9523968e66dcb0f43d66db92f3a87ace78a1ee6"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/lint.py",
+      "file": "skills/easyeda-agent/scripts/lint.py",
+      "sha256": "5784c0688212bb31880bf50bd107d5cb7b318b78fa268a8747b547303846e137"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/lint.sh",
+      "file": "skills/easyeda-agent/scripts/lint.sh",
+      "sha256": "4efb14e455cdd85ec4534eca5297ffcec9a4dc5622792e1e761307014fdb8c1a"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/modules-audit.py",
+      "file": "skills/easyeda-agent/scripts/modules-audit.py",
+      "sha256": "e61e519da67803f044f6601b31f8dc01937731ab5b7db847bb7850028919dc7b"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/orient.py",
+      "file": "skills/easyeda-agent/scripts/orient.py",
+      "sha256": "a123515839209980bd03954c0fa7cfde2da455a62c2b76dd290945d93632f925"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/parts-add.py",
+      "file": "skills/easyeda-agent/scripts/parts-add.py",
+      "sha256": "8264a01b07469ff795bd910311842e6006db73652778e76003c02dbc2bd8ad75"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/parts-relocalize.py",
+      "file": "skills/easyeda-agent/scripts/parts-relocalize.py",
+      "sha256": "f4606f8b3d2d17f7d5fd6f5b41cac4967a773b24eb1fb862c87b8a0dd2c72ae1"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/parts-select.py",
+      "file": "skills/easyeda-agent/scripts/parts-select.py",
+      "sha256": "5bd13f837f0baf15efdf60831c439c458a39fba88b5dd34f6414ea7d30bde816"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/probe.js",
+      "file": "skills/easyeda-agent/scripts/probe.js",
+      "sha256": "2b4987a9d251068bc9cf8fb128603736355ebff0d505d19118b25b951ce0c698"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/sch.py",
+      "file": "skills/easyeda-agent/scripts/sch.py",
+      "sha256": "3421161db03b5abb82eedbcae94410fbaea99b9c4ea4713387fd65c4d3338a3d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/diff_fixtures/edit.base.json",
+      "file": "skills/easyeda-agent/scripts/tests/diff_fixtures/edit.base.json",
+      "sha256": "155f0a1a10623650025f9ea6ef75c9a5a3946dd9f07e8d67a55a38451c4397fc"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/diff_fixtures/edit.cur.json",
+      "file": "skills/easyeda-agent/scripts/tests/diff_fixtures/edit.cur.json",
+      "sha256": "b87cdfb293c506d3cca76f7b1f22f452697953afdee18ec1252b2010ce77ea8d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/fixtures/bad_orientation.json",
+      "file": "skills/easyeda-agent/scripts/tests/fixtures/bad_orientation.json",
+      "sha256": "5e8d15af270743c56aa4669fe2a0b4e875995d8e1331fecaaea765bbee5a8496"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/fixtures/clean_board.json",
+      "file": "skills/easyeda-agent/scripts/tests/fixtures/clean_board.json",
+      "sha256": "4d148ca82c1eb1f67929145cabc7c5d9e532efa992782f0659943f1ecf3b2035"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/fixtures/flag_on_pin.json",
+      "file": "skills/easyeda-agent/scripts/tests/fixtures/flag_on_pin.json",
+      "sha256": "a7eabc7f2d1e6a58ab8168232c354c9da3e1ded87e88828c26767353984703f2"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/fixtures/floating_pin.json",
+      "file": "skills/easyeda-agent/scripts/tests/fixtures/floating_pin.json",
+      "sha256": "405fcb897f3090393686f3f6fa7f3c944147ccb7e8ad820588eb557222311424"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/fixtures/sop_spatial.json",
+      "file": "skills/easyeda-agent/scripts/tests/fixtures/sop_spatial.json",
+      "sha256": "c88add1daf7e83ba5f81e0ea1b16abad965f720e4a165d02538a51657cec8ff0"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/fixtures/zero_wire.json",
+      "file": "skills/easyeda-agent/scripts/tests/fixtures/zero_wire.json",
+      "sha256": "89cd425485d23f78d252c85780ee41e7759507b710072a5a071bc958fbe5fa57"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/bad_orientation.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/bad_orientation.txt",
+      "sha256": "7cc08aead721ddd14386c7af285511ec3ce0145cedb298910c0e4051f0fef65d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/clean_board.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/clean_board.txt",
+      "sha256": "e7b4d5f0d099b0e81b470920e004dacc34249e46e2796d5b053b428066511bac"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/diff_edit.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/diff_edit.txt",
+      "sha256": "e9a6a0a92165f8a817bb2050deddd60479732402d6b7e5ee5c9adc49d5b98028"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/flag_on_pin.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/flag_on_pin.txt",
+      "sha256": "fb9823e6c29996cbf9da7338f61656a18a9c355249ef01aa9a786564da386115"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/floating_pin.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/floating_pin.txt",
+      "sha256": "00f4eee7b6253b688f2b721a73cc14307f50a5d035074fb644ae3c49b54a25f5"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/sop_spatial.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/sop_spatial.txt",
+      "sha256": "757a0e9e3ad49c29f68d0669b66ad6c5b16128ab275e613a9579672fbe17068f"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/golden/zero_wire.txt",
+      "file": "skills/easyeda-agent/scripts/tests/golden/zero_wire.txt",
+      "sha256": "d07b5093b0bec14cd9d2d695b1bae3e9f6a1ee9a6ec258594d3329c39ee36e36"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/tests/run.py",
+      "file": "skills/easyeda-agent/scripts/tests/run.py",
+      "sha256": "67f0ca8085a24cfab7d4507e64747842d574a805b40c85a1c0647d480f0b210d"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "scripts/validate_260919_can_plan.py",
+      "file": "skills/easyeda-agent/scripts/validate_260919_can_plan.py",
+      "sha256": "8047df3456c91fedab37bdde497fe17292014067694d278882be8a270dd4d62e"
+    },
+    {
+      "source": "easyeda-agent-1.6.0-local",
+      "source_file": "SKILL.md",
+      "file": "skills/easyeda-agent/SKILL.md",
+      "sha256": "b70cfaac403a4d4033131fab14d5833be0a49d2c49277c7e8d5da8b4cc0d70dd"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "package-lock.json",
+      "file": "components/easyeda-mcp/package-lock.json",
+      "sha256": "9aabd6105ef9d26c3a0d4d2681d3bb37c8958ffb3e908460d589c7fa88a51028"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "package.json",
+      "file": "components/easyeda-mcp/package.json",
+      "sha256": "f105b7d04ccc03d4dc5ffe366d03cf8e8b7b058fdb35af9b8acbdbff1c61f522"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "README.md",
+      "file": "components/easyeda-mcp/README.md",
+      "sha256": "94022ee3aa16758441a6aaa75cae962ecb182f5737de951011170939d1b72750"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "src/core.mjs",
+      "file": "components/easyeda-mcp/src/core.mjs",
+      "sha256": "5c04e7d81ab1eaba9c5a3b615a1e47de1124e2a24fb98290f722cc910aa46e04"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "src/server.mjs",
+      "file": "components/easyeda-mcp/src/server.mjs",
+      "sha256": "5dc50e0e262f9c31fbd2ff88da27a9209ed2bd3be2368f8494a82edc459d7a14"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "src/tasks.mjs",
+      "file": "components/easyeda-mcp/src/tasks.mjs",
+      "sha256": "6ac61576a76e05db0d3b84223855d2165a041edf4bf2fb54ae693aef73dc3119"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "test/core.test.mjs",
+      "file": "components/easyeda-mcp/test/core.test.mjs",
+      "sha256": "7b2ac7952fc6439f4585aa3dd88ccc2943be9bc2ea2a53f80572d3de978fa459"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "test/integration.test.mjs",
+      "file": "components/easyeda-mcp/test/integration.test.mjs",
+      "sha256": "bc935c985410500d94bbf5ddfb617e24c865bbc32f324f8081c0e798f57ccc3b"
+    },
+    {
+      "source": "easyeda-mcp-0.18.3-local",
+      "source_file": "test/tasks.test.mjs",
+      "file": "components/easyeda-mcp/test/tasks.test.mjs",
+      "sha256": "eb133270618dce588ad08d741927ee82e9258f857b967c9666ede6bbccea304c"
+    }
+  ],
+  "reference_repositories": [
+    {
+      "repository": "easyeda/easyeda-eprj3-skill",
+      "commit": "40c94e129df18e94232f8c94260134bfcac6cabf",
+      "archive_sha256": "2f80835ef7f699e5ea4c50af548b904129648ceec7520d22bef4464594660953",
+      "license": {
+        "key": "mit",
+        "name": "MIT License",
+        "spdx_id": "MIT",
+        "url": "https://api.github.com/licenses/mit",
+        "node_id": "MDc6TGljZW5zZTEz"
+      },
+      "path": ".local\\upstream-reference\\easyeda--easyeda-eprj3-skill-40c94e129df1",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
+      "repository": "easyeda/easyeda-format-skill",
+      "commit": "9e42727cc4cf13a8e442140e8e7794ae94d5f41b",
+      "archive_sha256": "717df13b18e8f7bd6c7a841aa903cffcf516246e88ce6872e8ec50e20adb831b",
+      "license": {
+        "key": "mit",
+        "name": "MIT License",
+        "spdx_id": "MIT",
+        "url": "https://api.github.com/licenses/mit",
+        "node_id": "MDc6TGljZW5zZTEz"
+      },
+      "path": ".local\\upstream-reference\\easyeda--easyeda-format-skill-9e42727cc4cf",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
+      "repository": "easyeda/easyeda-pro-eprj3-format",
+      "commit": "3adee06f510b2d5181b80ff850c40b0bccbf75f0",
+      "archive_sha256": "957fb3746dacb52ad3a6f4cae069def7b782d9e340ca7852cb4dfabea1667379",
+      "license": null,
+      "path": ".local\\upstream-reference\\easyeda--easyeda-pro-eprj3-format-3adee06f510b",
+      "license_files": []
+    },
+    {
+      "repository": "salitronic/eda-agent",
+      "commit": "c44641193958e87e1249fe298ccf346ba790caf1",
+      "archive_sha256": "0aa2a1bfa041512b4a25fd955ff4e63ce143af8853dfdeefeee5a59ef95a960c",
+      "license": {
+        "key": "apache-2.0",
+        "name": "Apache License 2.0",
+        "spdx_id": "Apache-2.0",
+        "url": "https://api.github.com/licenses/apache-2.0",
+        "node_id": "MDc6TGljZW5zZTI="
+      },
+      "path": ".local\\upstream-reference\\salitronic--eda-agent-c44641193958",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
+      "repository": "zhoushoujianwork/easyeda-agent",
+      "commit": "77261652d716c76ad0af4e26ae3f6b97a37b23ed",
+      "archive_sha256": "9eeb9ec25b650e3c94a19ee8b531e47f9438874c8e1aed53d348ced6e6399454",
+      "license": {
+        "key": "other",
+        "name": "Other",
+        "spdx_id": "NOASSERTION",
+        "url": null,
+        "node_id": "MDc6TGljZW5zZTA="
+      },
+      "path": null,
+      "archive_repository": ".local/kb14/easyeda-agent-open-1.8.1-open.9.6/source",
+      "archive_ref": "refs/archive/source-cleanup-20261020/upstream/zhoushoujianwork-easyeda-agent-77261652d716",
+      "license_files": [
+        "LICENSE"
+      ]
+    }
+  ]
+}

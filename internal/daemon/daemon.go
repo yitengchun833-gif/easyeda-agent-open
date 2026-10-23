@@ -84,8 +84,10 @@ type Server struct {
 	inflight sync.Map
 
 	// connCtx is cancelled on shutdown so connector read loops unblock.
-	connCtx    context.Context
-	connCancel context.CancelFunc
+	connCtx          context.Context
+	connCancel       context.CancelFunc
+	knowledgeMu      sync.Mutex
+	knowledgeConnect func(context.Context) (knowledgeConnection, error)
 }
 
 // acquireExclusive claims the per-window slot for a non-reentrant action.
@@ -160,15 +162,21 @@ func New(opts Options) *Server {
 }
 
 func (s *Server) initRuntime(port int) {
+	if s.runtime != nil {
+		if err := s.runtime.closeRecovery(); err != nil {
+			s.logf("close previous recovery storage: %v", err)
+		}
+	}
 	s.runtime = newRuntimeStore()
-	restored := false
+	database, legacy := ":memory:", ""
 	if !s.audit.disabled {
-		restored = s.runtime.restoreCheckpoint(filepath.Join(s.audit.Dir(), fmt.Sprintf("runtime-%d.json", port)))
+		database = filepath.Join(s.audit.Dir(), fmt.Sprintf("recovery-%d.sqlite", port))
+		legacy = filepath.Join(s.audit.Dir(), fmt.Sprintf("runtime-%d.json", port))
+	}
+	if err := s.runtime.initializeRecovery(database, legacy); err != nil {
+		s.logf("recovery unavailable; dangerous operations are blocked: %v", err)
 	}
 	s.audit.observe = s.runtime.observe
-	if !restored {
-		s.restoreRuntimeReceipts()
-	}
 }
 
 type health struct {
@@ -262,7 +270,13 @@ func (s *Server) Run(ctx context.Context, log io.Writer) error {
 	persistCtx, stopPersistence := context.WithCancel(context.Background())
 	persistenceDone := make(chan struct{})
 	go func() { defer close(persistenceDone); s.runtime.checkpointLoop(persistCtx) }()
-	defer func() { stopPersistence(); <-persistenceDone }()
+	defer func() {
+		stopPersistence()
+		<-persistenceDone
+		if err := s.runtime.closeRecovery(); err != nil {
+			s.logf("recovery shutdown persistence failed: %v", err)
+		}
+	}()
 	s.connCtx, s.connCancel = context.WithCancel(context.Background())
 	defer s.connCancel()
 

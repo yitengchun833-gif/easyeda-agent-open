@@ -72,6 +72,14 @@ export function stopConnection(): void {
 }
 
 /**
+ * Open the package-local knowledge manager. Its HTML gets the local service
+ * address and token from `knowledgeService` extension user configuration;
+ * keeping this URL package-local avoids relying on host support for localhost
+ * navigation in sys_IFrame.
+ */
+export { openKnowledgeBase } from './knowledge-panel';
+
+/**
  * Toggle the auto-connect-on-startup preference (menu item).
  */
 export async function toggleAutoConnect(): Promise<void> {
@@ -92,6 +100,7 @@ export function about(): void {
 		const portInfo = `Connected (port ${status.port})`;
 		const windowInfo = status.windowId ? `\nWindow ID: ${status.windowId}` : '\nWindow ID: (not registered)';
 		statusLine = `${portInfo}${windowInfo}`;
+		statusLine += `\n知识库：${status.knowledge === 'ready' ? '已连接' : status.knowledge === 'connecting' ? '连接中' : '未就绪'}`;
 	}
 	else if (status.connecting) {
 		statusLine = 'Connecting...';

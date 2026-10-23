@@ -1,5 +1,9 @@
 # EasyEDA Agent Open
 
+本完整仓库同时包含 [配套工作流](workflow/README.md)，保留两个插件入口和一套Open执行链。本次完整集成候选包见 [2026-10-23 Release](https://github.com/yitengchun833-gif/easyeda-agent-open/releases/tag/v1.8.1-open.9.6-kb.32-workflow.20261023)。
+
+> 当前 Open 源码与使用入口。核心版本见 [发布登记](sources.open.json)，Connector 版本见 [扩展清单](extension/extension.json)，MCP 工具契约见 [MCP 说明](mcp/README.md)。这些文件描述源码；实际采用、当前进程加载及现场验收须分别核对。开发与打包见 [分发说明](README-OPEN.md)，本机源码边界见 [README-LOCAL](README-LOCAL.md)。
+
 **让 Codex 等 AI Agent 直接读取、查看和修改嘉立创 EDA 专业版工程。**
 
 本项目由 [yitengchun833-gif](https://github.com/yitengchun833-gif) 维护，以
@@ -10,7 +14,10 @@
 
 ```text
 Codex / 其他支持 MCP 的 AI Agent
-                 │ MCP
+                 │ stdio MCP
+                 ▼
+           Open MCP 适配层
+                 │ HTTP / 必要 CLI 调用
                  ▼
         本机 Go CLI / daemon
                  │ WebSocket
@@ -49,17 +56,17 @@ PCB 全流程验收、所有宿主事件覆盖和相对人工速度尚未完成�
 
 1. 从 [Releases](https://github.com/yitengchun833-gif/easyeda-agent-open/releases/latest) 下载 `.eext` 与 Windows 完整包。
 2. 在嘉立创 EDA 专业版的**扩展管理 → 导入扩展**中导入 `.eext` 并启用。
-3. 将完整包解压，把包含 `bin`、`mcp`、`skills` 的文件夹放到固定位置，例如 `C:\EDA-Agent-Open`。安装 Node.js 20.17 或更新版本。
-4. 在 PowerShell 注册一次 MCP（按实际解压路径替换）：
+3. 将已核对来源的完整包解压到固定位置，例如 `C:\EDA-Agent-Open`。便携包优先沿用随包运行入口；手动运行核心 MCP 要求 Node.js `>=20.17.0`，可选知识服务要求 Node.js `>=22.13.0` 及其自身依赖。
+4. 新安装时在 PowerShell 注册一次 MCP（按实际解压路径替换；已有注册沿用原入口，不重复添加）：
 
    ```powershell
    codex mcp add easyeda-open -- node.exe "C:\EDA-Agent-Open\mcp\src\launch.mjs"
    ```
 
-5. 将包内 `skills/easyeda-agent-open` 文件夹放入 Codex 的 `~/.codex/skills/`。重启 Codex，让它加载 MCP 和 Skill；MCP 启动时会检查并启动匹配的本机后台。
-6. 保持目标工程打开；需要时点击 **EDA Agent Open → Reconnect**。请 Agent 先确认当前工程与页面，再描述绘图或修改目标。
+5. 按目标宿主的 Skill 安装方式采用包内 `skills/easyeda-agent-open`，并重新加载对应 MCP 和 Skill；源码文件变化不证明现有会话已加载。`EASYEDA_RUNTIME_DIR` 须指向同一本包的 `.runtime`。
+6. 用户要求连接或重新连接时调用 `easyeda_connect()`；它复用健康后台，仅在后台缺失时显式启动配套后台。状态查询使用 `easyeda_health()`，不启动服务；无 Connector 窗口时不能称工程已连接。连接 MCP 客户端本身不启动或停止后台、知识服务。
 
-默认本机通信端口为 `60932`。open.9.6 更新 MCP 阶段执行、Go 固定位置布线/路径检查和重启后请求 ID；Connector 继续使用 open.9.5，已导入该扩展的用户无需重复导入。后台/MCP/Skill 使用完整包中的对应文件；当前已启动 MCP 不会自动获得新的工具参数。
+默认本机通信端口为 `60932`。后台、MCP、Connector 和 Skill 按发布清单配套；是否需要更新扩展取决于所需动作和实际已加载版本，不能依据旧发行版说明跳过更新。嘉立创操作遵循同包 [原生接口路由](skills/easyeda-agent-open/SKILL.md#强制原生接口路由)。
 旧后台版本升级应使用匹配的完整包；不同后台版本不会被启动器自动替换。
 
 可以这样开始：
@@ -80,14 +87,14 @@ PCB 全流程验收、所有宿主事件覆盖和相对人工速度尚未完成�
 
 ## 源码与开发
 
-当前 CLI/后台、MCP 与 Skill 为 `1.8.1-open.9.6`，Connector 沿用 `1.8.1-open.9.5`；已导入该 Connector 无需重复导入 `.eext`。本版增加阶段执行、固定位置布线/路径检查与后台请求 ID 修复，后台保留完整审计和恢复证据。
+源码组件身份由各自清单及 `sources.open.json` 维护；构建和采用记录绑定完整提交及文件哈希。目录名或相同主版本号不能代替载荷核对。
 
 源码目录：`cmd/` 与 `internal/` 为 Go CLI/后台；`extension/` 为嘉立创扩展；`mcp/` 为 MCP 适配；`skills/` 为当前 Skill；`api-reference/` 为官方 API 参考。
 Windows 完整包附带 CLI、MCP 运行依赖、Connector、Skill 和源码；公开 Git 仓库不包含本地运行状态、私有工程或账号凭据。
 
-开发时按锁文件安装依赖，分别构建 Go CLI、`extension` 和 `mcp`。现有打包入口为 `python scripts/pack-open.py`，要求先准备匹配的构建产物，且不会覆盖已有包。
+开发时按锁文件准备依赖；完整构建要求和唯一打包入口见 [开发与分发说明](README-OPEN.md)。打包、采用、新进程加载和现场验收分别记录。
 
 - [保留的上游 README](README-UPSTREAM.md)
-- [当前验证边界](VALIDATION.md)
+- [历史验证范围](VALIDATION.md)
 - [第三方来源和许可证](NOTICE)
 - [当前工作规则](skills/easyeda-agent-open/references/working-rules.md)

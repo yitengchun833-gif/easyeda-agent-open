@@ -51,6 +51,15 @@ function fixUuid(uuid?: string): string {
  * 主逻辑方法
  */
 function main() {
+	const logoPath = path.join(__dirname, '../', extensionConfig.images.logo);
+	if (!fs.existsSync(logoPath) || !fs.statSync(logoPath).isFile() || fs.statSync(logoPath).size === 0) {
+		throw new Error(`Connector logo is missing or empty: ${logoPath}`);
+	}
+	const bundle = fs.readFileSync(path.join(__dirname, '../', `${extensionConfig.entry}.js`), 'utf-8');
+	const compiledVersion = bundle.match(/\bCONNECTOR_VERSION\s*=[^;\r\n]*"(\d+\.\d+\.\d+[^"\r\n]*)"/)?.[1];
+	if (compiledVersion !== extensionConfig.version) {
+		throw new Error(`Compiled Connector version ${compiledVersion ?? 'unknown'} differs from ${extensionConfig.version}; compile before packaging`);
+	}
 	if (!testUuid(extensionConfig.uuid)) {
 		const newExtensionConfig = { ...extensionConfig };
 		// @ts-expect-error - Removing default property from extension config

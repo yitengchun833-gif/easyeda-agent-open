@@ -153,7 +153,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		// so `audit-baseline` was blind to the exact failures that matter most.
 		started := time.Now().UTC()
 		errResp := errorResponse(req.ID, "UNKNOWN_ACTION", fmt.Sprintf("unknown action: %s", req.Action), "run `easyeda actions` for the supported set")
-		s.audit.Append(fromResponse(started, &req, &errResp))
+		s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
 		writeActionResponse(w, r, http.StatusBadRequest, errResp)
 		return
 	}
@@ -175,14 +175,14 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		if ambiguous {
 			started := time.Now().UTC()
 			errResp := errorResponse(req.ID, "AMBIGUOUS_PROJECT", fmt.Sprintf("multiple connected windows match project %q", req.Project), "pass --window to pick one (see `easyeda health`)")
-			s.audit.Append(fromResponse(started, &req, &errResp))
+			s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
 			writeActionResponse(w, r, http.StatusConflict, errResp)
 			return
 		}
 		if !found {
 			started := time.Now().UTC()
 			errResp := errorResponse(req.ID, "NO_CONNECTOR", fmt.Sprintf("no connected window for project %q", req.Project), "open the project in EasyEDA (connector enabled), or run `easyeda health`")
-			s.audit.Append(fromResponse(started, &req, &errResp))
+			s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
 			writeActionResponse(w, r, http.StatusServiceUnavailable, errResp)
 			return
 		}
@@ -215,7 +215,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 			detail = fmt.Sprintf("pass --project <name> (preferred) or --window <id>. Connected now: %s", liveSummary)
 		}
 		errResp := errorResponse(req.ID, code, message, detail)
-		s.audit.Append(fromResponse(started, &req, &errResp))
+		s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
 		writeActionResponse(w, r, http.StatusServiceUnavailable, errResp)
 		return
 	}
@@ -238,16 +238,17 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	if protocol.UsesNativeNetLabel(req.Action, req.Payload) {
 		if err := protocol.NativeNetLabelSupport(target.snapshot().EasyEDAVersion); err != nil {
 			resp := errorResponse(req.ID, "HOST_API_UNSUPPORTED", "native net_label is unavailable on this host", err.Error())
-			s.audit.Append(fromResponse(time.Now().UTC(), &req, &resp))
+			s.audit.appendNotDispatched(fromResponse(time.Now().UTC(), &req, &resp))
 			writeActionResponse(w, r, http.StatusUnprocessableEntity, resp)
 			return
 		}
 	}
-	if schematicGeometrySerializes(&req) {
+	navigation, _ := r.Context().Value(runtimeNavigationKey{}).(*runtimeNavigationProof)
+	if schematicGeometrySerializes(&req) && !navigation.matches(req, target.snapshot().Context) {
 		release, acquired := s.acquireExclusive("schematic-geometry-window", req.WindowID)
 		if !acquired {
 			errResp := errorResponse(req.ID, "ACTION_BUSY", "a write/document transition is being verified on this window", "wait for its readback; do not interleave another write or document switch")
-			s.audit.Append(fromResponse(time.Now().UTC(), &req, &errResp))
+			s.audit.appendNotDispatched(fromResponse(time.Now().UTC(), &req, &errResp))
 			writeActionResponse(w, r, http.StatusConflict, errResp)
 			return
 		}
@@ -263,7 +264,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	// still running and its effect may land later.
 	if errResp := s.checkQueueBlocked(&req); errResp != nil {
 		started := time.Now().UTC()
-		s.audit.Append(fromResponse(started, &req, errResp))
+		s.audit.appendNotDispatched(fromResponse(started, &req, errResp))
 		writeActionResponse(w, r, http.StatusServiceUnavailable, *errResp)
 		return
 	}
@@ -277,7 +278,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 			errResp := errorResponse(req.ID, "ACTION_BUSY",
 				fmt.Sprintf("%s is already running on this window", req.Action),
 				"wait for the in-flight check to settle; if it never does, EasyEDA is in the background — bring the window to the FOREGROUND and run once (do not retry in a loop)")
-			s.audit.Append(fromResponse(started, &req, &errResp))
+			s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
 			writeActionResponse(w, r, http.StatusConflict, errResp)
 			return
 		}
@@ -292,10 +293,42 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	// Adaptive backoff (writehealth.go, REPORT round2 新 3): every forwarded
 	currentContext := target.snapshot().Context
 	s.runtime.prepare(&req, &currentContext, r.Context().Value(runtimeBaselineKey{}))
-	if err := s.runtime.start(req, &currentContext); err != nil {
+	req.Payload["_connectionEpoch"] = target.epoch
+	if err := s.runtime.start(req, &currentContext, navigation); err != nil {
 		errResp := errorResponse(req.ID, "RUNTIME_STATE_CHANGED", "task evidence changed before dispatch", err.Error())
-		s.audit.Append(fromResponse(started, &req, &errResp))
+		if errors.Is(err, errRuntimeDuplicateRequest) {
+			errResp = errorResponse(req.ID, "DUPLICATE_REQUEST", "request ID is already retained; no action dispatched", err.Error())
+		} else if errors.Is(err, errRuntimeCapacity) {
+			errResp = errorResponse(req.ID, "RUNTIME_CAPACITY", "active runtime evidence retained; no action dispatched", err.Error())
+		} else if errors.Is(err, errRuntimePersistence) {
+			errResp = errorResponse(req.ID, "RECOVERY_STORE_FAILED", "durable intent unavailable; no action dispatched", err.Error())
+		} else if errors.Is(err, errRuntimeScopeBusy) {
+			errResp = errorResponse(req.ID, "RUNTIME_SCOPE_BUSY", "a conflicting project write is executing; no action dispatched", err.Error())
+		} else if errors.Is(err, errRuntimeScopeUnknown) {
+			errResp = errorResponse(req.ID, "RUNTIME_SCOPE_UNKNOWN", "related write or unsaved owner needs reconciliation; no action dispatched", err.Error())
+		}
+		s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
 		writeActionResponse(w, r, http.StatusConflict, errResp)
+		return
+	}
+	if navigation == nil {
+		if err := s.checkFreshNativeExecution(r, req, currentContext); err != nil {
+			errResp := errorResponse(req.ID, "RUNTIME_SCOPE_BUSY", "a native call is still executing or its queue could not be confirmed; no action dispatched", err.Error())
+			if errors.Is(err, errRuntimePersistence) {
+				errResp = errorResponse(req.ID, "RECOVERY_STORE_FAILED", "execution evidence could not be read; no action dispatched", err.Error())
+			}
+			if persistErr := s.runtime.rejectFreshIntent(req.ID, errResp); persistErr != nil {
+				errResp = errorResponse(req.ID, "RECOVERY_STORE_FAILED", "unsent intent could not be committed; no action dispatched", persistErr.Error())
+			}
+			s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
+			writeActionResponse(w, r, http.StatusConflict, errResp)
+			return
+		}
+	}
+	if err := s.runtime.markDispatched(req.ID); err != nil {
+		errResp := errorResponse(req.ID, "RECOVERY_STORE_FAILED", "dispatch intent could not be committed; no action dispatched", err.Error())
+		s.audit.appendNotDispatched(fromResponse(started, &req, &errResp))
+		writeActionResponse(w, r, http.StatusServiceUnavailable, errResp)
 		return
 	}
 	// outcome feeds the rolling per-window health; whitelisted idempotent
@@ -305,6 +338,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	// response that re-read the canvas and reported survivors/notApplied counts
 	// as a failed write however green its ok flag is (通道 A).
 	hooks := adaptiveHooks{
+		noRetry: navigation.matches(req, currentContext),
 		observe: func(o outcome) { s.writeHealth.observe(req.WindowID, o) },
 		auditFirst: func(firstResp *protocol.Response, firstErr error) {
 			first := firstResp
@@ -339,7 +373,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		}
 		errResp := errorResponse(req.ID, "DISPATCH_FAILED", message, err.Error())
 		s.writeHealth.annotateDegraded(&req, &errResp)
-		s.audit.Append(fromResponse(started, &req, &errResp))
+		s.persistExecutionResult(started, &req, &errResp, false)
 		writeActionResponse(w, r, status, errResp)
 		return
 	}
@@ -369,7 +403,7 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 	// mutating actions get the fake-failure-law advice (verify by light read
 	// before resending). Nothing is retried here. See writehealth.go.
 	s.writeHealth.annotateDegraded(&req, resp)
-	s.audit.Append(fromResponse(started, &req, resp))
+	s.persistExecutionResult(started, &req, resp, true)
 	// After a successful content-changing action, arm a debounced autosave so the
 	// work reaches disk without the agent having to remember to save (no-op when
 	// autosave is disabled or the action doesn't mutate). See autosave.go.
@@ -377,6 +411,27 @@ func (s *Server) handleAction(w http.ResponseWriter, r *http.Request) {
 		s.maybeAutosave(&req)
 	}
 	writeActionResponse(w, r, http.StatusOK, resp)
+}
+
+func (s *Server) persistExecutionResult(started time.Time, req *protocol.Request, resp *protocol.Response, known bool) {
+	entry := fromResponse(started, req, resp)
+	err := s.runtime.settleExecution(*req, entry, known)
+	entry.runtimeObserved = true
+	if mirrorErr := s.audit.AppendChecked(entry); err == nil {
+		err = mirrorErr
+	}
+	if err == nil {
+		return
+	}
+	execution := runtimeClone(resp)
+	if resp.Result == nil {
+		resp.Result = map[string]any{}
+	}
+	resp.Result["execution"] = map[string]any{"requestId": req.ID, "known": known, "response": execution}
+	resp.Result["persistence"] = map[string]any{"ok": false, "error": err.Error()}
+	resp.Result["retryable"] = false
+	resp.OK = false
+	resp.Error = &protocol.ErrorInfo{Code: "RECOVERY_PERSISTENCE_FAILED", Message: "execution completed or remains unknown; recovery evidence could not be fully committed", Detail: err.Error()}
 }
 
 // artifactDir picks where to persist artifacts. The CLI sends its own working
@@ -409,10 +464,13 @@ func stripArtifactNesting(p string) string {
 		if segs[i] == ".easyeda" && segs[i+1] == "artifacts" {
 			trimmed := strings.Join(segs[:i], sep)
 			if trimmed == "" {
-				if filepath.IsAbs(clean) {
+				if strings.HasPrefix(clean, sep) {
 					return sep
 				}
 				return "."
+			}
+			if trimmed == filepath.VolumeName(clean) {
+				return trimmed + sep
 			}
 			return trimmed
 		}

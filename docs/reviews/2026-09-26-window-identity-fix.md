@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # 同文档连接互踢修复
 
 状态：dev.9 连接身份修复已通过离线测试和现场定向恢复，完整 B00–B10 待重跑。dev.8 的 B00 仍为 blocked，高级验收未放行。
@@ -51,7 +53,7 @@ P1 reload 前后默认 `sch list` 返回的完整 `result` 与 `context` 严格�
 后台旧 dev.8 连接使首次全局包对账返回 exit 10（保留 14 号记录）。读取它的 shared runtime，
 确认 implementation、windowId 和 hidden 状态后，仅调用本仓库已有 controller 的 `stop(false)`；
 未刷新旧页、未改变工程或扩展权限。17/18 号记录确认唯一目标为 dev.9 且全包对账 `READY`。
-稳定窗口为 `f7bf24e4-58a8-4a1b-b175-06f24baa48bc`，原工程/P1 UUID 不变。
+稳定窗口为 `UUID-773bdd65a9a5`，原工程/P1 UUID 不变。
 这里证明连接恢复和本次 P1 保持，不补签其他基础项、PCB 数据或实际改名能力。
 
 原始记录 07 使用了不存在的 `sch components`，CLI exit 1 且未派发；随后依据帮助改为 `sch list`。

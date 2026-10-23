@@ -618,6 +618,7 @@ export interface NativeFootprintSource {
 export function projectFootprintSourceInventory(
 	text: string,
 	documentUuid: string,
+	assetKind: 'FOOTPRINT' | 'SYMBOL' = 'FOOTPRINT',
 ): Array<{ footprintUuid: string; documentSource: string; sourceKind: 'project-epro2' }> {
 	if (!documentUuid || text.length > 64 * 1024 * 1024) throw new Error('native project source is missing its target or exceeds 64 MiB');
 	const rows = text.split(/\r?\n/);
@@ -642,7 +643,7 @@ export function projectFootprintSourceInventory(
 			const payload = JSON.parse(line.slice(delimiter + 2, -1)) as Record<string, unknown>;
 			current = undefined;
 			if (payload.docType === 'SCH_PAGE' && payload.uuid === documentUuid) targetPages++;
-			if (payload.docType === 'FOOTPRINT') {
+			if (payload.docType === assetKind) {
 				if (typeof payload.uuid !== 'string') throw new Error('footprint DOCHEAD has no instance UUID');
 				current = { footprintUuid: payload.uuid, documentSource: line + '\n', sourceKind: 'project-epro2' };
 				inventory.push(current);
@@ -663,6 +664,7 @@ export interface NativeSchematicAttribute {
 	parentId: string;
 	keyVisible?: boolean | null;
 	valueVisible?: boolean | null;
+	align?: null;
 }
 
 /** Exact ATTR records from one SCH_PAGE of an official current-project export.
@@ -714,6 +716,7 @@ export function projectSchematicAttributeInventory(
 			id, key: payload.key, value: payload.value, parentId: payload.parentId,
 			keyVisible: payload.keyVisible as boolean | null | undefined,
 			valueVisible: payload.valueVisible as boolean | null | undefined,
+			...(payload.align === null ? { align: null } : {}),
 		});
 		if (attributes.size > 200000) throw new Error('native SCH_PAGE exceeds 200000 attributes');
 	}
@@ -728,6 +731,7 @@ export function projectSchematicAttributeInventory(
 export function readNativeFootprintSource(
 	inventory: unknown,
 	instanceUuid: string,
+	assetKind: 'FOOTPRINT' | 'SYMBOL' = 'FOOTPRINT',
 ): { source?: NativeFootprintSource; error?: string } {
 	const object = (v: unknown): Record<string, unknown> | undefined =>
 		v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined;
@@ -754,7 +758,7 @@ export function readNativeFootprintSource(
 			if (!header || !payload) throw new Error('native row is not a pair of objects');
 			if (header.type === 'DOCHEAD') {
 				heads++;
-				if (heads !== 1 || payload.docType !== 'FOOTPRINT' || payload.uuid !== instanceUuid) throw new Error('DOCHEAD does not identify exactly this footprint');
+				if (heads !== 1 || payload.docType !== assetKind || payload.uuid !== instanceUuid) throw new Error('DOCHEAD does not identify exactly this native asset');
 			} else if (header.type === 'META') {
 				metas++;
 				if (heads !== 1 || metas !== 1) throw new Error('META must uniquely follow the footprint DOCHEAD');

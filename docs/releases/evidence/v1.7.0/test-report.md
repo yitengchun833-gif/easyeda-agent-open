@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # v1.7.0 基础 CLI 发布测试报告
 
 ## 结论与边界
@@ -152,13 +154,13 @@ B10 所有临时 PCB 对象清理后，保存重载与初始完整 dump 对应�
 | 记录 | UTC | 秒 | 退出码 | 命令 |
 |---|---|---:|---:|---|
 | 01-pcb-save.json | 2026-09-24T16:57:30.812263+00:00 | 1.474 | 0 | `/usr/local/bin/easyeda pcb save --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 02-pcb-before.json | 2026-09-24T16:57:32.400733+00:00 | 0.164 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B02/pcb-before.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 02-pcb-before.json | 2026-09-24T16:57:32.400733+00:00 | 0.164 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B02/pcb-before.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 03-sch-save.json | 2026-09-24T16:57:32.659905+00:00 | 1.634 | 0 | `/usr/local/bin/easyeda sch save --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b` |
 | 04-sch-before.json | 2026-09-24T16:57:34.405658+00:00 | 0.035 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-wires --include-page-primitives --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b` |
 | 05-health-before.json | 2026-09-24T16:57:34.505190+00:00 | 0.012 | 0 | `/usr/local/bin/easyeda health` |
 | 07-wait-00.json | 2026-09-24T16:58:01.099365+00:00 | 0.014 | 0 | `/usr/local/bin/easyeda health` |
 | 08-sch-after.json | 2026-09-24T16:58:01.186107+00:00 | 0.032 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-wires --include-page-primitives --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b` |
-| 09-pcb-after.json | 2026-09-24T16:58:01.290904+00:00 | 1.549 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B02/pcb-after.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 09-pcb-after.json | 2026-09-24T16:58:01.290904+00:00 | 1.549 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B02/pcb-after.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 10-return.json | 2026-09-24T16:58:02.925842+00:00 | 0.853 | 0 | `/usr/local/bin/easyeda doc open e453c0063919726b --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b` |
 | 11-health-final.json | 2026-09-24T16:58:03.895117+00:00 | 0.018 | 0 | `/usr/local/bin/easyeda health` |
 
@@ -191,16 +193,16 @@ daemon 持续运行；重启启动记录和启动日志已冻结。此前升级�
 | 记录 | UTC | 秒 | 退出码 | 命令 |
 |---|---|---:|---:|---|
 | 01-libraries.json | 2026-09-24T16:58:58.893287+00:00 | 0.032 | 0 | `/usr/local/bin/easyeda lib libraries --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b` |
-| 02-create.json | 2026-09-24T16:58:59.029375+00:00 | 4.624 | 0 | `/usr/local/bin/easyeda project create --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --name ceshi-cli-basic-dev21-20260925 --description 'dev.21 基础 CLI 单动作测试专用容器' --open` |
+| 02-create.json | 2026-09-24T16:58:59.029375+00:00 | 4.624 | 0 | `/usr/local/bin/easyeda project create --window UUID-447b19ce54b5 --name ceshi-cli-basic-dev21-20260925 --description 'dev.21 基础 CLI 单动作测试专用容器' --open` |
 | 03-info.json | 2026-09-24T16:59:26.801118+00:00 | 0.018 | 0 | `/usr/local/bin/easyeda project info --project 7186b88d407441ac83d003db71448462` |
 | 04-health.json | 2026-09-24T16:59:26.907382+00:00 | 0.012 | 0 | `/usr/local/bin/easyeda health` |
 | 05-docs.json | 2026-09-24T16:59:26.997003+00:00 | 0.017 | 0 | `/usr/local/bin/easyeda doc ls --json --project 7186b88d407441ac83d003db71448462` |
 | 06-pages.json | 2026-09-24T16:59:27.085922+00:00 | 0.014 | 0 | `/usr/local/bin/easyeda sch pages --project 7186b88d407441ac83d003db71448462` |
-| 07-find.json | 2026-09-24T16:59:27.165474+00:00 | 14.359 | 0 | `/usr/local/bin/easyeda project find --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --name ceshi-cli-basic-dev21-20260925 --team f60b2174579745258ada9b72bbe2f52b --timeout 120s` |
-| 08-open.json | 2026-09-24T16:59:57.427225+00:00 | 0.749 | 0 | `/usr/local/bin/easyeda project open --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --project-uuid 7186b88d407441ac83d003db71448462 --page-uuid a07f2d2566a5eab9 --allow-discard-unsaved` |
+| 07-find.json | 2026-09-24T16:59:27.165474+00:00 | 14.359 | 0 | `/usr/local/bin/easyeda project find --window UUID-447b19ce54b5 --name ceshi-cli-basic-dev21-20260925 --team f60b2174579745258ada9b72bbe2f52b --timeout 120s` |
+| 08-open.json | 2026-09-24T16:59:57.427225+00:00 | 0.749 | 0 | `/usr/local/bin/easyeda project open --window UUID-447b19ce54b5 --project-uuid 7186b88d407441ac83d003db71448462 --page-uuid a07f2d2566a5eab9 --allow-discard-unsaved` |
 | 09-empty.json | 2026-09-24T16:59:58.273825+00:00 | 0.03 | 0 | `/usr/local/bin/easyeda sch list --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
 | 10-save.json | 2026-09-24T16:59:58.413700+00:00 | 0.029 | 0 | `/usr/local/bin/easyeda sch save --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
-| 11-export.json | 2026-09-24T16:59:58.570011+00:00 | 0.298 | 0 | `/usr/local/bin/easyeda project export-source --uuid 7186b88d407441ac83d003db71448462 --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B03/project.epro2 --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
+| 11-export.json | 2026-09-24T16:59:58.570011+00:00 | 0.298 | 0 | `/usr/local/bin/easyeda project export-source --uuid 7186b88d407441ac83d003db71448462 --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B03/project.epro2 --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
 
 #### 清理、归因与边界
 
@@ -358,7 +360,7 @@ NC 设置及清除各 fresh 核对一次，R1.1 最终 noConnected:false，#257 
 |---|---|---:|---:|---|
 | 01-save-new-P1.json | 2026-09-24T17:06:04.251684+00:00 | 1.657 | 0 | `/usr/local/bin/easyeda sch save --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
 | 02-save-new-test.json | 2026-09-24T17:06:05.974257+00:00 | 1.614 | 0 | `/usr/local/bin/easyeda sch save --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
-| 03-open-fixture.json | 2026-09-24T17:06:07.666034+00:00 | 3.399 | 0 | `/usr/local/bin/easyeda project open --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --project-uuid 0f46d4361c4741a9ab7a9ed62164ca9b --page-uuid e453c0063919726b --allow-discard-unsaved` |
+| 03-open-fixture.json | 2026-09-24T17:06:07.666034+00:00 | 3.399 | 0 | `/usr/local/bin/easyeda project open --window UUID-447b19ce54b5 --project-uuid 0f46d4361c4741a9ab7a9ed62164ca9b --page-uuid e453c0063919726b --allow-discard-unsaved` |
 | 04-docs.json | 2026-09-24T17:06:11.143299+00:00 | 0.015 | 0 | `/usr/local/bin/easyeda pcb docs --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc e453c0063919726b` |
 | 05-info.json | 2026-09-24T17:06:11.228415+00:00 | 3.125 | 0 | `/usr/local/bin/easyeda pcb board-info --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 06-before.json | 2026-09-24T17:06:14.453305+00:00 | 0.043 | 0 | `/usr/local/bin/easyeda pcb list --include-pads --include-bbox --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
@@ -403,7 +405,7 @@ NC 设置及清除各 fresh 核对一次，R1.1 最终 noConnected:false，#257 
 | 03-config-dry.json | 2026-09-24T17:07:07.039429+00:00 | 0.026 | 0 | `/usr/local/bin/easyeda pcb config track --name copperThickness1oz --min 7 --dry-run --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 04-config-write.json | 2026-09-24T17:07:07.147850+00:00 | 0.073 | 0 | `/usr/local/bin/easyeda pcb config track --name copperThickness1oz --min 7 --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 05-config-read.json | 2026-09-24T17:07:07.413607+00:00 | 0.025 | 0 | `/usr/local/bin/easyeda pcb config get --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 06-config-restore.json | 2026-09-24T17:07:07.525121+00:00 | 0.08 | 0 | `/usr/local/bin/easyeda pcb drc-rules-set --from /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B08/restore-config.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 06-config-restore.json | 2026-09-24T17:07:07.525121+00:00 | 0.08 | 0 | `/usr/local/bin/easyeda pcb drc-rules-set --from /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B08/restore-config.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 07-config-restored.json | 2026-09-24T17:07:07.766350+00:00 | 0.025 | 0 | `/usr/local/bin/easyeda pcb config get --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 07a-config-save.json | 2026-09-24T17:07:55.038615+00:00 | 0.035 | 0 | `/usr/local/bin/easyeda pcb save --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 07b-config-reload.json | 2026-09-24T17:07:55.241083+00:00 | 2.95 | 0 | `/usr/local/bin/easyeda doc reload 3037fc1dfa4965d2 --json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
@@ -445,7 +447,7 @@ NC 设置及清除各 fresh 核对一次，R1.1 最终 noConnected:false，#257 
 | 23-pour-keep.json | 2026-09-24T17:10:26.573950+00:00 | 0.292 | 0 | `/usr/local/bin/easyeda pcb pour --points '[[3550,3450],[3750,3450],[3750,3550],[3550,3550]]' --net CLI21_NET --layer 1 --name CLI21_POUR --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 23-pour-read.json | 2026-09-24T17:10:26.220382+00:00 | 0.022 | 0 | `/usr/local/bin/easyeda pcb pour-list --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 30-save.json | 2026-09-24T17:10:27.082760+00:00 | 0.039 | 0 | `/usr/local/bin/easyeda pcb save --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 31-dump.json | 2026-09-24T17:10:27.196475+00:00 | 0.245 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B08/geometry-final.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 31-dump.json | 2026-09-24T17:10:27.196475+00:00 | 0.245 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B08/geometry-final.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 32-named-region.json | 2026-09-24T17:11:09.250362+00:00 | 0.063 | 0 | `/usr/local/bin/easyeda pcb region create --rect 3900,3850,4000,3950 --layer 1 --rule follow-rule --name CLI21_REGION --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 33-named-read.json | 2026-09-24T17:11:09.582778+00:00 | 0.029 | 0 | `/usr/local/bin/easyeda pcb region list --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 34-named-delete.json | 2026-09-24T17:11:09.688999+00:00 | 0.06 | 0 | `/usr/local/bin/easyeda pcb region delete --ids e026413622231f5b --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
@@ -479,18 +481,18 @@ PCB save→reload→fresh dump 除 capturedAt 外全部字段严格相等，含 
 | 记录 | UTC | 秒 | 退出码 | 命令 |
 |---|---|---:|---:|---|
 | 01-pcb-save.json | 2026-09-24T17:11:50.897893+00:00 | 0.039 | 0 | `/usr/local/bin/easyeda pcb save --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 02-pcb-before.json | 2026-09-24T17:11:51.029453+00:00 | 0.437 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/pcb-before.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 02-pcb-before.json | 2026-09-24T17:11:51.029453+00:00 | 0.437 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/pcb-before.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 03-pcb-reload.json | 2026-09-24T17:11:51.601219+00:00 | 2.966 | 0 | `/usr/local/bin/easyeda doc reload 3037fc1dfa4965d2 --json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 04-pcb-after.json | 2026-09-24T17:11:54.657085+00:00 | 0.177 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/pcb-after.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 04-pcb-after.json | 2026-09-24T17:11:54.657085+00:00 | 0.177 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/pcb-after.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 05-pcb-export.json | 2026-09-24T17:11:54.931035+00:00 | 0.166 | 0 | `/usr/local/bin/easyeda pcb export-dsn --name cli-basic-dev21.dsn --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 06-open-sch-project.json | 2026-09-24T17:11:55.183513+00:00 | 3.146 | 0 | `/usr/local/bin/easyeda project open --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --project-uuid 7186b88d407441ac83d003db71448462 --page-uuid d81c0aa4c66b2e62 --allow-discard-unsaved` |
+| 06-open-sch-project.json | 2026-09-24T17:11:55.183513+00:00 | 3.146 | 0 | `/usr/local/bin/easyeda project open --window UUID-447b19ce54b5 --project-uuid 7186b88d407441ac83d003db71448462 --page-uuid d81c0aa4c66b2e62 --allow-discard-unsaved` |
 | 07-sch-save.json | 2026-09-24T17:11:58.421491+00:00 | 0.027 | 0 | `/usr/local/bin/easyeda sch save --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 08-sch-netlist-before.json | 2026-09-24T17:11:58.530965+00:00 | 0.7 | 0 | `/usr/local/bin/easyeda sch netlist --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
-| 09-sch-svg-before.json | 2026-09-24T17:11:59.324486+00:00 | 0.081 | 0 | `/usr/local/bin/easyeda sch export-image --format svg --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/sch-before.svg --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
+| 09-sch-svg-before.json | 2026-09-24T17:11:59.324486+00:00 | 0.081 | 0 | `/usr/local/bin/easyeda sch export-image --format svg --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/sch-before.svg --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 10-sch-before.json | 2026-09-24T17:11:59.514444+00:00 | 0.241 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-bbox --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 11-sch-reload.json | 2026-09-24T17:11:59.838773+00:00 | 1.406 | 0 | `/usr/local/bin/easyeda doc reload d81c0aa4c66b2e62 --json --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 12-sch-after.json | 2026-09-24T17:12:01.345442+00:00 | 0.288 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-bbox --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
-| 13-sch-svg-after.json | 2026-09-24T17:12:01.714587+00:00 | 0.088 | 0 | `/usr/local/bin/easyeda sch export-image --format svg --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/sch-after.svg --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
+| 13-sch-svg-after.json | 2026-09-24T17:12:01.714587+00:00 | 0.088 | 0 | `/usr/local/bin/easyeda sch export-image --format svg --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B09/sch-after.svg --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 14-sch-netlist-after.json | 2026-09-24T17:12:01.884938+00:00 | 0.031 | 0 | `/usr/local/bin/easyeda sch netlist --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 15-bom.json | 2026-09-24T17:12:02.006255+00:00 | 0.037 | 0 | `/usr/local/bin/easyeda bom export --type csv --enrich=false --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 
@@ -525,18 +527,18 @@ PCB save→reload→fresh dump 除 capturedAt 外全部字段严格相等，含 
 | 03-sch-bad-patch.json | 2026-09-24T17:14:45.404579+00:00 | 0.025 | 1 | `/usr/local/bin/easyeda sch modify --id f521bbe995077052 --patch '{"unsupportedField":1}' --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 04-sch-after.json | 2026-09-24T17:14:45.510975+00:00 | 0.353 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 05-sch-save.json | 2026-09-24T17:14:45.927595+00:00 | 0.019 | 0 | `/usr/local/bin/easyeda sch save --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
-| 06-open-pcb-project.json | 2026-09-24T17:14:46.018848+00:00 | 3.46 | 0 | `/usr/local/bin/easyeda project open --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --project-uuid 0f46d4361c4741a9ab7a9ed62164ca9b --page-uuid e453c0063919726b --allow-discard-unsaved` |
-| 07-pcb-before.json | 2026-09-24T17:14:49.551609+00:00 | 3.465 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-before.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 06-open-pcb-project.json | 2026-09-24T17:14:46.018848+00:00 | 3.46 | 0 | `/usr/local/bin/easyeda project open --window UUID-447b19ce54b5 --project-uuid 0f46d4361c4741a9ab7a9ed62164ca9b --page-uuid e453c0063919726b --allow-discard-unsaved` |
+| 07-pcb-before.json | 2026-09-24T17:14:49.551609+00:00 | 3.465 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-before.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 08-wrong-doc.json | 2026-09-24T17:14:53.113891+00:00 | 0.025 | 1 | `/usr/local/bin/easyeda pcb track --x1 3617 --y1 3500 --x2 3700 --y2 3500 --width 8 --net CLI21_NET --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 0000000000000000` |
 | 09-stale-modify.json | 2026-09-24T17:14:53.218474+00:00 | 0.019 | 1 | `/usr/local/bin/easyeda pcb modify --id e05c6049a117c7ac --patch '{"x":3900}' --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 10-stale-delete.json | 2026-09-24T17:14:53.316687+00:00 | 0.023 | 1 | `/usr/local/bin/easyeda pcb delete --ids e05c6049a117c7ac --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 11-invalid-width.json | 2026-09-24T17:14:53.413285+00:00 | 0.011 | 1 | `/usr/local/bin/easyeda pcb track --x1 3617 --y1 3500 --x2 3700 --y2 3500 --width abc --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 12-invalid-region.json | 2026-09-24T17:14:53.506097+00:00 | 0.039 | 1 | `/usr/local/bin/easyeda pcb region create --rect 3900,3700,4000,3800 --rule no-pours --name INVALID --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 13-pcb-after.json | 2026-09-24T17:14:53.622741+00:00 | 0.167 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-after.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 13-pcb-after.json | 2026-09-24T17:14:53.622741+00:00 | 0.167 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-after.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 14-isolated-health-0.json | 2026-09-24T17:15:31.332751+00:00 | 0.018 | 0 | `/usr/local/bin/easyeda health --ports 60942-60942` |
 | 15-no-connector.json | 2026-09-24T17:15:31.430602+00:00 | 0.015 | 1 | `/usr/local/bin/easyeda pcb track --ports 60942-60942 --x1 3617 --y1 3500 --x2 3700 --y2 3500 --width 8 --net CLI21_NET --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 16-primary-health.json | 2026-09-24T17:15:31.530649+00:00 | 0.014 | 0 | `/usr/local/bin/easyeda health` |
-| 17-post-isolation.json | 2026-09-24T17:15:31.629173+00:00 | 0.437 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-after-isolation.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 17-post-isolation.json | 2026-09-24T17:15:31.629173+00:00 | 0.437 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-after-isolation.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 20-track-after-clean.json | 2026-09-24T17:16:12.596403+00:00 | 0.024 | 0 | `/usr/local/bin/easyeda pcb track-list --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 20-track-before-clean.json | 2026-09-24T17:16:12.244709+00:00 | 0.031 | 0 | `/usr/local/bin/easyeda pcb track-list --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 20-track-clean.json | 2026-09-24T17:16:12.363782+00:00 | 0.067 | 0 | `/usr/local/bin/easyeda pcb track-delete --ids 3647a38c5b59fda0 --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
@@ -555,9 +557,9 @@ PCB save→reload→fresh dump 除 capturedAt 外全部字段严格相等，含 
 | 27-outline-clean.json | 2026-09-24T17:16:14.183180+00:00 | 0.056 | 0 | `/usr/local/bin/easyeda pcb outline-clear --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 28-pcb-clean-save.json | 2026-09-24T17:16:14.338403+00:00 | 0.04 | 0 | `/usr/local/bin/easyeda pcb save --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 29-pcb-clean-reload.json | 2026-09-24T17:16:14.483782+00:00 | 3.343 | 0 | `/usr/local/bin/easyeda doc reload 3037fc1dfa4965d2 --json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 30-pcb-clean-read.json | 2026-09-24T17:16:17.938490+00:00 | 0.148 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/mikas/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-clean.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
+| 30-pcb-clean-read.json | 2026-09-24T17:16:17.938490+00:00 | 0.148 | 0 | `/usr/local/bin/easyeda pcb dump --include-copper --out /Users/USER/github/easyeda-agent/artifacts/cli-basic-dev21-20260925/B10/pcb-clean.json --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
 | 31-config-clean.json | 2026-09-24T17:16:18.173902+00:00 | 0.101 | 0 | `/usr/local/bin/easyeda pcb config get --project 0f46d4361c4741a9ab7a9ed62164ca9b --doc 3037fc1dfa4965d2` |
-| 32-open-sch-project.json | 2026-09-24T17:17:09.385388+00:00 | 2.548 | 0 | `/usr/local/bin/easyeda project open --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --project-uuid 7186b88d407441ac83d003db71448462 --page-uuid d81c0aa4c66b2e62 --allow-discard-unsaved` |
+| 32-open-sch-project.json | 2026-09-24T17:17:09.385388+00:00 | 2.548 | 0 | `/usr/local/bin/easyeda project open --window UUID-447b19ce54b5 --project-uuid 7186b88d407441ac83d003db71448462 --page-uuid d81c0aa4c66b2e62 --allow-discard-unsaved` |
 | 33-page-before-clean.json | 2026-09-24T17:17:12.061574+00:00 | 1.0 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 33b-page-same-options.json | 2026-09-24T17:18:10.164771+00:00 | 0.425 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-bbox --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc d81c0aa4c66b2e62` |
 | 34-P1-before-clean.json | 2026-09-24T17:18:10.689358+00:00 | 2.123 | 0 | `/usr/local/bin/easyeda sch list --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
@@ -567,7 +569,7 @@ PCB save→reload→fresh dump 除 capturedAt 外全部字段严格相等，含 
 | 38-P1-reload.json | 2026-09-24T17:18:13.544624+00:00 | 1.386 | 0 | `/usr/local/bin/easyeda doc reload a07f2d2566a5eab9 --json --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
 | 39-pages-clean.json | 2026-09-24T17:18:15.059317+00:00 | 0.032 | 0 | `/usr/local/bin/easyeda sch pages --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
 | 40-P1-clean.json | 2026-09-24T17:18:15.186739+00:00 | 0.03 | 0 | `/usr/local/bin/easyeda sch list --include-wires --include-page-primitives --project 7186b88d407441ac83d003db71448462 --doc a07f2d2566a5eab9` |
-| 41-restore-original.json | 2026-09-24T17:18:15.305811+00:00 | 2.877 | 0 | `/usr/local/bin/easyeda project open --window 6e80d20d-2fed-407f-9c25-d6c02719a9d3 --project-uuid 4037dd22434c412fa75d7f2d855a2ab4 --page-uuid a6db7873157483f0 --allow-discard-unsaved` |
+| 41-restore-original.json | 2026-09-24T17:18:15.305811+00:00 | 2.877 | 0 | `/usr/local/bin/easyeda project open --window UUID-447b19ce54b5 --project-uuid 4037dd22434c412fa75d7f2d855a2ab4 --page-uuid a6db7873157483f0 --allow-discard-unsaved` |
 | 42-original-read.json | 2026-09-24T17:18:18.297455+00:00 | 1.171 | 0 | `/usr/local/bin/easyeda sch list --include-pins --include-bbox --include-wires --include-page-primitives --project 4037dd22434c412fa75d7f2d855a2ab4 --doc a6db7873157483f0` |
 | 43-final-health.json | 2026-09-24T17:18:19.555026+00:00 | 0.013 | 0 | `/usr/local/bin/easyeda health` |
 

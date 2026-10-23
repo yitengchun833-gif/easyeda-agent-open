@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,7 +18,11 @@ export const DOMAIN_NAMES = [
 ];
 
 export function easyedaBinary() {
-  return process.env.EASYEDA_BIN || 'easyeda';
+  if (process.env.EASYEDA_BIN) return process.env.EASYEDA_BIN;
+  const executable = process.platform === 'win32' ? 'easyeda.exe' : 'easyeda';
+  // Distribution and source imports must use their companion CLI before a possibly older PATH installation.
+  return ['../../bin/', '../../../bin/'].map(dir => fileURLToPath(new URL(dir + executable, import.meta.url)))
+    .find(candidate => existsSync(candidate)) || 'easyeda';
 }
 
 export async function runEasyeda(args, timeoutMs = 300_000) {

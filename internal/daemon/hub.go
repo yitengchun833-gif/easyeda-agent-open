@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -36,8 +37,10 @@ type Window struct {
 // writes are serialized through writeMu so dispatch goroutines can send
 // requests concurrently and safely.
 type conn struct {
-	ws      *websocket.Conn
-	writeMu sync.Mutex
+	epoch            string
+	ws               *websocket.Conn
+	writeMu          sync.Mutex
+	knowledgeAllowed bool // Credentials are delivered only to the official local editor origin.
 
 	mu          sync.Mutex
 	windowID    string
@@ -55,9 +58,11 @@ type conn struct {
 }
 
 var errConnectorDisconnected = errors.New("connector disconnected before responding")
+var connectionSequence atomic.Uint64
 
 func newConn(ws *websocket.Conn, now time.Time) *conn {
 	return &conn{
+		epoch:       fmt.Sprintf("%d-%d", now.UnixNano(), connectionSequence.Add(1)),
 		ws:          ws,
 		connectedAt: now,
 		lastSeen:    now,
@@ -273,8 +278,44 @@ func (h *hub) add(c *conn) {
 		return
 	}
 	h.mu.Lock()
+	c.pendingMu.Lock()
+	closed := c.closed
+	c.pendingMu.Unlock()
+	if closed {
+		h.mu.Unlock()
+		return
+	}
+	if old := h.windows[id]; old != nil && old != c {
+		old.disconnect()
+	}
 	h.windows[id] = c
 	h.mu.Unlock()
+}
+
+// A window ID is routing, not ownership of a replacement connection.
+func (h *hub) withCurrent(c *conn, apply func()) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.windows[c.id()] != c {
+		return false
+	}
+	apply()
+	return true
+}
+
+func (h *hub) removeCurrent(c *conn) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	id := c.id()
+	if h.windows[id] != c {
+		return false
+	}
+	c.disconnect()
+	w := c.snapshot()
+	h.retired[id] = retiredWindow{ProjectUUID: w.Context.ProjectUUID, ProjectName: w.Context.ProjectName, DocumentUUID: w.Context.DocumentUUID, DocumentType: w.Context.DocumentType, RetiredAt: time.Now().UTC()}
+	delete(h.windows, id)
+	h.pruneRetiredLocked()
+	return true
 }
 
 // pruneStale removes registrations whose transport stopped sending frames.

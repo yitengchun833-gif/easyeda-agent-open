@@ -1,0 +1,94 @@
+{
+  "go": "1.26.3",
+  "compiledModules": [
+    {
+      "module": "github.com/inconshreveable/mousetrap@v1.1.0",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/spf13/pflag@v1.0.9",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/spf13/cobra@v1.10.2",
+      "notices": [
+        "LICENSE.txt"
+      ]
+    },
+    {
+      "module": "github.com/coder/websocket@v1.8.15",
+      "notices": [
+        "LICENSE.txt"
+      ]
+    },
+    {
+      "module": "github.com/dustin/go-humanize@v1.0.1",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/mattn/go-isatty@v0.0.24",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/ncruces/go-strftime@v1.0.0",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/sys@v0.48.0",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "modernc.org/libc@v1.77.1",
+      "notices": [
+        "AUTHORS",
+        "LICENSE",
+        "LICENSE-3RD-PARTY.md"
+      ]
+    },
+    {
+      "module": "github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "modernc.org/mathutil@v1.7.1",
+      "notices": [
+        "AUTHORS",
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "modernc.org/memory@v1.12.1",
+      "notices": [
+        "AUTHORS",
+        "LICENSE",
+        "LICENSE-GO",
+        "LICENSE-LOGO",
+        "LICENSE-MMAP-GO"
+      ]
+    },
+    {
+      "module": "modernc.org/sqlite@v1.60.1",
+      "notices": [
+        "AUTHORS",
+        "LICENSE",
+        "LICENSE-3RD-PARTY.md",
+        "LICENSE-SQLITE",
+        "LICENSE-SQLITE_VEC"
+      ]
+    }
+  ]
+}

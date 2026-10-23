@@ -282,6 +282,26 @@ func TestRuntimeChangedCaptureDoesNotCertifyVisualReview(t *testing.T) {
 	}
 }
 
+func TestRuntimeDisplayReadPreservesPinStatusButPoseChangeInvalidates(t *testing.T) {
+	s := newRuntimeStore()
+	d := s.document("w", &protocol.Context{ProjectUUID: "p", DocumentUUID: "d"})
+	d.read("schematic.components.list", map[string]any{"components": []any{map[string]any{"primitiveId": "r", "x": 10, "pinsAvailable": true, "netlistAvailable": true, "pins": []any{map[string]any{"pinNumber": "1", "net": "GND"}}}}})
+	d.read("schematic.components.list", map[string]any{"readScope": map[string]any{"netRead": "not-requested"}, "components": []any{map[string]any{"primitiveId": "r", "x": 10}}})
+	if d.Objects["r"].StaleFields["pins"] || d.Objects["r"].Data["netlistAvailable"] != true {
+		t.Fatal("display-only observation invalidated existing electrical facts")
+	}
+	d.Objects["r"].StaleFields["pins"] = true
+	d.read("schematic.components.list", map[string]any{"readScope": map[string]any{"netRead": "not-requested"}, "components": []any{map[string]any{"primitiveId": "r", "x": 10}}})
+	if !d.Objects["r"].StaleFields["pins"] {
+		t.Fatal("display read refreshed stale electrical evidence")
+	}
+	delete(d.Objects["r"].StaleFields, "pins")
+	d.read("schematic.components.list", map[string]any{"readScope": map[string]any{"netRead": "not-requested"}, "components": []any{map[string]any{"primitiveId": "r", "x": 20}}})
+	if !d.Objects["r"].StaleFields["pins"] {
+		t.Fatal("changed native pose retained old connectivity freshness")
+	}
+}
+
 func TestRuntimeGeometryReadCannotKeepUnknownNetsFresh(t *testing.T) {
 	s := newRuntimeStore()
 	d := s.document("w", &protocol.Context{ProjectUUID: "p", DocumentUUID: "d"})

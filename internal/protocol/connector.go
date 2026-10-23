@@ -54,6 +54,7 @@ type Register struct {
 	ConnectorVersion string   `json:"connectorVersion"`
 	EasyEDAVersion   string   `json:"easyedaVersion"`
 	Capabilities     []string `json:"capabilities"`
+	Knowledge        bool     `json:"knowledge,omitempty"`
 }
 
 // ContextMessage reports the connector's current project/document context. It

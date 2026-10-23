@@ -539,8 +539,7 @@
       },
       "files": {
         "apply": "candidate-01.apply.json",
-        "candidate": "candidate-01.json",
-        "preview": "candidate-01.svg"
+        "candidate": "candidate-01.json"
       }
     },
     {
@@ -1071,8 +1070,7 @@
       },
       "files": {
         "apply": "candidate-02.apply.json",
-        "candidate": "candidate-02.json",
-        "preview": "candidate-02.svg"
+        "candidate": "candidate-02.json"
       }
     },
     {
@@ -1603,8 +1601,7 @@
       },
       "files": {
         "apply": "candidate-03.apply.json",
-        "candidate": "candidate-03.json",
-        "preview": "candidate-03.svg"
+        "candidate": "candidate-03.json"
       }
     }
   ],

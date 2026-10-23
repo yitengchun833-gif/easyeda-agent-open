@@ -1,0 +1,5 @@
+interface:
+  display_name: "调研"
+  short_description: "使用高可信来源调研"
+policy:
+  allow_implicit_invocation: false

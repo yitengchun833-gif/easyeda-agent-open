@@ -82,9 +82,13 @@ func TestRuntimeRecoveryPreservesSessionAcrossCheckpoint(t *testing.T) {
 	if err := s.runtime.flushCheckpoint(); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.runtime.closeRecovery(); err != nil {
+		t.Fatal(err)
+	}
 	restarted := New(opts)
-	if len(restarted.runtime.documents) != 1 {
-		t.Fatal("empty connection context remained a recovery candidate")
+	t.Cleanup(func() { _ = restarted.runtime.closeRecovery() })
+	if len(restarted.runtime.documents) != 0 {
+		t.Fatal("historical contexts occupied active slots at startup")
 	}
 	restarted.runtime.connectionChanged("legacy", "context", ctx)
 	restarted.runtime.connectionChanged("actual", "context", ctx)

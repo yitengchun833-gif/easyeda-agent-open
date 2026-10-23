@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Information collection result record",
+  "type": "object",
+  "required": ["record_id", "record_kind", "title", "source_url", "canonical_url", "source_name", "retrieved_at", "collector", "quality_score", "evidence"],
+  "properties": {
+    "record_id": {"type": "string"},
+    "record_kind": {"enum": ["job_fact", "company_fact", "experience_signal", "article", "other"]},
+    "title": {"type": "string", "minLength": 1},
+    "organization": {"type": "string"},
+    "location": {"type": "string"},
+    "published_at": {"type": ["string", "null"], "format": "date-time"},
+    "source_url": {"type": "string", "format": "uri"},
+    "canonical_url": {"type": "string", "format": "uri"},
+    "source_name": {"type": "string"},
+    "retrieved_at": {"type": "string", "format": "date-time"},
+    "collector": {"enum": ["anysearch", "agent-reach", "firecrawl", "firecrawl-search", "crawl4ai", "playwright", "chrome-control", "mediacrawler", "manual"]},
+    "discovered_by": {"type": "array", "items": {"enum": ["anysearch", "agent-reach", "firecrawl", "firecrawl-search", "crawl4ai", "playwright", "chrome-control", "mediacrawler", "manual"]}, "uniqueItems": true},
+    "source_type": {"type": "string"},
+    "quality_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "quality_reasons": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "object", "required": ["excerpt"], "properties": {"excerpt": {"type": "string"}, "raw_path": {"type": "string"}}},
+    "metadata": {"type": "object"}
+  }
+}

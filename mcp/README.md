@@ -1,9 +1,12 @@
 # easyeda-agent MCP
 
-Local stdio MCP adapter over the existing `easyeda` CLI/daemon. It exposes 12
-tools: connection health, action discovery, one tool for each of the seven safe
-action domains, circuit blocks, the guarded workflow state machine, and project transfer. The
-arbitrary-JavaScript debug domain is deliberately not exposed.
+Open stdio MCP adapter for the existing Go CLI/HTTP daemon and EasyEDA Connector.
+The current server defines 30 tools: connection and runtime control; action
+discovery, native JavaScript and batches; plans, snapshots and canvas images;
+project transfer, circuit blocks and API lookup; PCB constraints and pad-to-net
+reports; nine action domains; and six knowledge tools. The authoritative list and
+schemas are in `src/server.mjs`, `src/core.mjs` and `src/knowledge-tools.mjs`.
+Loaded client tools must be checked separately after an update.
 
 ```bash
 npm ci --ignore-scripts
@@ -14,21 +17,42 @@ EASYEDA_BIN=/absolute/path/to/easyeda npm start
 Codex registration:
 
 ```bash
-codex mcp add easyeda-agent \
-  --env EASYEDA_BIN=/absolute/path/to/easyeda \
-  -- node /absolute/path/to/mcp/src/server.mjs
+codex mcp add easyeda-open \
+  --env EASYEDA_OPEN_BIN=/absolute/path/to/easyeda \
+  -- node /absolute/path/to/mcp/src/launch.mjs
 ```
 
-The MCP process does not access EasyEDA directly. Mutations still pass through
-the Go daemon, connector, workflow gates, audit log, and official `eda.*` API.
-Mutating typed actions except `project.create` require both `project` and `doc`; use `easyeda_actions`
-before calling a domain tool to inspect its typed payload. Workflow operations
-use structured MCP fields instead of accepting arbitrary CLI options.
+This registration example is for a new installation; retain an existing verified
+portable or plugin registration instead of adding another server. MCP calls use
+the same Go daemon, Connector, audit and official `eda.*` API execution chain.
+Bind the intended `window` from health and provide exact target identities when
+needed. `project`/`doc` are optional legacy CLI navigation fields, not mandatory
+fields for every Open mutation. Use `easyeda_actions(exact: ...)` when an action's
+payload is unknown. Native JavaScript is available through `easyeda_execute`;
+errors and unknown writes still require scoped readback before another write.
 
-After registration, restart the MCP client so it discovers the new server. Run
-`easyeda_health` first, then use `easyeda_actions` to select the exact typed
-action. The Skill's inspect-before-mutate, save, reload, DRC, and workflow-gate
-rules continue to apply to MCP calls.
+Reload the corresponding MCP client after an update to discover its tools. Use
+the current Open Skill at `skills/easyeda-agent-open` relative to the plugin root.
+Plans and `runtime finish/resume` support reviewed execution and acceptance;
+they are selected for the task rather than required for every native operation.
+Preserve target checks, request identity, in-flight exclusion, persistence and
+real errors. Saved, reopened, DRC and visual-review evidence prove different facts.
+
+MCP connection and `easyeda_health` are read-only with respect to service
+lifecycle. A missing daemon is reported without creating runtime files or
+starting a service. When the user requests connection/reconnection, call
+`easyeda_connect({})`: it reuses the healthy configured daemon or explicitly
+starts the companion daemon when absent. It never force-restarts a live daemon,
+opens EasyEDA, replays old requests, or edits/saves a project. A response with
+`connectionState:waiting_for_connector` means only that the daemon is ready;
+there is no connected EDA window yet. Do not call it for status-only requests
+or when service startup is forbidden. No caller-supplied path/port/restart
+arguments are accepted. Reload the MCP client after updating to discover it.
+Health uses the same configured endpoint as direct window-bound actions and
+checks the service, exact component version, and PID from the configured runtime
+directory. An identity mismatch remains an error and never replaces a process.
+Connecting or closing an MCP client does not start or stop the daemon or knowledge
+service.
 
 ## DeepSeek Harness (DSH) 集成
 
@@ -81,7 +105,7 @@ waits for a schematic page and verifies its active identity. Export requires a n
 validates ZIP integrity and reports SHA-256 without overwriting an existing file.
 `restoreVerified: false` means an import round trip has not been verified.
 
-These commands require the matching CLI build. Fixed official-API adapters support
-released connectors without exposing arbitrary JavaScript to the MCP caller.
+These commands require the matching CLI build. Their fixed official-API adapters
+validate project transfer without requiring caller-authored native JavaScript.
 
 Project transfer requires connector handlers `project.open` and `project.export` and the matching CLI/daemon catalog. Both are catalogued; prefer `easyeda_project_transfer` for native export because the CLI validates and writes the archive. Old daemons/connectors reject unknown actions; no debug.exec_js fallback.

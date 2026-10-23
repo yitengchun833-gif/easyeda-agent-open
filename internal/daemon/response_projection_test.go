@@ -40,6 +40,7 @@ func TestPublicResponseProjectsBeforeTransportWithoutChangingEvidence(t *testing
 
 func TestPublicDispatchRetainsAuditAndRuntimeReadback(t *testing.T) {
 	s := New(Options{AuditDir: t.TempDir()})
+	t.Cleanup(func() { _ = s.runtime.closeRecovery() })
 	server := httptest.NewServer(s.routes(0))
 	defer server.Close()
 	base := strings.TrimPrefix(server.URL, "http://")

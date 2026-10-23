@@ -22,11 +22,11 @@ const evaluate = new Function('ctx', 'expression', 'with (ctx) { return eval(exp
 
 const cases = [
   { name: 'Windows drive', windows: true,
-    baseUrl: 'file:///C:/Users/xieyu/.dsh/profiles/web/',
-    directory: 'C:\\Users\\xieyu\\.dsh\\profiles\\web' },
+    baseUrl: 'file:///C:/Users/USER/.dsh/profiles/web/',
+    directory: 'C:\\Users\\USER\\.dsh\\profiles\\web' },
   { name: 'Windows encoded Unicode, spaces, hash and percent', windows: true,
-    baseUrl: 'file:///c:/Users/%E7%94%A8%E6%88%B7%20A%23100%25/.dsh/profiles/web/',
-    directory: 'c:\\Users\\用户 A#100%\\.dsh\\profiles\\web' },
+    baseUrl: 'file:///c:/Users/USER/.dsh/profiles/web/',
+    directory: 'c:\\Users\\USER A#100%\\.dsh\\profiles\\web' },
   { name: 'Windows UNC server and share', windows: true,
     baseUrl: 'file://server/DSH%20profiles/web/',
     directory: '\\\\server\\DSH profiles\\web' },
@@ -36,8 +36,8 @@ const cases = [
     baseUrl: 'file:///home/user/.dsh/profiles/web/',
     directory: '/home/user/.dsh/profiles/web' },
   { name: 'POSIX encoded Unicode, spaces, hash and percent', windows: false,
-    baseUrl: 'file:///Users/%E7%94%A8%E6%88%B7%20A%23100%25/.dsh/profiles/web/',
-    directory: '/Users/用户 A#100%/.dsh/profiles/web' },
+    baseUrl: 'file:///Users/USER/.dsh/profiles/web/',
+    directory: '/Users/USER A#100%/.dsh/profiles/web' },
 ];
 
 for (const fixture of cases) {

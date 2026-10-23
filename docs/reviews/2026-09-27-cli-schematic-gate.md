@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # 完整原理图恢复与新增严格检查失败
 
 2026-09-27 修复响应截断后，以 `v1.7.0-33-gd3409a0`、connector `1.7.1-dev.11`、Web 4.1.60
@@ -84,7 +86,7 @@ PCB 两层 GND、天线/孔/丝印/热仍待实际阶段验证。
 ## 已提交版本的现场定向复测
 
 固定运行版本 `v1.7.0-41-g2d041b5`（CLI/daemon 相同），connector `1.7.1-dev.11`、
-Web `4.1.60`，唯一窗口 `fd5c2e25-edde-46d2-a67f-3cbfe1505253`。
+Web `4.1.60`，唯一窗口 `UUID-b2be11ee51e2`。
 新记录位于 `artifacts/release-v1.8.0-schematic-fix-live-20260927/`；不覆盖旧失败批次。
 
 - P2 诊断前后完整 result 逐字段相同。真实 `sch clusters --strict --json --members` exit 0，

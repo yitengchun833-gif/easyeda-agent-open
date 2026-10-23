@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # 原理图删除修复详细记录
 
 用户可先读[简版结论](2026-09-26-sch-delete-fix.md)。本记录不替代高级验收。
@@ -105,7 +107,7 @@ fresh 回到原图框并保存。原记录分别在 `candidate-dev1/`、`transac
 ## dev.3 删除现场回归
 
 目标固定为测试工程 `0f46d4361c4741a9ab7a9ed62164ca9b` / P1 `e453c0063919726b`，
-窗口 `e3795209-107a-45f1-8d3d-e17a7c91f936`。CLI/daemon/connector 均为 `1.7.1-dev.3`。
+窗口 `UUID-c6f44aecf68e`。CLI/daemon/connector 均为 `1.7.1-dev.3`。
 参数化脚本 `probe-ready.py` 遇到首次 partial、非零退出或残留即停止，不能靠重试签通过。
 
 | 原始失败序列 | 轮数 | 首次 partial | 最终失败 / fresh 残留 |
@@ -137,9 +139,9 @@ WebReload 14 项及 Go 全量通过。首次全量运行误把独立复核保存
 因此编译失败；给离线快照目录添加嵌套 go.mod 隔离后全量通过，原快照字节未改。
 失败日志 `candidate4-go-tests.log` 与重跑日志 `candidate4-go-tests-recheck.log` 均保留。
 
-现场仍保留同工程旧版无文档窗口 `fb05359f-ef05-4098-bed2-3cae5c26c40e`。
-显式目标 `dcd72ee6-8e48-418b-859b-aa9f7a81793a` typed Web reload 后，新窗口
-`db0fb7fd-68ea-4996-9d1c-cfaebcb8b822` 在 9638 ms 完成 stable-component-inventory。
+现场仍保留同工程旧版无文档窗口 `UUID-273e826178ce`。
+显式目标 `UUID-852ada700ef0` typed Web reload 后，新窗口
+`UUID-39d25609c163` 在 9638 ms 完成 stable-component-inventory。
 记录在 `candidate4-setup/03-web-reload.command.json`。全局 health 的旧窗口版本告警保留；
 目标窗口、CLI 与 daemon 精确 dev.4，不把全局状态写成全兼容。
 

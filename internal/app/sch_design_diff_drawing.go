@@ -26,6 +26,7 @@ func decodeSchDesignInput(raw []byte) (schDesignInput, error) {
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return result, err
 	}
+	if _,native:=root["readScope"];native {return decodeNativeSchDesignInput(raw)}
 	cRaw, hasEnvelope := root["connectivity"]
 	if !hasEnvelope {
 		_, result.modulesPresent = root["modules"]
@@ -444,6 +445,7 @@ func compareSchDesignInputs(a, b schDesignInput) (connectivity.DesignDiff, error
 	}
 	if a.drawing != nil && b.drawing != nil {
 		diff.Coverage.Scope = "local-compose-plan"
+		if a.kind=="native-snapshot"&&b.kind=="native-snapshot"{diff.Coverage.Scope="native-page-observations"}
 		diff.Coverage.DrawingCompared = true
 		for _, side := range []struct {
 			name  string
@@ -454,9 +456,12 @@ func compareSchDesignInputs(a, b schDesignInput) (connectivity.DesignDiff, error
 				diff.Coverage.Unverified = append(diff.Coverage.Unverified, u)
 			}
 		}
-		// Local complete drawings are compared; actual editor execution/rendering
-		// remains outside the evidence this offline operation has received.
-		diff.Coverage.Unverified[0] = connectivity.DesignUnverified{Side: "both", Path: "/editor", Reason: "local plans do not establish actual EDA wire/frame/text state; use fresh readback and frame check/export-image"}
+		if a.kind == "native-snapshot" && b.kind == "native-snapshot" {
+			// Complete native inventories replace only the generic canonical drawing gap.
+			diff.Coverage.Unverified = diff.Coverage.Unverified[1:]
+		} else {
+			diff.Coverage.Unverified[0] = connectivity.DesignUnverified{Side: "both", Path: "/editor", Reason: "local plans do not establish actual EDA wire/frame/text state; use fresh readback and frame check/export-image"}
+		}
 		connectivity.AppendDesignChanges([]string{"drawing"}, a.drawing, b.drawing, &diff.Changes)
 		diff.ExpectedRevision, err = schFullDesignRevision(diff.ExpectedRevision, a.drawing)
 		if err != nil {

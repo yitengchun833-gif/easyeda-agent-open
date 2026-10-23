@@ -1,5 +1,7 @@
 # Dev Environment & Debug Playbook
 
+> Historical upstream development guide. Current Open setup is documented in [README](../README.md) and [README-OPEN](../README-OPEN.md). Browser-console injection, window automation and automatic daemon replacement described below are not the current project's EDA control or adoption procedure; use the [Open native API route](../skills/easyeda-agent-open/SKILL.md#强制原生接口路由).
+
 How to stand up a working loop against **EasyEDA Pro** and iterate on the
 connector fast. Covers both the **desktop client** and the **web editor**
 (`pro.lceda.cn/editor`), plus a **hot-reload** trick that skips the
@@ -33,7 +35,7 @@ develop + regression-test the connector against a LIVE editor, hands-free:
 4. **Probe → file → fix → merge → re-verify** — run a real design task as the
    probe (the default regression is the [minimal blink board](test-case-esp32-blink.md);
    the four-layer `esp32MiniRequire.md` board is an extended case;
-   the copy-a-golden-board harness is `training/copy-check.py`), file each gap as
+   the copy-a-golden-board harness is `docs/archive/training/copy-check.py`), file each gap as
    a GitHub issue labeled `ready-for-agent`, let ClawFlow implement + open a PR,
    then **you merge and live-verify** (the operator can't do runtime acceptance —
    see the advisory-loop section at the bottom). The rolling gap/roadmap ledger is

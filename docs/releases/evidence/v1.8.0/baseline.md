@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # v1.8.0 CLI 修复发布基准
 
 [发布主文档](../../release-1.8.md) · [测试用例](test-cases.md) · [执行报告](test-report.md)
@@ -39,7 +41,7 @@
 - 目标个人工程：`ceshi-cli-basic-20260924`（`0f46d4361c4741a9ab7a9ed62164ca9b`）；
   原理图 P1 `e453c0063919726b`，PCB `3037fc1dfa4965d2`。
   原名 `ceshi` 的 AT32F415 工程不是空白测试板，不得清空。
-- 当前窗口：`be65ae0d-4680-41f1-b94d-681fd7eb653b`。重连后必须重新通过 health 定位，不能把窗口 ID 当永久身份。
+- 当前窗口：`UUID-da785805fe2e`。重连后必须重新通过 health 定位，不能把窗口 ID 当永久身份。
 - 上轮已恢复空白基线并保存重载，见 [dev.11 清理记录](../../../reviews/2026-09-26-v1.7.1-dev11-pour-live.md)。
   本轮由新上下文执行员重新冻结原理图全部页面图元、引脚/导线/连接与精确图框几何；只有 A4 图框，
   无器件/导线/网络。PCB 全铜类别均明确可得且为空，无器件；独立板框 getter 返回 0 段/0 弧，

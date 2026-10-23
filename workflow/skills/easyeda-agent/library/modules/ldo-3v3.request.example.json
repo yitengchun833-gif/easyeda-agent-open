@@ -1,0 +1,14 @@
+{
+  "query": "AMS1117-3.3",
+  "profile": {
+    "schema_version": 1,
+    "target_id": "synthetic-task-1:power",
+    "facts": {
+      "device_model": {"value": "AMS1117-3.3", "provenance": {"artifact": "ldo-3v3.request.example.json", "locator": "synthetic_requirement:device_model"}},
+      "output_voltage_v": {"value": 3.3, "provenance": {"artifact": "ldo-3v3.request.example.json", "locator": "synthetic_requirement:output_voltage_v"}},
+      "input_voltage_v": {"value": 5, "provenance": {"artifact": "ldo-3v3.request.example.json", "locator": "synthetic_requirement:input_voltage_v"}},
+      "load_current_a": {"value": 0.1, "provenance": {"artifact": "ldo-3v3.request.example.json", "locator": "synthetic_requirement:load_current_a"}},
+      "ambient_temperature_c": {"value": 25, "provenance": {"artifact": "ldo-3v3.request.example.json", "locator": "synthetic_requirement:ambient_temperature_c"}}
+    }
+  }
+}

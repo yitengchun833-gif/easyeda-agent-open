@@ -1,3 +1,4 @@
+import { checkNetMembers } from './net-membership';
 type RecordValue = Record<string, any>;
 type Finding = { code: string; status: 'fail' | 'unknown'; component?: string; pin?: string; field?: string; expected?: unknown; actual?: unknown; note?: string };
 const record = (value: unknown): value is RecordValue => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -119,7 +120,8 @@ export function checkSchematicTarget(input: unknown, target: unknown) {
       if (!['connected', 'nc', 'unconnected', 'unknown'].includes(expectedState)) { add('invalid_target_pin_state', 'fail', { component: key, pin: number }); continue; }
       if (expectedState === 'unknown' || state === 'unknown' || part.netlistAvailable === false || snapshot.pinNetsAvailable === false || scope.netRead === 'not-requested') { add('pin_connection_unknown', 'unknown', { component: key, pin: number }); continue; }
       if (expectedState === 'connected' && (!string(wantedPin.net) || wantedPin.noConnected === true) || expectedState === 'nc' && (wantedPin.noConnected !== true || knownNet(wantedPin)) || expectedState === 'unconnected' && (wantedPin.net !== '' || wantedPin.noConnected !== false)) { add('invalid_target_connection', 'fail', { component: key, pin: number }); continue; }
-      if (expectedState !== state || expectedState === 'connected' && wantedPin.net !== pin.net) add('pin_connection_mismatch', 'fail', { component: key, pin: number, expected: { state: expectedState, net: wantedPin.net }, actual: { state, net: pin.net } });
+      const byMembers = target.nets.some((net: RecordValue) => net?.name === wantedPin.net && net.match === 'members');
+      if (expectedState !== state || expectedState === 'connected' && !byMembers && wantedPin.net !== pin.net) add('pin_connection_mismatch', 'fail', { component: key, pin: number, expected: { state: expectedState, net: wantedPin.net }, actual: { state, net: pin.net } });
     }
   }
   for (const part of actualParts) if (!used.has(part)) add('extra_component', 'fail', { component: stableKey(part) });
@@ -127,6 +129,16 @@ export function checkSchematicTarget(input: unknown, target: unknown) {
   for (const net of target.nets) {
     if (!record(net) || !string(net.name) || netNames.has(net.name) || !Array.isArray(net.members)) { add('invalid_target_net', 'fail'); continue; }
     netNames.add(net.name);
+    if (net.match !== undefined && !['name', 'members'].includes(net.match)) add('invalid_net_match', 'fail', { field: net.name });
+    if (net.match === 'members') {
+      if (net.scope !== 'local') add('member_match_requires_local_net', 'fail', { field: net.name });
+      const refs = net.members.map((member: RecordValue) => {
+        const part = target.components.find((part: RecordValue) => part.key === member?.componentKey);
+        return part && string(member?.pinNumber) ? `${part.ref}.${member.pinNumber}` : '';
+      });
+      const membership = checkNetMembers(snapshot._netIndex, refs);
+      if (membership.status !== 'pass') add('net_membership_mismatch', membership.status, { field: net.name, expected: refs, actual: membership });
+    }
     if (net.scope && !['unknown', 'page', 'local'].includes(net.scope)) add('network_scope_unverified', 'unknown', { field: net.name, expected: net.scope, note: 'Page pin membership cannot prove cross-page network scope' });
     for (const member of net.members) {
       if (!record(member) || !string(member.componentKey) || !string(member.pinNumber)) { add('invalid_target_net_member', 'fail'); continue; }

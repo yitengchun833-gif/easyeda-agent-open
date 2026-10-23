@@ -1,0 +1,12 @@
+{
+  "run_id": "public-docs-example",
+  "objective": "Find official public documentation for document parsing formats.",
+  "record_kind": "article",
+  "queries": ["Docling official supported formats"],
+  "sources": [
+    {"name": "official-docs", "type": "official_site", "primary_tool": "manual", "max_pages": 3}
+  ],
+  "required_fields": ["title", "source_url", "retrieved_at"],
+  "fallback_policy": "compatible_only",
+  "limits": {"max_records": 100, "delay_seconds": 2, "concurrency": 1}
+}

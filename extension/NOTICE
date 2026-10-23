@@ -57,6 +57,13 @@ No code from cheewee2000/easyeda-mcp (no license declaration found) was copied.
 The embedded API index is generated from @jlceda/pro-api-types 0.4.25
 (JLCEDA, Apache-2.0). Its original license is preserved as LICENSE-SDK.
 
+eext-knowledge-base (Apache-2.0), commit
+39acb6a4dc9e04d9216a1bcb0d2218ff60cb7a11, supplies the adapted document-tree,
+preview interaction and CSS structure in `iframe/knowledge/`. Copyright 2025
+JLCEDA. The adaptation removes chat/LLM functionality and adds local-service
+source management, hardware metadata, retrieval testing and candidate review.
+Upstream source: https://github.com/easyeda/eext-knowledge-base
+
 EasyEDA Agent Open distribution maintained by yitengchun833-gif.
 Repository: https://github.com/yitengchun833-gif/easyeda-agent-open
 2026-09-30: changed branding, icon and user documentation; original notices retained.

@@ -8,6 +8,7 @@
     "easyeda-agent-mcp": "src/server.mjs"
   },
   "scripts": {
+    "build:native-identity": "node ../extension/node_modules/esbuild/bin/esbuild src/native-identity.ts --bundle --platform=node --format=cjs --outfile=src/native-identity.cjs",
     "start": "node src/server.mjs",
     "test": "node --test test/*.test.mjs"
   },

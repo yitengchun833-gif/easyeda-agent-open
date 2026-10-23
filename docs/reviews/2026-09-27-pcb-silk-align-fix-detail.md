@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # PCB 位号对齐：实现与证据
 
 主结论见[用户记录](2026-09-27-pcb-silk-align-fix.md)。这里保留实现和验证边界。
@@ -92,7 +94,7 @@ v4统一身份/显隐/可读性检查，initial、归一前fresh、每项位置�
 报告 `959c7be7d84db5ee43e78095f17345af38aa546ca6fb559f70a4eaad4b8258ee`。
 
 逐页升级前saved:true后，安装本地CLI/Skill，仅更新已安装同UUID连接器并保持原权限；
-新注册窗口 `0d63a71d-f32b-489a-8984-09ca1da2646c` 的CLI/daemon/connector为dev.14、Web4.1.60，
+新注册窗口 `UUID-91bb8b4d5e7c` 的CLI/daemon/connector为dev.14、Web4.1.60，
 目标PCB身份一致，local check为READY。root对完整三页与51组件/203焊盘、full board、native对账：
 三页非属性全部相同，属性按parent/key核对仅623/388/258个primitiveId重铸；PCB组件result逐字同，
 board仅capturedAt差异；122原生section非DOCHEAD行逐字同，122个header client token及section顺序变化保留，

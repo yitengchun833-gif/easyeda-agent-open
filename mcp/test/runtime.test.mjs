@@ -7,7 +7,7 @@ test('snapshot profiles read only requested facts without changing the full defa
   assert.equal(geometry.includePinNets,false);assert.equal(geometry.includeDeviceIdentity,false);
   assert.equal(geometry.includeBBox,true);assert.equal(geometry.includeWires,true);assert.equal(geometry.includeTexts,true);
   const electrical=snapshotSteps('schematic',false,false,false,{profile:'electrical'})[1].payload;
-  assert.equal(electrical.includePinNets,true);assert.equal(electrical.includeBBox,false);assert.equal(electrical.includeWires,false);
+  assert.equal(electrical.includePinNets,true);assert.equal(electrical.includeBBox,false);assert.equal(electrical.includeWires,false);assert.equal(electrical.includeTexts,false);
   assert.equal(snapshotSteps('schematic',false,true)[1].payload.includeDeviceIdentity,true);
   assert.throws(()=>snapshotSteps('schematic',false,true,false,{profile:'typo'}),/Unknown/);
 });

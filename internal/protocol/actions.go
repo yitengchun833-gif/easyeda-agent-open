@@ -82,8 +82,8 @@ func AllActions() []ActionSpec {
 			Phase:       1,
 			NeedsWindow: true,
 			Description: "Read-only exact friendlyName lookup using dmt_Project.getAllProjectsUuid and getProjectInfo. With teamUuid the inventory is the team's root folder, not recursive. Empty, failed, or partially unreadable enumeration is unknown; absence only applies to a complete team-root inventory.",
-			Inputs:      []string{"friendlyName (exact, required)", "teamUuid optional (exact match and team-root scope)"},
-			Outputs:     []string{"presence (found|absent|unknown)", "matches with UUID/friendlyName/teamUuid", "enumeration.scope/complete/reason", "UUID/readability counts"},
+			Inputs:      []string{"friendlyName (exact, required)", "teamUuid optional (exact match and team-root scope)", "includeProjects optional boolean: return the same inventory; requires explicit authorized teamUuid, no folderUuid/workspaceUuid"},
+			Outputs:     []string{"presence (found|absent|unknown)", "matches with UUID/friendlyName/teamUuid", "projects optional: all readable same-team entries from this enumeration; check enumeration.complete", "enumeration.scope/complete/reason", "UUID/readability counts"},
 		},
 		{
 			Name:        "project.create",
@@ -115,8 +115,8 @@ func AllActions() []ActionSpec {
 			Domain:      DomainDocument,
 			Phase:       1,
 			NeedsWindow: true,
-			Description: "Read active editor document and schematic page context.",
-			Outputs:     []string{"document uuid", "document type", "tab id"},
+			Description: "Read active editor document and schematic page context. An open project without an active document returns projectOpened:true, documentActive:false and null document identity; native API failures remain errors.",
+			Outputs:     []string{"document uuid (null when the project has no active document)", "document type", "tab id", "parentProjectUuid", "projectOpened/documentActive/state when no active document"},
 		},
 		{
 			Name:        "document.open",

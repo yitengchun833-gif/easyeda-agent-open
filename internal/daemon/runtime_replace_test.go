@@ -17,6 +17,7 @@ const replaceTaskBody = `{"operation":"task_replace","window":"w","target":{"pro
 func replacementFixture(t *testing.T, reply func(protocol.Request) protocol.Response) *Server {
 	t.Helper()
 	s := New(Options{AuditDir: t.TempDir(), PortStart: 60932})
+	t.Cleanup(func() { _ = s.runtime.closeRecovery() })
 	server := httptest.NewServer(s.routes(0))
 	t.Cleanup(server.Close)
 	base := strings.TrimPrefix(server.URL, "http://")
@@ -96,6 +97,7 @@ func TestRuntimeTaskReplaceCancelsAllClientsAndKeepsPause(t *testing.T) {
 
 func TestRuntimeTaskReplaceRejectsBeforeQueueChanges(t *testing.T) {
 	s := New(Options{})
+	t.Cleanup(func() { _ = s.runtime.closeRecovery() })
 	d := s.runtime.document("w", &protocol.Context{ProjectUUID: "p", DocumentUUID: "d"})
 	d.Task = &runtimeTask{Revision: 1, Goal: "old"}
 	for _, body := range []string{

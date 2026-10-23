@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"time"
 
@@ -13,6 +14,10 @@ import (
 // handleConnect accepts the connector WebSocket and runs the read loop until the
 // connection drops or the daemon shuts down.
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "https://pro.lceda.cn" {
+		http.Error(w, "editor origin denied", http.StatusForbidden)
+		return
+	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// The daemon is localhost-only; the connector runs inside EasyEDA whose
 		// origin differs from the daemon host.
@@ -38,15 +43,21 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	c := newConn(ws, time.Now().UTC())
 	remote := r.RemoteAddr
 	origin := r.Header.Get("Origin")
+	remoteHost, _, _ := net.SplitHostPort(remote)
+	c.knowledgeAllowed = origin == "https://pro.lceda.cn" && net.ParseIP(remoteHost).IsLoopback()
 	ua := r.Header.Get("User-Agent")
 	s.logf("connector %s upgraded (origin=%q ua=%q)", remote, origin, ua)
 	defer func() {
 		c.disconnect()
-		s.hub.remove(c.id())
-		s.runtime.connectionChanged(c.id(), "disconnected", nil)
+		removed := s.hub.removeCurrent(c)
+		if removed {
+			s.runtime.connectionChanged(c.id(), "disconnected", nil, c.epoch)
+		}
 		// A reconnected window starts with clean rolling write health (same
 		// lifetime rule as the stale-read guard: a reload IS the recovery).
-		s.writeHealth.forget(c.id())
+		if removed {
+			s.writeHealth.forget(c.id())
+		}
 		ws.Close(websocket.StatusNormalClosure, "closing")
 		s.logf("connector %s closed", remote)
 	}()
@@ -95,19 +106,25 @@ func (s *Server) handleFrame(ctx context.Context, c *conn, data []byte) {
 			Payload map[string]any `json:"payload"`
 		}
 		if json.Unmarshal(data, &event) == nil {
-			s.runtime.connectorEvent(c.id(), event.Payload)
+			s.hub.withCurrent(c, func() { s.runtime.connectorEvent(c.id(), event.Payload) })
 		}
 	case protocol.TypeRegister:
+		if c.id() != "" {
+			return // a retired socket cannot re-register over its successor
+		}
 		var msg protocol.Register
 		if err := json.Unmarshal(data, &msg); err != nil || msg.WindowID == "" {
 			return
 		}
 		c.applyRegister(msg, now)
 		s.hub.add(c)
-		s.runtime.connectionChanged(msg.WindowID, "registered", nil)
+		s.hub.withCurrent(c, func() { s.runtime.connectionChanged(msg.WindowID, "registered", nil, c.epoch) })
 		s.logf("connector registered windowId=%s version=%s", msg.WindowID, msg.ConnectorVersion)
 		if note := staleConnectorNotice(msg.ConnectorVersion, s.opts.Version); note != "" {
 			s.logf("%s", note)
+		}
+		if msg.Knowledge {
+			go s.sendKnowledgeConnection(ctx, c, msg.WindowID)
 		}
 
 	case protocol.TypeContext:
@@ -115,12 +132,12 @@ func (s *Server) handleFrame(ctx context.Context, c *conn, data []byte) {
 		if err := json.Unmarshal(data, &msg); err != nil {
 			return
 		}
-		if !c.applyContext(msg, now) {
-			s.logf("connector ignored context windowId=%q registeredWindowId=%q", msg.WindowID, c.id())
-			return
-		}
-		context := msg.Context()
-		s.runtime.connectionChanged(c.id(), "context", &context)
+		s.hub.withCurrent(c, func() {
+			if c.applyContext(msg, now) {
+				context := msg.Context()
+				s.runtime.connectionChanged(c.id(), "context", &context, c.epoch)
+			}
+		})
 		// Context identifies the document, not a duplicate transport. Distinct
 		// live registrations must remain available for explicit window routing.
 
@@ -137,11 +154,13 @@ func (s *Server) handleFrame(ctx context.Context, c *conn, data []byte) {
 		if err := json.Unmarshal(data, &resp); err != nil {
 			return
 		}
-		c.touch(now)
-		if resp.Context != nil {
-			c.applyResponseContext(*resp.Context, now)
-		}
-		c.deliver(&resp)
+		s.hub.withCurrent(c, func() {
+			c.touch(now)
+			if resp.Context != nil {
+				c.applyResponseContext(*resp.Context, now)
+			}
+			c.deliver(&resp)
+		})
 
 	case protocol.TypeLog:
 		// Diagnostic line emitted by the connector; surface it in the daemon log

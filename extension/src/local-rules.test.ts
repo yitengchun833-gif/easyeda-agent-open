@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { displayOnlyAction, includesNativeScript, localRules, localObservationKey } from './local-rules';
+import { displayOnlyAction, expectedIdentityIssue, includesNativeScript, localRules, localObservationKey } from './local-rules';
 import { runAction } from './actions';
 import { observeSceneChanges, sceneObservation } from './scene-observation';
 const facts=(net:string|null='GND',rotation=270)=>({components:[{primitiveId:'r',componentType:'part',uniqueId:'stable',designator:'R1',pinsAvailable:true,netlistAvailable:true,bbox:{minX:0,minY:0,maxX:10,maxY:10},pins:[{pinNumber:'1',net,x:5,y:0,rotation}]}],wiresAvailable:true,wires:[{primitiveId:'w',x0:5,y0:0,x1:5,y1:-10}],textsAvailable:true,texts:[]});
@@ -22,6 +22,29 @@ test('local observation comparison catches manual text moves and ignores unrelat
 	assert.notEqual(localObservationKey(f),localObservationKey(changed));
 	changed.texts[0].x=20;changed.wires.push({primitiveId:'elsewhere',x0:100,y0:100,x1:200,y1:100});
 	assert.equal(localObservationKey(f),localObservationKey(changed));
+});
+
+test('display-only observation projection ignores pin and wire payloads but retains text geometry',()=>{
+	const f:any=facts();f.texts=[{primitiveId:'a',parentId:'r',visible:true,x:20,y:20,bbox:{minX:20,minY:20,maxX:24,maxY:24}}];
+	const changed=structuredClone(f);changed.components[0].pins[0].net='VCC';changed.wires[0].x1=99;
+	assert.equal(localObservationKey(f,true),localObservationKey(changed,true));
+	changed.texts[0].x=30;assert.notEqual(localObservationKey(f,true),localObservationKey(changed,true));
+});
+
+test('expected identities require scoped native components with matching designator and optional uniqueId',()=>{
+	const f:any=facts(); f.readScope={complete:false,concurrentChange:false,primitiveIds:['r'],missingIds:[]};
+	assert.equal(expectedIdentityIssue(f,['r'],{r:{designator:'R1',uniqueId:'stable'}}),undefined);
+	assert.match(expectedIdentityIssue(f,['r'],{r:{designator:'R2'}})??'',/designator differs/);
+	assert.match(expectedIdentityIssue(f,['r'],{r:{designator:'R1',uniqueId:'other'}})??'',/uniqueId differs/);
+	assert.match(expectedIdentityIssue(f,['r'],{else:{designator:'R1'}})??'',/outside edit scope/);
+	assert.match(expectedIdentityIssue(f,['r'],{r:{designator:''}})??'',/non-empty string/);
+	assert.match(expectedIdentityIssue(f,['r'],{r:{designator:'R1',value:'bad'}})??'',/unsupported identity field/);
+	assert.match(expectedIdentityIssue(f,['r'],[])??'',/must be an object/);
+	assert.match(expectedIdentityIssue({...f,readScope:{concurrentChange:true}},['r'],{r:{designator:'R1'}})??'',/unavailable or changed/);
+	assert.match(expectedIdentityIssue(f,[],{r:{designator:'R1'}})??'',/scope/);
+	assert.match(expectedIdentityIssue(f,['r'],{})??'',/must be an object/);
+	for(const patch of [{partial:true},{readScope:undefined},{readScope:{...f.readScope,missingIds:['r']}},{readScope:{...f.readScope,primitiveIds:[]}},{components:[...f.components,...f.components]},{components:[null]}])
+		assert.match(expectedIdentityIssue({...f,...patch},['r'],{r:{designator:'R1'}})??'',/unavailable or changed/);
 });
 
 test('explicit NC is preserved, removing it fails, and null alone never means NC',()=>{
@@ -66,7 +89,7 @@ test('automatic action wrapper uses native attribute readback and performs zero 
 	const globals=globalThis as any,old=globals.eda,oldTypes=globals.EDMT_EditorDocumentType;
 	t.after(()=>{globals.eda=old;globals.EDMT_EditorDocumentType=oldTypes;});
 	globals.EDMT_EditorDocumentType={SCHEMATIC_PAGE:1};
-	let x=20,attributeReads=0,componentReads=0,netlistReads=0,pinReads=0,wireReads=0;
+	let x=20,attributeReads=0,attributeWrites=0,componentReads=0,netlistReads=0,pinReads=0,wireReads=0;
 	const state:Record<string,unknown>={PrimitiveId:'r',ComponentType:'part',UniqueId:'uid',Designator:'R1',Component:{uuid:'instance'},Footprint:{uuid:'fp'},SupplierId:'C1'};
 	const part=new Proxy({}, {get:(_,key)=>()=>state[String(key).replace('getState_','')]??''});
 	const attr=()=>({getState_PrimitiveId:()=> 'a',getState_ParentPrimitiveId:()=> 'r',getState_Key:()=> 'Name',getState_Value:()=> 'GND',getState_X:()=>x,getState_Y:()=>20,getState_KeyVisible:()=>false,getState_ValueVisible:()=>true});
@@ -74,19 +97,22 @@ test('automatic action wrapper uses native attribute readback and performs zero 
 		dmt_Project:{getCurrentProjectInfo:async()=>({uuid:'project'})},
 		dmt_SelectControl:{getCurrentDocumentInfo:async()=>({uuid:'page',documentType:1})},
 		sch_PrimitiveComponent:{get:async()=>{componentReads++;return [part]},getAll:async()=>{throw new Error('unexpected page inventory')},getAllPinsByPrimitiveId:async()=>{pinReads++;return []}},
-		sch_PrimitiveAttribute:{get:async()=>{attributeReads++;return attr()},getAll:async()=>[attr(),{...attr(),getState_PrimitiveId:()=> 'metadata',getState_KeyVisible:()=>null,getState_ValueVisible:()=>null}],modify:async(_id:string,props:any)=>{x=props.x;return {getState_PrimitiveId:()=> 'a',getState_X:()=> -999}}},
+		sch_PrimitiveAttribute:{get:async()=>{attributeReads++;return attr()},getAll:async()=>[attr(),{...attr(),getState_PrimitiveId:()=> 'metadata',getState_KeyVisible:()=>null,getState_ValueVisible:()=>null}],modify:async(_id:string,props:any)=>{attributeWrites++;x=props.x;return {getState_PrimitiveId:()=> 'a',getState_X:()=> -999}}},
 		sch_PrimitiveWire:{getAll:async()=>{wireReads++;return []}},
 		sch_Primitive:{getPrimitivesBBox:async(ids:string[])=>({minX:0,minY:0,maxX:ids[0]==='metadata'?0:10,maxY:ids[0]==='metadata'?0:10})},
 		sch_ManufactureData:{getNetlistFile:async()=>{netlistReads++;throw new Error('unexpected netlist')}}
 	};
-	const result:any=await runAction('schematic.attribute.modify',{primitiveId:'a',props:{x:25},_mutation:true,_displayOnly:true,_scope:['r']});
+	await assert.rejects(runAction('schematic.attribute.modify',{primitiveId:'a',props:{x:25},_mutation:true,_displayOnly:true,_scope:['r'],_edit:{expectedIdentities:{r:{designator:'R2'}}}}),/designator differs/);
+	assert.equal(attributeWrites,0,'identity mismatch rejects before the native modify call');
+	attributeReads=0;componentReads=0;netlistReads=0;pinReads=0;wireReads=0;
+	const result:any=await runAction('schematic.attribute.modify',{primitiveId:'a',props:{x:25},_mutation:true,_displayOnly:true,_scope:['r'],_edit:{expectedIdentities:{r:{designator:'R1',uniqueId:'uid'}}}});
 	assert.equal(result.result.attribute.X,25);
 	assert.equal(result.result.verified,true);
 	assert.equal(attributeReads,2,'read actual native state before and after, not modify return');
 	assert.equal(componentReads,2);
 	assert.equal(netlistReads,0);
-	assert.equal(pinReads,1,'display-only baseline needs identity, final visual neighborhood still reads pins');
-	assert.equal(wireReads,1,'no before-write wire inventory for a display-only change');
+	assert.equal(pinReads,0,'official display-only edits do not read pins or netlist');
+	assert.equal(wireReads,0,'official display-only edits do not enumerate wires');
 	assert.equal(result.result.rules.status,'pass');
 	assert.equal(result.result.rules.items.find((r:any)=>r.id==='pin_nets').coverage,'not_applicable');
 	assert.equal(result.result._readback[0].result.texts[0].x,25);

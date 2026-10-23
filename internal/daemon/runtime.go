@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -19,6 +21,7 @@ type runtimeObject struct {
 	StaleFields map[string]bool `json:"staleFields"`
 }
 type runtimeDocument struct {
+	ConnectionEpoch  string                    `json:"connectionEpoch,omitempty"`
 	Recovery         any                       `json:"recovery,omitempty"`
 	Task             *runtimeTask              `json:"task,omitempty"`
 	Restored         bool                      `json:"restored,omitempty"`
@@ -41,31 +44,40 @@ type runtimeEvent struct {
 	Data     map[string]any `json:"data"`
 }
 type runtimeReceipt struct {
-	TaskRevision      uint64 `json:"taskRevision,omitempty"`
-	Historical        bool   `json:"historical,omitempty"`
-	started           bool
-	StartedGeneration uint64    `json:"startedGeneration"`
-	ContentWrite      bool      `json:"contentWrite,omitempty"`
-	DocumentUUID      string    `json:"documentUuid,omitempty"`
-	ProjectUUID       string    `json:"projectUuid,omitempty"`
-	Generation        uint64    `json:"generation"`
-	ImageAvailable    bool      `json:"imageAvailable,omitempty"`
-	ImageScope        []string  `json:"imageScope,omitempty"`
-	DRCPassed         bool      `json:"drcPassed,omitempty"`
-	RequiredChecks    []string  `json:"requiredChecks,omitempty"`
-	RequestID         string    `json:"requestId"`
-	WindowID          string    `json:"windowId"`
-	Action            string    `json:"action"`
-	Status            string    `json:"status"`
-	StartedAt         time.Time `json:"startedAt"`
-	DurationMs        int64     `json:"durationMs"`
-	ErrorCode         string    `json:"errorCode,omitempty"`
-	Error             string    `json:"error,omitempty"`
-	Progress          any       `json:"progress,omitempty"`
-	Checks            any       `json:"checks,omitempty"`
-	ObservedFacts     any       `json:"-"` // Private scoped readback for resume/finish, never cached freshness proof.
+	ConnectionEpoch    string `json:"connectionEpoch,omitempty"`
+	ParentRequestID    string `json:"parentRequestId,omitempty"`
+	TaskRevision       uint64 `json:"taskRevision,omitempty"`
+	Historical         bool   `json:"historical,omitempty"`
+	started            bool
+	StartedGeneration  uint64            `json:"startedGeneration"`
+	StartedContext     *protocol.Context `json:"startedContext,omitempty"`
+	ClosedDocumentUUID string            `json:"closedDocumentUuid,omitempty"`
+	ContentWrite       bool              `json:"contentWrite,omitempty"`
+	DocumentUUID       string            `json:"documentUuid,omitempty"`
+	ProjectUUID        string            `json:"projectUuid,omitempty"`
+	Generation         uint64            `json:"generation"`
+	ImageAvailable     bool              `json:"imageAvailable,omitempty"`
+	ImageScope         []string          `json:"imageScope,omitempty"`
+	DRCPassed          bool              `json:"drcPassed,omitempty"`
+	RequiredChecks     []string          `json:"requiredChecks,omitempty"`
+	RequestID          string            `json:"requestId"`
+	WindowID           string            `json:"windowId"`
+	Action             string            `json:"action"`
+	Status             string            `json:"status"`
+	StartedAt          time.Time         `json:"startedAt"`
+	DurationMs         int64             `json:"durationMs"`
+	ErrorCode          string            `json:"errorCode,omitempty"`
+	Error              string            `json:"error,omitempty"`
+	Progress           any               `json:"progress,omitempty"`
+	Checks             any               `json:"checks,omitempty"`
+	ObservedFacts      any               `json:"-"` // Private scoped readback for resume/finish, never cached freshness proof.
 }
 type runtimeStore struct {
+	recovery        recoveryStorage
+	recoveryError   error
+	scopeVersions   map[string]uint64
+	connectionEpoch map[string]string
+	attempts        map[string]*recoveryAttempt
 	persistMu       sync.Mutex
 	checkpointPath  string
 	checkpointError string
@@ -84,7 +96,7 @@ type runtimeStore struct {
 }
 
 func newRuntimeStore() *runtimeStore {
-	return &runtimeStore{instance: fmt.Sprintf("%d", time.Now().UnixNano()), documents: map[string]*runtimeDocument{}, current: map[string]string{}, notify: make(chan struct{}), requests: map[string]protocol.Request{}, baselines: map[string]any{}}
+	return &runtimeStore{instance: fmt.Sprintf("%d", time.Now().UnixNano()), documents: map[string]*runtimeDocument{}, current: map[string]string{}, notify: make(chan struct{}), requests: map[string]protocol.Request{}, baselines: map[string]any{}, scopeVersions: map[string]uint64{}, connectionEpoch: map[string]string{}, attempts: map[string]*recoveryAttempt{}}
 }
 func runtimeMap(value any) map[string]any { m, _ := value.(map[string]any); return m }
 func runtimeArray(value any) []any        { a, _ := value.([]any); return a }
@@ -142,16 +154,29 @@ func (s *runtimeStore) document(window string, ctx *protocol.Context) *runtimeDo
 	d := s.documents[key]
 
 	if d == nil {
-		// ponytail: retain at most eight observed documents; evicted pages require a new baseline.
-		if len(s.documents) >= 8 {
-			for old := range s.documents {
-				if old != s.current[window] {
-					delete(s.documents, old)
-					break
+		if s.recovery != nil {
+			if loaded, err := s.lazyLoadScopeLocked(key); err != nil {
+				if !errors.Is(err, errRuntimeCapacity) {
+					s.failRecovery(err)
 				}
+				return nil
+			} else if loaded != nil {
+				d = loaded
 			}
 		}
-		d = &runtimeDocument{WindowID: window, Context: *ctx, Objects: map[string]*runtimeObject{}, Coverage: map[string]bool{}, EventCoverage: "unknown"}
+	}
+	if d == nil {
+		if len(s.documents) >= 8 {
+			old := s.reclaimableDocument(s.protectedReceipts())
+			if old == "" {
+				// Unsolicited host navigation cannot evict another active page.
+				delete(s.current, window)
+				s.emit("runtime_capacity", map[string]any{"windowId": window, "context": *ctx, "requiresScopedReadback": true})
+				return nil
+			}
+			s.reclaimDocument(old)
+		}
+		d = &runtimeDocument{WindowID: window, ConnectionEpoch: s.connectionEpoch[window], Context: *ctx, Objects: map[string]*runtimeObject{}, Coverage: map[string]bool{}, EventCoverage: "unknown"}
 		s.documents[key] = d
 	}
 	s.current[window] = key
@@ -175,7 +200,7 @@ func affectedIDs(payload map[string]any) map[string]bool {
 	return ids
 }
 func runtimeContentWrite(action string, payload map[string]any) bool {
-	if payload["dryRun"] == true {
+	if runtimeDryRun(action, payload) {
 		return false
 	}
 	if action == "debug.batch" {
@@ -221,10 +246,39 @@ func (d *runtimeDocument) invalidate(action string, payload map[string]any) {
 		d.Coverage = map[string]bool{}
 	}
 }
-func (s *runtimeStore) start(req protocol.Request, ctx *protocol.Context) error {
+func (s *runtimeStore) start(req protocol.Request, ctx *protocol.Context, navigation ...*runtimeNavigationProof) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	d := s.document(req.WindowID, ctx)
+	for _, retained := range s.receipts {
+		if retained.RequestID == req.ID {
+			return errRuntimeDuplicateRequest
+		}
+	}
+	if s.recoveryError != nil && !capacityReadOnly(req) {
+		return fmt.Errorf("%w: %v", errRuntimePersistence, s.recoveryError)
+	}
+	if s.recoveryError != nil && capacityReadOnly(req) {
+		return nil // recovery diagnostics remain audit-only while storage is unavailable
+	}
+	if s.recovery != nil {
+		duplicate, err := s.recovery.HasRequest(req.ID)
+		if err != nil {
+			if capacityReadOnly(req) {
+				return nil
+			}
+			return fmt.Errorf("%w: %v", errRuntimePersistence, err)
+		}
+		if duplicate {
+			return errRuntimeDuplicateRequest
+		}
+		if err := s.checkExecutionScopeLocked(req, ctx, navigation...); err != nil {
+			return err
+		}
+	}
+	d := s.documents[s.current[req.WindowID]]
+	if ctx != nil && ctx.ProjectUUID != "" && ctx.DocumentUUID != "" {
+		d = s.documents[req.WindowID+"|"+ctx.ProjectUUID+"|"+ctx.DocumentUUID]
+	}
 	if expected, continuation := req.Payload["_taskRevision"]; continuation {
 		revision := uint64(0)
 		if d != nil && d.Task != nil {
@@ -248,8 +302,20 @@ func (s *runtimeStore) start(req protocol.Request, ctx *protocol.Context) error 
 			return fmt.Errorf("finish task claim is no longer current")
 		}
 	}
-	receipt := &runtimeReceipt{started: true, RequestID: req.ID, WindowID: req.WindowID, Action: req.Action, Status: "queued", StartedAt: time.Now().UTC(), ContentWrite: runtimeContentWrite(req.Action, req.Payload)}
+	if err := s.admit(req, ctx); err != nil {
+		if !errors.Is(err, errRuntimeCapacity) || !capacityReadOnly(req) {
+			return err
+		}
+		// A capacity-bypassed read is audit-only; duplicate IDs were rejected
+		// before admission so observe() cannot overwrite retained evidence.
+		return nil
+	}
+	d = s.document(req.WindowID, ctx)
+	receipt := &runtimeReceipt{started: true, RequestID: req.ID, WindowID: req.WindowID, ConnectionEpoch: runtimeString(req.Payload["_connectionEpoch"]), Action: req.Action, Status: "queued", StartedAt: time.Now().UTC(), ContentWrite: runtimeContentWrite(req.Action, req.Payload), ParentRequestID: runtimeString(req.Payload["_taskParent"])}
 	if d != nil {
+		if !d.ChangesSinceSave && receipt.ConnectionEpoch != "" && runtimeDangerous(req) {
+			d.ConnectionEpoch = receipt.ConnectionEpoch // clean history has no unsaved owner to transfer
+		}
 		d.invalidate(req.Action, req.Payload)
 		if d.Task != nil {
 			receipt.TaskRevision = d.Task.Revision
@@ -257,31 +323,49 @@ func (s *runtimeStore) start(req protocol.Request, ctx *protocol.Context) error 
 		receipt.StartedGeneration = d.Generation
 		receipt.ProjectUUID = d.Context.ProjectUUID
 		receipt.DocumentUUID = d.Context.DocumentUUID
+		if req.Action == "document.close" {
+			before := d.Context
+			receipt.StartedContext = &before
+		}
 	}
 	s.receipts = append(s.receipts, receipt)
-	if req.Action == "debug.batch" {
-		// ponytail: only sixteen resumable batches; older ones remain in the existing audit.
-		if len(s.requests) >= 16 {
-			for id := range s.requests {
-				delete(s.requests, id)
-				delete(s.baselines, id)
-				break
-			}
+	for _, parent := range s.receipts {
+		if req.Action == "debug.batch" && parent.RequestID == receipt.ParentRequestID && parent.WindowID == req.WindowID && parent.Status == "resuming" {
+			progress := runtimeMap(parent.Progress)
+			parent.Status = "continued"
+			parent.Progress = map[string]any{"continuationRequestId": req.ID, "completed": progress["completed"], "total": progress["total"]}
 		}
+	}
+	if req.Action == "debug.batch" {
 		var saved protocol.Request
 		b, _ := json.Marshal(req)
 		_ = json.Unmarshal(b, &saved)
 		s.requests[req.ID] = saved
 	}
-	if len(s.receipts) > 256 {
-		s.receipts = s.receipts[len(s.receipts)-256:]
+	if s.recovery != nil {
+		if err := s.persistIntentLocked(req, ctx, receipt, d); err != nil {
+			receipt.Status, receipt.ErrorCode, receipt.Error = "not_dispatched", "RECOVERY_STORE_FAILED", err.Error()
+			receipt.started = false
+			for _, parent := range s.receipts {
+				if parent.RequestID == receipt.ParentRequestID && parent.Status == "continued" {
+					parent.Status = "resuming"
+				}
+			}
+			return fmt.Errorf("%w: %v", errRuntimePersistence, err)
+		}
 	}
 	s.emit("action_started", map[string]any{"requestId": req.ID, "windowId": req.WindowID, "action": req.Action})
 	return nil
 }
 func (s *runtimeStore) pendingWrite(window, except string) bool {
+	d := s.documents[s.current[window]]
 	for _, receipt := range s.receipts {
-		if receipt.WindowID == window && receipt.RequestID != except && receipt.ContentWrite && (receipt.Status == "queued" || receipt.Status == "running" || receipt.Status == "resuming") {
+		if (receipt.WindowID == window || (d != nil && receipt.ProjectUUID == d.Context.ProjectUUID && receipt.DocumentUUID == d.Context.DocumentUUID)) && receipt.RequestID != except && receipt.ContentWrite && (receipt.Status == "queued" || receipt.Status == "running" || receipt.Status == "resuming" || receipt.Status == "needs_readback") {
+			return true
+		}
+	}
+	for id, attempt := range s.attempts {
+		if id != except && attempt.ContentWrite && (attempt.WindowID == window || (d != nil && attempt.Context.ProjectUUID == d.Context.ProjectUUID && attempt.Context.DocumentUUID == d.Context.DocumentUUID)) && attempt.State != recoveryAttemptSettled && attempt.State != recoveryAttemptNotDispatched {
 			return true
 		}
 	}
@@ -334,6 +418,7 @@ func (s *runtimeStore) prepare(req *protocol.Request, ctx *protocol.Context, bas
 	delete(req.Payload, "_finishGeneration")
 	delete(req.Payload, "_taskParent")
 	delete(req.Payload, "_taskRevision")
+	delete(req.Payload, "_connectionEpoch")
 	edit := runtimeMap(req.Payload["_edit"])
 	delete(edit, "baseline")
 	if len(baseline) != 0 && baseline[0] != nil {
@@ -359,7 +444,10 @@ func (s *runtimeStore) prepare(req *protocol.Request, ctx *protocol.Context, bas
 	req.Payload["_displayOnly"] = runtimeDisplayOnly(req.Action, req.Payload)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	d := s.document(req.WindowID, ctx)
+	d := s.documents[s.current[req.WindowID]]
+	if ctx != nil && ctx.ProjectUUID != "" && ctx.DocumentUUID != "" {
+		d = s.documents[req.WindowID+"|"+ctx.ProjectUUID+"|"+ctx.DocumentUUID]
+	}
 	ids, nets, direct := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, id := range runtimeArray(edit["primitiveIds"]) {
 		if v := runtimeString(id); v != "" {
@@ -583,6 +671,18 @@ func (d *runtimeDocument) read(action string, result map[string]any) {
 			old = &runtimeObject{Data: map[string]any{}, StaleFields: map[string]bool{"pins": true}}
 			d.Objects[id] = old
 		}
+		_, suppliedPins := data["pins"]
+		_, suppliedPinStatus := data["pinsAvailable"]
+		_, suppliedNetStatus := data["netlistAvailable"]
+		preservePins := scope["netRead"] == "not-requested" && !suppliedPins && !suppliedPinStatus && !suppliedNetStatus
+		if preservePins {
+			for _, field := range []string{"x", "y", "rotation", "mirror", "uniqueId", "designator", "component", "footprint"} {
+				if current, observed := data[field]; observed && !reflect.DeepEqual(old.Data[field], current) {
+					preservePins = false
+					break
+				}
+			}
+		}
 		// A geometry-only refresh cannot silently reuse an older measured box.
 		if _, measured := data["bbox"]; !measured {
 			delete(old.Data, "bbox")
@@ -590,11 +690,17 @@ func (d *runtimeDocument) read(action string, result map[string]any) {
 		for field, value := range data {
 			old.Data[field] = value
 		}
-		old.Data["netlistAvailable"] = data["netlistAvailable"] == true
+		if !preservePins {
+			old.Data["netlistAvailable"] = data["netlistAvailable"] == true
+		}
 		old.Data["kind"] = "component"
 		old.ObservedAt = time.Now().UTC()
 		delete(old.StaleFields, "identity")
 		delete(old.StaleFields, "geometry")
+		// A display read omitted electrical facts; it neither refreshes nor invalidates their existing status.
+		if preservePins {
+			continue
+		}
 		pinsFresh := data["pinsAvailable"] == true && data["netlistAvailable"] == true && data["netAmbiguous"] != true
 		if pins, supplied := data["pins"].([]any); supplied {
 			for _, value := range pins {
@@ -664,7 +770,36 @@ func (s *runtimeStore) observe(entry auditEntry) {
 			break
 		}
 	}
-	d := s.document(entry.WindowID, entry.Context)
+	if entry.ErrorCode == "DUPLICATE_REQUEST" {
+		// start() rejected this duplicate before dispatch. Keep its audit row but
+		// never let it settle an earlier receipt with the same request ID.
+		return
+	}
+	// Only a new, explicitly local rejection can gain not-dispatched evidence;
+	// restored receipts and existing attempts keep their original uncertainty.
+	notDispatched := entry.runtimeNotDispatched && !entry.OK
+	if notDispatched && (receipt != nil || s.attempts[entry.RequestID] != nil) {
+		return
+	}
+	if notDispatched && s.recovery != nil {
+		exists, err := s.recovery.HasRequest(entry.RequestID)
+		if err != nil || exists {
+			return
+		}
+	}
+	// A full protected pool may still forward a narrow read-only recovery
+	// request. Its response remains in audit JSONL, but it cannot create a
+	// receipt or document cache entry until ordinary retention becomes possible.
+	if receipt == nil && len(s.documents) >= 8 && capacityReadOnly(protocol.Request{Action: entry.Action, Payload: entry.Payload}) {
+		s.emit("runtime_capacity", map[string]any{"requestId": entry.RequestID, "windowId": entry.WindowID, "auditOnly": true})
+		return
+	}
+	epoch := runtimeString(entry.Payload["_connectionEpoch"])
+	staleConnection := epoch != "" && s.connectionEpoch[entry.WindowID] != "" && epoch != s.connectionEpoch[entry.WindowID]
+	var d *runtimeDocument
+	if !staleConnection {
+		d = s.document(entry.WindowID, entry.Context)
+	}
 	adopted := false
 	if entry.OK && !runtimeContentWrite(entry.Action, entry.Payload) && d != nil {
 		if instance := runtimeString(runtimeMap(entry.Result["_scene"])["instance"]); instance != "" {
@@ -678,13 +813,15 @@ func (s *runtimeStore) observe(entry auditEntry) {
 
 	if receipt == nil {
 		receipt = &runtimeReceipt{RequestID: entry.RequestID, WindowID: entry.WindowID, Action: entry.Action, StartedAt: entry.Timestamp}
-		s.receipts = append(s.receipts, receipt)
-		if len(s.receipts) > 256 {
-			s.receipts = s.receipts[len(s.receipts)-256:]
+		if !s.retainUntrackedReceipt(receipt) {
+			return
 		}
 	}
+	if staleConnection {
+		receipt.Historical = true
+	}
 	contentWrite := runtimeContentWrite(entry.Action, entry.Payload)
-	observationCurrent := !s.pendingWrite(entry.WindowID, entry.RequestID)
+	observationCurrent := d != nil && !s.pendingWrite(entry.WindowID, entry.RequestID)
 	if d != nil {
 		if tracked && !contentWrite && (receipt.StartedGeneration != d.Generation || receipt.DocumentUUID != d.Context.DocumentUUID || receipt.ProjectUUID != d.Context.ProjectUUID) {
 			observationCurrent = false
@@ -713,12 +850,15 @@ func (s *runtimeStore) observe(entry auditEntry) {
 	}
 
 	receipt.Status = "action_finished"
-	if !entry.OK || entry.Result["partial"] == true || entry.Result["ok"] == false {
+	if !entry.OK || entry.Result["partial"] == true || entry.Result["ok"] == false || (strings.HasSuffix(entry.Action, ".save") && entry.Result["saved"] != true) {
 		receipt.Status = "needs_readback"
 	}
 	receipt.DurationMs = entry.DurationMs
 	receipt.ErrorCode = entry.ErrorCode
 	receipt.Error = entry.ErrorMsg
+	if entry.Action == "document.close" && entry.OK && entry.Result["closed"] == true {
+		receipt.ClosedDocumentUUID = runtimeString(entry.Result["uuid"])
+	}
 	if entry.Action == "debug.batch" {
 		steps := []any{}
 		for _, item := range runtimeArray(entry.Result["results"]) {
@@ -732,6 +872,13 @@ func (s *runtimeStore) observe(entry auditEntry) {
 		if checks := runtimeMap(receipt.Checks); checks != nil {
 			checks["status"] = "unknown"
 			checks["staleReason"] = "Another content write or context change overlapped this observation"
+		}
+	}
+	if entry.Context != nil && entry.Context.ProjectUUID != "" && entry.Context.DocumentUUID != "" {
+		receipt.DocumentUUID = entry.Context.DocumentUUID
+		receipt.ProjectUUID = entry.Context.ProjectUUID
+		if tracked && d == nil {
+			receipt.Status = "needs_readback"
 		}
 	}
 	if d != nil {
@@ -779,6 +926,10 @@ func (s *runtimeStore) observe(entry auditEntry) {
 	if entry.Result["paused"] == true {
 		receipt.Status = "paused"
 	}
+	if notDispatched {
+		receipt.Status = "not_dispatched"
+	}
+	s.releaseContinuedParent(receipt)
 	s.emit("action_finished", map[string]any{"requestId": entry.RequestID, "windowId": entry.WindowID, "action": entry.Action, "status": receipt.Status, "durationMs": entry.DurationMs, "error": entry.ErrorMsg})
 }
 func (s *runtimeStore) snapshot(window string, ids map[string]bool) map[string]any {

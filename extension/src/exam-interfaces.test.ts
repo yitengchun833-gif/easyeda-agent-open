@@ -122,6 +122,66 @@ test('project.find establishes absence only after every nonempty team-root entry
 	});
 });
 
+test('project.find optionally returns the same complete inventory without additional native reads', async () => {
+	for (const includeProjects of [false, true]) {
+		const reads: unknown[][] = [];
+		await withEda({ dmt_Project: {
+			getAllProjectsUuid: async (...args: unknown[]) => { reads.push(['list', ...args]); return ['p1', 'p2']; },
+			getProjectInfo: async (uuid: string) => { reads.push(['info', uuid]); return { uuid, friendlyName: uuid === 'p1' ? 'Exact' : 'Other', teamUuid: 'team-1' }; },
+		} }, async () => {
+			const res: any = await runAction('project.find', { friendlyName: 'Exact', teamUuid: 'team-1', includeProjects });
+			assert.deepEqual(reads, [['list', 'team-1'], ['info', 'p1'], ['info', 'p2']]);
+			assert.equal(res.result.presence, 'found');
+			assert.equal(res.result.enumeration.complete, true);
+			assert.deepEqual(res.result.matches.map((p: any) => p.uuid), ['p1']);
+			if (includeProjects) assert.deepEqual(res.result.projects, [
+				{ uuid: 'p1', friendlyName: 'Exact', teamUuid: 'team-1', folderUuid: null },
+				{ uuid: 'p2', friendlyName: 'Other', teamUuid: 'team-1', folderUuid: null },
+			]);
+			else assert.equal('projects' in res.result, false);
+		});
+	}
+});
+
+test('project.find inventory requires an explicit supported scope before any API call', async () => {
+	for (const payload of [
+		{ includeProjects: true }, { includeProjects: true, teamUuid: ' ' },
+		{ includeProjects: true, teamUuid: 'team-1', folderUuid: 'folder-1' },
+		{ includeProjects: true, teamUuid: 'team-1', workspaceUuid: 'workspace-1' },
+		{ includeProjects: 'true', teamUuid: 'team-1' },
+	]) {
+		let reads = 0;
+		await withEda({ dmt_Project: { getAllProjectsUuid: async () => { reads++; return []; } } }, async () => {
+			await assert.rejects(() => runAction('project.find', { friendlyName: 'Exact', ...payload }), /includeProjects/);
+			assert.equal(reads, 0);
+		});
+	}
+});
+
+test('project.find inventory preserves incomplete evidence and never returns foreign or mismatched entries', async () => {
+	for (const scenario of ['empty', 'duplicate', 'invalid-list', 'list-failed', 'unreadable', 'wrong-id', 'foreign-team']) {
+		const reads: string[] = [];
+		await withEda({ dmt_Project: {
+			getAllProjectsUuid: async () => {
+				if (scenario === 'list-failed') throw new Error('denied');
+				return scenario === 'empty' ? [] : scenario === 'invalid-list' ? ['p1', null] : scenario === 'duplicate' ? ['p1', 'p1'] : ['p1'];
+			},
+			getProjectInfo: async (uuid: string) => {
+				reads.push(uuid);
+				if (scenario === 'unreadable') throw new Error('unreadable');
+				return { uuid: scenario === 'wrong-id' ? 'wrong' : uuid, friendlyName: 'Other', teamUuid: scenario === 'foreign-team' ? 'other-team' : 'team-1' };
+			},
+		} }, async () => {
+			const res: any = await runAction('project.find', { friendlyName: 'Exact', teamUuid: 'team-1', includeProjects: true });
+			assert.equal(res.result.presence, 'unknown', scenario);
+			assert.equal(res.result.enumeration.complete, false, scenario);
+			assert.ok(res.result.enumeration.reason);
+			assert.equal(res.result.projects.length, scenario === 'duplicate' ? 1 : 0, scenario);
+			assert.ok(reads.length <= 1, 'duplicate UUIDs must not cause duplicate queries');
+		});
+	}
+});
+
 test('project.find treats empty, unreadable, and unscoped inventories as unknown', async () => {
 	for (const tc of [
 		{ uuids: [], info: async () => undefined, teamUuid: 'team-1', reason: 'empty_uuid_list' },

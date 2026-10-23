@@ -17,6 +17,7 @@ import (
 
 func TestDashboardSSEUsesCachedStateAndReconnects(t *testing.T) {
 	s := New(Options{AuditDir: t.TempDir()})
+	t.Cleanup(func() { _ = s.runtime.closeRecovery() })
 	d := s.runtime.document("w", &protocol.Context{ProjectUUID: "p", DocumentUUID: "d"})
 	d.Objects["x"] = &runtimeObject{Data: map[string]any{"kind": "component", "secretFullObject": "must-not-stream"}, StaleFields: map[string]bool{"pins": true}}
 	s.runtime.emit("changed", map[string]any{"payload": "must-not-stream"})
@@ -123,7 +124,9 @@ func TestDashboardControlsUseCommonActionDispatch(t *testing.T) {
 	blocked := httptest.NewRecorder()
 	foreign := httptest.NewRequest("GET", "/runtime/events", nil)
 	foreign.Header.Set("Origin", "https://foreign.example")
-	New(Options{AuditDir: t.TempDir()}).handleRuntimeEvents(blocked, foreign)
+	s := New(Options{AuditDir: t.TempDir()})
+	t.Cleanup(func() { _ = s.runtime.closeRecovery() })
+	s.handleRuntimeEvents(blocked, foreign)
 	if blocked.Code != http.StatusForbidden {
 		t.Fatal("cross-origin event access allowed")
 	}

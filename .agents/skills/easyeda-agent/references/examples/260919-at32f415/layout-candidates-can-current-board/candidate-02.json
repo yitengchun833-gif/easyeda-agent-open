@@ -228,7 +228,6 @@
   },
   "files": {
     "apply": "candidate-02.apply.json",
-    "candidate": "candidate-02.json",
-    "preview": "candidate-02.svg"
+    "candidate": "candidate-02.json"
   }
 }

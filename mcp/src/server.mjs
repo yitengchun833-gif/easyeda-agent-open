@@ -18,6 +18,11 @@ import {
 } from './core.mjs';
 import { apiReference, callAction, control, daemonURL, imageResult, runtimeRequest } from './open.mjs';
 import { captureSnapshot, planTool } from './plan-tools.mjs';
+import { pcbConstraintDefinition, pcbConstraintTool } from './pcb-constraint-tools.mjs';
+import { requirementsSchema, expressionSchema } from './project-files.mjs';
+import { compileRoutes } from './route-tools.mjs';
+import { compileLabels } from './label-tools.mjs';
+import { knowledgeTool, knowledgeTools } from './knowledge-tools.mjs';
 
 const catalogExecution = await runEasyeda(['actions'], 30_000);
 if (!catalogExecution.ok || !Array.isArray(catalogExecution.result)) {
@@ -50,11 +55,22 @@ const commonRouteProperties = {
   },
   target: { type: 'object', properties: { projectUuid: { type: 'string' }, documentUuid: { type: 'string' } }, additionalProperties: false, description: 'Optional exact identity assertions, checked inside the Connector before execution.' },
   timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 },
-  edit:{type:'object',properties:{mode:{type:'string',enum:['layout','design']},primitiveIds:{type:'array',items:{type:'string'},minItems:1,maxItems:500},expectedPins:{type:'object',additionalProperties:{type:['string','null']}},requiredChecks:{type:'array',items:{type:'string',enum:['drc']},uniqueItems:true},complete:{type:'boolean'}},additionalProperties:false,description:'Complete modification unit: affected component IDs and approved pin targets. Fixed checks run once after the unit. requiredChecks:drc requires a current DRC receipt at finish. complete:false defers checks and is unverified.'},
+  edit:{type:'object',properties:{mode:{type:'string',enum:['layout','design']},primitiveIds:{type:'array',items:{type:'string'},minItems:1,maxItems:500},expectedIdentities:{type:'object',minProperties:1,additionalProperties:{type:'object',properties:{designator:{type:'string',minLength:1},uniqueId:{type:'string',minLength:1}},required:['designator'],additionalProperties:false}},expectedPins:{type:'object',additionalProperties:{anyOf:[{type:['string','null']},{type:'object',required:['members'],properties:{members:{type:'array',items:{type:'string',minLength:1},minItems:2,uniqueItems:true}},additionalProperties:false}]}},requiredChecks:{type:'array',items:{type:'string',enum:['drc']},uniqueItems:true},complete:{type:'boolean'}},additionalProperties:false,description:'Complete modification unit: affected component IDs and approved pin targets. expectedIdentities checks the existing scope before writing. Fixed checks run once after the unit. requiredChecks:drc requires a current DRC receipt at finish. complete:false defers checks and is unverified.'},
   payload: {
     type: 'object',
     description: 'Typed action payload. Use easyeda_actions to inspect the action inputs.',
     additionalProperties: true,
+  },
+};
+
+const runtimeAcceptanceSchema = {
+  type:'object', additionalProperties:false, required:['acceptCurrentState'], properties:{
+    acceptCurrentState:{type:'boolean',description:'task_accept_current_baseline: false reads the native project/page/board structure and previews its stable baseline SHA plus exact old request hashes; true records explicit user acceptance of a freshly read current page. recovery_open_document requires true for the reviewed source-page baseline, but grants navigation only, no task acceptance or write/save/resume permission. Old native results remain unknown. Task acceptance leaves the queue paused; recovery navigation leaves it unchanged.'},
+    requestIds:{type:'array',items:{type:'string',minLength:1},minItems:1,maxItems:16,uniqueItems:true},
+    connectionEpoch:{type:'string',minLength:1},expectedBaselineSha256:{type:'string',pattern:'^[a-f0-9]{64}$'}, reason:{type:'string',minLength:1,maxLength:4000},
+    attempts:{type:'array',minItems:1,maxItems:16,items:{type:'object',additionalProperties:false,required:['requestId','revision','sha256','scopeKey','windowId'],properties:{requestId:{type:'string',minLength:1},revision:{type:'integer',minimum:1},sha256:{type:'string',pattern:'^[a-f0-9]{64}$'},scopeKey:{type:'string'},windowId:{type:'string',minLength:1}}}},
+    unsavedScopes:{type:'array',maxItems:16,items:{type:'object',additionalProperties:false,required:['key','revision','connectionEpoch'],properties:{key:{type:'string',minLength:1},revision:{type:'integer',minimum:1},connectionEpoch:{type:'string'}}}},
+    nativeEndEvidence:{type:'object',additionalProperties:false,required:['type','attestedBy','oldWindow','statement','terminal'],properties:{type:{type:'string',enum:['manual_session_termination_attestation']},attestedBy:{type:'string',enum:['user']},oldWindow:{type:'string',minLength:1},statement:{type:'string',minLength:1,maxLength:4000},terminal:{type:'array',minItems:1,maxItems:16,items:{type:'object',additionalProperties:false,required:['requestId','statusRequestId','sha256','initialStatusRequestId','initialSha256'],properties:{requestId:{type:'string',minLength:1},statusRequestId:{type:'string',minLength:1},initialStatusRequestId:{type:'string',minLength:1},initialSha256:{type:'string',pattern:'^[a-f0-9]{64}$'},sha256:{type:'string',pattern:'^[a-f0-9]{64}$'}}}}}},
   },
 };
 
@@ -86,24 +102,47 @@ function domainTool(domain) {
 }
 
 const tools = [
+  pcbConstraintDefinition,
+  ...knowledgeTools,
   {
     name: 'easyeda_plan',
-    description: 'Prepare a semantic drawing plan and readable Markdown from a full local snapshot, inspect its exact hash/source bindings, check the expected part/pin set, or apply explicit typed steps. Staged plans require stage: geometry reads only affected components; final independently checks the full target. Stage completion is not whole-page delivery. Uses the existing queue; no automatic layout, source approval, replay, or save.',
+    description: 'Prepare/render/inspect a bound schematic plan. prepare with optional planFile compiles existing caller-confirmed module declarations and a complete page snapshot into the fixed continuous stages and hashed job, without EDA calls or inferred design/approval. compile_routes and compile_labels use actual geometry/wire IDs. run executes a reviewed contiguous range through the same apply path, stopping on failure or unknown. apply binds supported requirements to native evidence, derives scoped checks and independent identity/pin targets, and runs declared DRC only at final delivery. Managed receipts enforce predecessor completion and prevent replay. reconcile reads receipts and the current target without modifying evidence; resume only skips a verified completed prefix and reuses the same remaining-stage executor. Pending/unknown/corrupt writes or any existing delivery receipt block resume. final checks the independent target; run never saves. verify_delivery only reads a confirmed saved delivery, native close/open receipts and fresh page/DRC; compares it with pre-save native evidence through existing Go design-diff and reports persistence/scope separately. It never closes, opens or saves the page. After actual image inspection, finish binds a hashed run to managed execution/image, calls existing visual_review/finish gates, writes raw delivery.json, then derives its summary separately. summary rebuilds only a local derived view with original fail/unknown and UTC timing; no EDA/knowledge calls or edits to originals. No automatic retry; saved:true is not reopen proof, and a summary is not new execution evidence.',
     inputSchema: { type: 'object', properties: {
-      operation: { type: 'string', enum: ['prepare', 'render', 'inspect', 'check', 'apply'] },
+      operation: { type: 'string', enum: ['prepare', 'render', 'inspect', 'check', 'apply', 'run', 'reconcile', 'resume', 'finish', 'verify_delivery', 'summary', 'bind', 'compile_routes', 'compile_labels'] },
+      continuous: { type: 'boolean', description: 'run only, candidate continuous v0: confirmed five-stage place/measurement/routeFrom/labelsFrom/final module; derives stages and edits, binds actual placement IDs and the new plan hash, compiles routes/labels and returns current image. No automatic retry, design or visual acceptance. Do not also pass runStages.' },
+      recheckFinal: { type:'boolean', const:true, description:'apply/run only: one explicit last empty final stage after its unchanged settled fail/unknown target check. Preserves original stage.json and writes one stage.recheck.json bound to its hash; never retries mutation stages or repeats an existing recheck.' },
+      runResultFile: { type: 'string', description: 'finish only: absolute successful run result file; binds the managed plan, edit and image.' },
+      closeRequestId:{type:'string',description:'verify_delivery only: actual current daemon document.close receipt after this save; does not execute close.'},
+      openRequestId:{type:'string',description:'verify_delivery only: actual successful document.open/schematic.page.open receipt after close; current fresh readback must follow it.'},
+      deliveryFile: { type: 'string', description: 'summary/verify_delivery: absolute settled delivery.json. Derives a local view from its hashed run/plan/stage/image evidence; never calls EDA, knowledge or changes originals.' },
+      timingFile: { type: 'string', description: 'summary only: optional historical acceptance record with timing.dailySampleStart and matching delivery SHA/target. Used as a caller-recorded UTC anchor, not as native or user-message timing.' },
+      expectedRunResultHash: { type: 'string', pattern: '^[a-f0-9]{64}$', description: 'finish only: SHA256 of the result bytes reviewed by the caller.' },
+      visualAccepted: { type: 'boolean', const: true, description: 'finish only: explicitly true after actually inspecting the unchanged run image; then calls the existing visual/save gates and writes delivery.json.' },
+      bindStages: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'bind: explicitly named unexecuted empty geometry stages to receive native placed IDs.' },
+      routeStages: { type: 'object', additionalProperties: { type: 'string' }, description: 'bind: route-stage name to its earlier measurement-stage name. Both must be in bindStages.' },
+      runStages: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'object', properties: { stage: { type: 'string', minLength: 1 }, edit: commonRouteProperties.edit }, required: ['stage'], additionalProperties: false }, description: 'run only: explicit contiguous forward stages with prepared typed steps or confirmed routeFrom declarations. Compiles declared direct routes from managed measurement receipts using the same apply guards; refuses existing receipts, stops on partial/unknown, never retries, saves or approves visual delivery.' },
       snapshotFile: { type: 'string', description: 'prepare: absolute path to a full identified schematic snapshot.' },
-      outputFile: { type: 'string', description: 'prepare: absolute new plan.json path; derives plan.md beside it.' },
-      planFile: { type: 'string', description: 'render/inspect/check/apply: absolute plan.json path. render refreshes derived Markdown from current JSON without altering the plan.' },
-      expectedHash: { type: 'string', description: 'SHA256 of reviewed plan bytes; required for apply.' },
-      stage: { type: 'string', minLength: 1, description: 'apply only: exact plan.stages id. Required when the plan has stages; executes only this stage. Compile later static steps from actual component IDs/readback.' },
-      sources: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, path: { type: 'string' }, sha256: { type: 'string' }, anchor: { type: 'string' } }, required: ['id', 'path'], additionalProperties: false } },
+      outputFile: { type: 'string', description: 'prepare: absolute new plan.json plus Markdown; with planFile also produces .job.json and a new .execution receipt directory declaration. summary: absolute new derived JSON/Markdown. compile_routes/compile_labels: absolute new artifact JSON path.' },
+      planFile: { type: 'string', description: 'prepare optional: existing easyeda.plan/1 design declarations only, with explicit semanticTarget components/nets, layoutHints.parts (key/x/y/rotation/rotationMode/mirror/subPartName), expression, sources and caller confirmation; requires full snapshotFile and window; a nonempty page also needs a confirmed empty layoutHints.region and complete preserved geometry/connectivity, builds fixed five stages/job without execution. Other operations: exact plan.json; render refreshes Markdown only.' },
+      expectedHash: { type: 'string', description: 'SHA256 of reviewed plan bytes; required for apply/run.' },
+      stage: { type: 'string', minLength: 1, description: 'apply or compile: exact plan.stages id. Compilers produce steps for this unexecuted stage; apply executes only the selected stage.' },
+      geometryReceiptFile: { type: 'string', description: 'compile_routes: actual settled successful geometry execution receipt.' },
+      wireReceiptFile: { type: 'string', description: 'compile_labels: actual settled successful wire execution receipt.' },
+      wireReadbackFile: { type: 'string', description: 'compile_labels: alternative to wireReceiptFile; original fresh scoped components.list response with existing wires. Requires explicit wireIds.' },
+      wireIds: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, maxItems: 500, uniqueItems: true, description: 'compile_labels with wireReadbackFile: only these observed existing wires may have Name visibility changed.' },
+      netPolicies: { type: 'object', additionalProperties: { type: 'string', enum: ['direct', 'module_port', 'local_power', 'local_ground'] }, description: 'compile_routes: optional supplement to confirmed layoutHints.netPolicies; conflicting policies are rejected. Every connected net in the stage scope needs a policy; only direct is routed, and all its endpoints must be measured in scope.' },
+      labels: { type: 'array', items: { type: 'object', properties: { wireId: { type: 'string' }, attributeId: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, rotation: { type: 'number' } }, required: ['wireId'], additionalProperties: false }, description: 'compile_labels: explicit visible Name labels. May be omitted only when confirmed layoutHints.visibleNetNames is declared; one Name per observed same-net wire island is selected. Explicit [] hides names while preserving electrical values.' },
+      sources: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, path: { type: 'string' }, sha256: { type: 'string' }, anchor: { type: 'string' }, knowledge: { type: 'object', properties: { adoptedFor: { type: 'string', minLength: 1 }, conditions: { type: 'string', minLength: 1 }, componentKeys: { type: 'array', items: { type: 'string' } }, netNames: { type: 'array', items: { type: 'string' } }, checkMethod: { type: 'string', enum: ['native','checker','ai_review','manual_unknown'] } }, required: ['adoptedFor','conditions','componentKeys','netNames','checkMethod'], additionalProperties: false } }, required: ['id', 'path'], additionalProperties: false } },
+      taskKind:{type:'string',enum:['local_edit'],description:'Snapshot prepare: scoped existing-page edit; derives mandatory source/local/final checks and maps native source IDs. Module declarations infer their task kind automatically.'},
       goal: { type: 'string' }, layoutMode: { type: 'string', enum: ['preserve', 'relayout'] },
+      requirements: requirementsSchema, layoutHints: expressionSchema,
       overwrite: { type: 'boolean' }, requireConfirmed: { type: 'boolean', description: 'Optional caller-authored confirmation metadata check; not independent proof of human approval.' },
       window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs,
       edit: commonRouteProperties.edit, dryRun: { type: 'boolean' },
+      receiptFile: { type: 'string', description: 'apply staged non-dry-run only: absolute new JSON path for an execution receipt, created before EDA calls.' },
     }, required: ['operation'], additionalProperties: false },
   },
-  {name:'easyeda_runtime',description:'Read existing daemon observations without EDA calls; control the shared queue, resume confirmed paused batches, record a current-image visual review, finish a verified task and save, or persist caller-authored task intent with task_update, or replace it with task_replace after cancelling old queued work across clients (not execution evidence; remains paused). Unknown writes are never automatically replayed.',inputSchema:{type:'object',properties:{operation:{type:'string',enum:['state','pause','resume_queue','cancel','resume','retry','visual_review','finish','task_update','task_replace','restore']},window:commonRouteProperties.window,target:{type:'object',properties:{projectUuid:{type:'string'},documentUuid:{type:'string'}},required:['projectUuid','documentUuid'],additionalProperties:false},sourceWindow:{type:'string',description:'restore: historical source window chosen from state; target identity and current generation are required.'},expectedRevision:{type:'integer',minimum:0,description:'task_update/task_replace: current task revision, 0 if absent; rejects stale updates.'},task:{type:'object',properties:{goal:{type:'string',minLength:1,maxLength:2000},primitiveIds:{type:'array',items:{type:'string',minLength:1,maxLength:256},maxItems:500},remaining:{type:'array',items:{type:'string',minLength:1,maxLength:1000},maxItems:32},note:{type:'string',maxLength:4000}},required:['goal','primitiveIds','remaining'],additionalProperties:false},includeObjects:{type:'boolean',description:'State only: full cached objects (may be large). Default is a summary; primitiveIds returns a local projection.'},primitiveIds:{type:'array',items:{type:'string'},maxItems:500},requestId:{type:'string'},generation:{type:'integer',minimum:0},screenshotRequestId:{type:'string'},source:{type:'string',enum:['ai','engineer']},timeoutMs:commonRouteProperties.timeoutMs},additionalProperties:false}},
+  {name:'easyeda_runtime',description:'state reads existing daemon observations without EDA calls; other operations may call EDA or change runtime state. Control the shared queue, resume confirmed paused batches, record a current-image visual review, finish a verified task and save, or persist caller-authored task intent with task_update, or replace it with task_replace after cancelling old queued work across clients (not execution evidence; remains paused). Unknown writes are never automatically replayed. task_accept_current_baseline supports an explicit user manual disposition: preview the native structure and hashes, then accept the same reviewed baseline with exact old evidence and a human old-session termination attestation; only the exact new typed page task is admitted, without settling old results or resuming the queue. recovery_open_document is an explicit view-changing native navigation, not a zero-EDA read: reuse the reviewed current source-page acceptance evidence and source generation/expectedRevision, with target naming the verified same-project destination page. It calls document.open once then document.current; unknown or mismatched readback is not success and must not be retried. It never creates a task, settles old unknown results, grants drawing/save/resume permission or replays old work. Preview and accept the task baseline again on the destination before any write.',inputSchema:{type:'object',properties:{operation:{type:'string',enum:['state','pause','resume_queue','cancel','resume','retry','visual_review','finish','task_update','task_replace','task_accept_current_baseline','recovery_open_document','restore']},window:commonRouteProperties.window,target:{type:'object',properties:{projectUuid:{type:'string'},documentUuid:{type:'string'}},required:['projectUuid','documentUuid'],additionalProperties:false,description:'Exact current page identity, except recovery_open_document names the verified destination page in the same project.'},sourceWindow:{type:'string',description:'restore: historical source window chosen from state; target identity and current generation are required.'},expectedRevision:{type:'integer',minimum:0,description:'task_update/task_replace/task_accept_current_baseline/recovery_open_document: current source-page task revision, 0 if absent; rejects stale updates.'},acceptance:runtimeAcceptanceSchema,task:{type:'object',properties:{goal:{type:'string',minLength:1,maxLength:2000},primitiveIds:{type:'array',items:{type:'string',minLength:1,maxLength:256},maxItems:500},remaining:{type:'array',items:{type:'string',minLength:1,maxLength:1000},maxItems:32},note:{type:'string',maxLength:4000}},required:['goal','primitiveIds','remaining'],additionalProperties:false},includeObjects:{type:'boolean',description:'State only: full cached objects (may be large). Default is a summary; primitiveIds returns a local projection.'},primitiveIds:{type:'array',items:{type:'string'},maxItems:500},requestId:{type:'string'},generation:{type:'integer',minimum:0,description:'Current source-page observation generation; recovery_open_document validates this before navigating to target.'},screenshotRequestId:{type:'string'},source:{type:'string',enum:['ai','engineer']},timeoutMs:commonRouteProperties.timeoutMs},additionalProperties:false}},
   { name: 'easyeda_control', description: 'Query runtime progress/receipts, cancel requests or supersede this MCP session’s old instruction in a window. Call supersede when the user changes instructions, before new writes. Native calls cannot be forcibly stopped; inFlight lists unresolved calls. No rollback.',
     inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, operation: { type: 'string', enum: ['status', 'cancel', 'supersede','pause','resume'] }, requestId: { type: 'string' }, allClients: { type: 'boolean', description: 'For status/cancel/pause/resume: inspect or control work from other/restarted MCP sessions too.' } }, required: ['window'], additionalProperties: false } },
   {
@@ -124,6 +163,13 @@ const tools = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'easyeda_connect',
+    title: 'Connect or reconnect EasyEDA',
+    description: 'Explicitly connect/reconnect when the user requests it: reuse the healthy configured daemon or start the companion daemon if absent, then return health and connected windows. Does not restart/replace a live daemon, open EasyEDA, replay requests or edit/save projects. A healthy daemon with no windows is waiting_for_connector, not an EDA connection. Do not call for read-only status requests or when service startup is forbidden; use easyeda_health.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'easyeda_health',
@@ -219,7 +265,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const { name, arguments: args = {} } = request.params;
   const input = { ...args, signal: extra.signal };
   try {
-    if (name === 'easyeda_plan') return await planTool(input, byName);
+    if (name === 'easyeda_pcb_constraints') return await pcbConstraintTool(input);
+    if (name.startsWith('knowledge_')) return await knowledgeTool(name, input);
+    if (name === 'easyeda_plan') {
+      if (input.operation === 'compile_routes') return toMcpResult({ ok: true, result: await compileRoutes(input) });
+      if (input.operation === 'compile_labels') return toMcpResult({ ok: true, result: await compileLabels(input) });
+      return await planTool(input, byName);
+    }
     if (name === 'easyeda_runtime') return runtimeRequest(input);
     if (name === 'easyeda_snapshot' && input.cacheOnly) {
       if (input.outputFile) throw new Error('Cached observations cannot be exported as a fresh snapshot');
@@ -233,9 +285,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       return toMcpResult(await runEasyeda(buildProjectTransferArgs(input), 90_000));
     }
     if (name === 'easyeda_health') {
-      const response = await fetch(`${daemonURL}/health`, { signal: AbortSignal.timeout(5000) });
-      const result = await response.json();
-      return toMcpResult(response.ok ? { ok: true, result } : { ok: false, error: result });
+      const { readDaemonHealth, recoveryRevision } = await import('./daemon-lifecycle.mjs');
+      const result = await readDaemonHealth({ url: daemonURL });
+      if (!result) throw new Error(`Daemon unavailable at ${daemonURL}; health is read-only. Use easyeda_connect only when explicitly authorized to connect/start the service.`);
+      result.connectionRecovery = recoveryRevision;
+      return toMcpResult({ ok: true, result });
+    }
+    if (name === 'easyeda_connect') {
+      if (Object.keys(args).length) throw new Error('easyeda_connect accepts no arguments; it uses the configured companion daemon only.');
+      const { ensureDaemon } = await import('./daemon-lifecycle.mjs');
+      const result = await ensureDaemon({ url: daemonURL });
+      return toMcpResult({ ok: true, result: { ...result,
+        connectionState: result.windows?.length ? 'connected' : 'waiting_for_connector',
+        automaticReplay: false } });
     }
     if (name === 'easyeda_actions') {
       const filtered = input.exact ? actions.filter(a => a.name === input.exact) : filterActions(actions, input);

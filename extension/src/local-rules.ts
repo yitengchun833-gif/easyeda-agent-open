@@ -1,4 +1,5 @@
 import { exactJSON } from './preserve-instance';
+import { checkNetMembers } from './net-membership';
 import { wirePointOnSegment, type WireSegment } from './schematic-wire-topology';
 
 export type Facts = Record<string, any>;
@@ -9,7 +10,7 @@ const segment = (w:any):WireSegment => [w.x0,w.y0,w.x1,w.y1];
 const close = (a:number,b:number) => Math.abs(a-b)<1e-6;
 
 /** Fixed facts only. Layout style and visual readability remain model decisions. */
-export function localRules(before: Facts, after: Facts, mode: 'layout'|'design', expectedPins?: Record<string,string|null>, options: {displayOnly?:boolean; wireIds?:string[]} = {}): RuleResult[] {
+export function localRules(before: Facts, after: Facts, mode: 'layout'|'design', expectedPins?: Record<string,string|null|{members:string[]}>, options: {displayOnly?:boolean; wireIds?:string[]} = {}): RuleResult[] {
 	const results:RuleResult[]=[];
 	const add=(id:string,status:RuleResult['status'],severity:RuleResult['severity'],coverage:RuleResult['coverage'],targets:string[],evidence:unknown)=>results.push({id,status,severity,coverage,targets,evidence});
 	const old=new Map<string,Facts>((before.components??[]).filter((c:Facts)=>c.componentType==='part').map((c:Facts)=>[c.primitiveId,c]));
@@ -41,7 +42,15 @@ export function localRules(before: Facts, after: Facts, mode: 'layout'|'design',
 				if(p.noConnected===true&&oldPin?.noConnected===true)continue; // Explicit native NC evidence, never inferred from null net.
 			}
 			else if(expected===null) {if(p.noConnected!==true)unknown.push(`${key}:NC`);continue;}
+			else if(expected==='' && p.noConnected!==false) {if(p.noConnected===true)changed.push(`${key}:NC`);else unknown.push(`${key}:NC`);continue;}
 			if(c.netlistAvailable!==true || c.netAmbiguous===true || (mode==='layout'&&(previous?.netlistAvailable!==true||previous?.netAmbiguous===true))){unknown.push(key);continue}
+			if(mode==='design' && expected && typeof expected==='object') {
+				const match=checkNetMembers(after._netIndex,expected.members);
+				if(!Array.isArray(expected.members)||!expected.members.includes(refKey)||p.noConnected===true)changed.push(key);
+				else if(match.status==='fail')changed.push(key);
+				else if(match.status==='unknown'||typeof p.net!=='string'||p.net!==match.net)unknown.push(key);
+				continue;
+			}
 			if(typeof p.net!=='string' || typeof expected!=='string'){unknown.push(key);continue}
 			if(p.net!==expected)changed.push(key);
 		}
@@ -91,14 +100,41 @@ export function localRules(before: Facts, after: Facts, mode: 'layout'|'design',
 }
 
 /** Compare only this scope's observed identities, geometry, text and touching wires. */
-export function localObservationKey(facts:Facts):string {
+export function localObservationKey(facts:Facts, displayOnly=false):string {
 	const pick=(o:Facts,keys:string[])=>Object.fromEntries(keys.map(k=>[k,o[k]]));
 	const sorted=(items:Facts[])=>items.sort((a,b)=>String(a.primitiveId).localeCompare(String(b.primitiveId)));
-	const components=sorted((facts.components??[]).map((c:Facts)=>({...pick(c,['primitiveId','componentType','uniqueId','designator','component','footprint','supplierId','x','y','rotation','mirror','bbox','pinsAvailable','netlistAvailable']),pins:sorted((c.pins??[]).map((p:Facts)=>pick(p,['primitiveId','pinNumber','x','y','rotation','net','noConnected'])))})));
+	const componentKeys=['primitiveId','componentType','uniqueId','designator','component','footprint','supplierId','x','y','rotation','mirror','bbox'];
+	const components=sorted((facts.components??[]).map((c:Facts)=>displayOnly
+		? pick(c,componentKeys)
+		: {...pick(c,[...componentKeys,'pinsAvailable','netlistAvailable']),pins:sorted((c.pins??[]).map((p:Facts)=>pick(p,['primitiveId','pinNumber','x','y','rotation','net','noConnected'])))}));
 	const texts=sorted((facts.texts??[]).filter((t:Facts)=>t.visible!==false&&t.rendered!==false).map((t:Facts)=>pick(t,['primitiveId','parentId','key','value','x','y','visible','keyVisible','valueVisible','bbox'])));
 	const wireIds=new Set(relatedWireIds(facts.components??[],facts.wires??[]));
-	const wires=sorted((facts.wires??[]).filter((w:Facts)=>wireIds.has(w.primitiveId)).map((w:Facts)=>pick(w,['primitiveId','x0','y0','x1','y1','net'])));
+	const wires=displayOnly?[]:sorted((facts.wires??[]).filter((w:Facts)=>wireIds.has(w.primitiveId)).map((w:Facts)=>pick(w,['primitiveId','x0','y0','x1','y1','net'])));
 	return exactJSON({components,texts,wires});
+}
+
+/** Validate a plan's observed component identity against an already-scoped native read. */
+export function expectedIdentityIssue(facts: Facts|undefined, scope: unknown, expected: unknown): string|undefined {
+	if (!expected || typeof expected !== 'object' || Array.isArray(expected) || !Object.keys(expected).length) return 'expectedIdentities must be an object keyed by primitiveId.';
+	if (!Array.isArray(scope) || !scope.length || scope.some(id => typeof id !== 'string' || !id)) return 'expectedIdentities requires a non-empty string edit scope.';
+	const read = facts?.readScope;
+	if (!facts || facts.partial === true || read?.concurrentChange !== false || !Array.isArray(read.missingIds) || read.missingIds.length
+		|| !Array.isArray(read.primitiveIds) || scope.some(id => !read.primitiveIds.includes(id)) || !Array.isArray(facts.components)
+		|| facts.components.some((part: Facts) => !part || typeof part.primitiveId !== 'string' || !part.primitiveId)
+		|| new Set(facts.components.map((part: Facts) => part.primitiveId)).size !== facts.components.length) return 'Current scoped component observation is unavailable or changed.';
+	const actual = new Map(facts.components.map((component: Facts) => [component?.primitiveId, component]));
+	for (const [primitiveId, identity] of Object.entries(expected as Record<string, unknown>)) {
+		if (!primitiveId || !scope.includes(primitiveId)) return `expectedIdentities primitiveId ${primitiveId || '(empty)'} is outside edit scope.`;
+		if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return `expectedIdentities.${primitiveId} must be an object.`;
+		const expectedIdentity = identity as Record<string, unknown>;
+		if (Object.keys(expectedIdentity).some(key => key !== 'designator' && key !== 'uniqueId')) return `expectedIdentities.${primitiveId} contains an unsupported identity field.`;
+		if (typeof expectedIdentity.designator !== 'string' || !expectedIdentity.designator.trim()) return `expectedIdentities.${primitiveId}.designator must be a non-empty string.`;
+		if (expectedIdentity.uniqueId !== undefined && (typeof expectedIdentity.uniqueId !== 'string' || !expectedIdentity.uniqueId)) return `expectedIdentities.${primitiveId}.uniqueId must be a non-empty string when supplied.`;
+		const observed = actual.get(primitiveId);
+		if (!observed) return `Scoped component ${primitiveId} is missing from the native observation.`;
+		if (observed.designator !== expectedIdentity.designator) return `Scoped component ${primitiveId} designator differs from expected identity.`;
+		if (expectedIdentity.uniqueId !== undefined && observed.uniqueId !== expectedIdentity.uniqueId) return `Scoped component ${primitiveId} uniqueId differs from expected identity.`;
+	}
 }
 
 /** Only official display fields qualify; a caller flag alone cannot skip electrical checks. */

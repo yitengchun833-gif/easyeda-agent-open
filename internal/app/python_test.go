@@ -34,7 +34,7 @@ func fakePython(goos string, env map[string]string, onPath map[string]string, wo
 
 func TestResolvePython(t *testing.T) {
 	const (
-		stub = `C:\Users\u\AppData\Local\Microsoft\WindowsApps\python3.exe`
+		stub = `C:\TestProfile\AppData\Local\Microsoft\WindowsApps\python3.exe`
 		py   = `C:\Windows\py.exe`
 		pyth = `C:\Python313\python.exe`
 	)

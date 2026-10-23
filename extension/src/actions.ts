@@ -1,6 +1,6 @@
 import type { Execution, ExecutionSignal } from './action-queue';
 import { sceneObservation } from './scene-observation';
-import { displayOnlyAction, includesNativeScript, localRules, localObservationKey, relatedWireIds, type RuleResult } from './local-rules';
+import { displayOnlyAction, expectedIdentityIssue, includesNativeScript, localRules, localObservationKey, relatedWireIds, type RuleResult } from './local-rules';
 import { projectOpen, projectExport } from './project-transfer';
 import { silkSlotFacts, validSilkRect, type SilkLabel } from './pcb-silk-placement';
 /**
@@ -18,6 +18,7 @@ import { pcbNetColorSet } from './pcb-net-color';
 import { documentTypeLabel, readResponseContext } from './eda-context';
 import { checkSchematicTarget } from './schematic-target';
 import { getSchematicNetlistFile, NetlistContextError } from './schematic-netlist-file';
+import type { NetlistFile, NetlistProvenance } from './schematic-analysis-netlist';
 import { renameSchematicPage } from './schematic-page-rename';
 import { assertSchematicReadinessContext, captureSchematicReadiness, SchematicReadinessError, SchematicReadinessToken, waitForSchematicReady } from './schematic-readiness';
 import { readProjectFootprintSourceArchive, readProjectNativeSourceArchive } from './native-footprint-source';
@@ -485,14 +486,23 @@ const projectExportSource: Handler = async (payload) => {
 const projectFind: Handler = async (payload) => {
 	const friendlyName = requireString(payload, 'friendlyName');
 	const teamUuid = optionalString(payload, 'teamUuid') || undefined;
+	if (payload.includeProjects !== undefined && typeof payload.includeProjects !== 'boolean') {
+		throw new ActionError(ErrorCodes.INVALID_STATE, 'includeProjects must be a boolean.');
+	}
+	const includeProjects = payload.includeProjects === true;
+	if (includeProjects && (!teamUuid?.trim() || payload.folderUuid !== undefined || payload.workspaceUuid !== undefined)) {
+		throw new ActionError(ErrorCodes.INVALID_STATE, 'includeProjects requires an explicit authorized teamUuid; only its root is supported, without folderUuid/workspaceUuid.');
+	}
 	const scope = teamUuid ? 'team-root' : 'unscoped';
 	const matches: Array<{ uuid: string; friendlyName: string; teamUuid: string; folderUuid: string | null }> = [];
+	const projects: typeof matches = [];
 	const unreadableUuids: string[] = [];
 	let uuids: string[];
 	try {
 		const listed = await eda.dmt_Project.getAllProjectsUuid(teamUuid);
 		if (!Array.isArray(listed) || listed.some(uuid => typeof uuid !== 'string' || !uuid)) {
 			return { result: {
+				...(includeProjects ? { projects } : {}),
 				friendlyName, teamUuid: teamUuid ?? null, presence: 'unknown', matches,
 				enumeration: { scope, complete: false, reason: 'invalid_uuid_list', uuidCount: 0, readableCount: 0, unreadableUuids },
 			} };
@@ -501,6 +511,7 @@ const projectFind: Handler = async (payload) => {
 	}
 	catch (err) {
 		return { result: {
+			...(includeProjects ? { projects } : {}),
 			friendlyName, teamUuid: teamUuid ?? null, presence: 'unknown', matches,
 			enumeration: { scope, complete: false, reason: 'uuid_list_failed', uuidCount: 0, readableCount: 0, unreadableUuids },
 		}, warnings: [`Project UUID enumeration failed: ${describeThrown(err)}`] };
@@ -521,9 +532,9 @@ const projectFind: Handler = async (payload) => {
 				teamScopeMismatch = true;
 				continue;
 			}
-			if (info.friendlyName === friendlyName) {
-				matches.push({ uuid, friendlyName: info.friendlyName, teamUuid: info.teamUuid, folderUuid: info.folderUuid ?? null });
-			}
+			const item = { uuid, friendlyName: info.friendlyName, teamUuid: info.teamUuid, folderUuid: info.folderUuid ?? null };
+			if (includeProjects) projects.push(item);
+			if (info.friendlyName === friendlyName) matches.push(item);
 		}
 		catch { unreadableUuids.push(uuid); }
 	}
@@ -537,6 +548,7 @@ const projectFind: Handler = async (payload) => {
 		: null;
 	const complete = reason === null;
 	return { result: {
+		...(includeProjects ? { projects } : {}),
 		friendlyName, teamUuid: teamUuid ?? null,
 		presence: matches.length > 0 ? 'found' : complete ? 'absent' : 'unknown',
 		matches,
@@ -592,6 +604,18 @@ const documentCurrent: Handler = async () => {
 		throw edaError(err, 'Failed to read current document info.');
 	}
 	if (!doc) {
+		let project;
+		try {
+			project = await eda.dmt_Project.getCurrentProjectInfo();
+		}
+		catch (err) {
+			throw edaError(err, 'Failed to read current project info.');
+		}
+		if (project?.uuid) {
+			return { result: { uuid: null, tabId: null, documentType: null, documentTypeCode: null,
+				parentProjectUuid: project.uuid, projectOpened: true, documentActive: false,
+				state: 'project_open_no_active_document', message: '工程已打开、无活动图页' } };
+		}
 		throw new ActionError(ErrorCodes.EDA_CALL_FAILED, 'No active document.');
 	}
 	return {
@@ -1172,6 +1196,40 @@ export const schematicDesignatorsList: Handler = async () => {
 };
 
 export const schematicComponentsList = async (payload: Payload, _execution?: Execution, reads?: SchematicReadPass): Promise<ActionResult> => {
+	if (payload.verifyDesign !== undefined) {
+		const scope = requireStringArray(payload, 'primitiveIds');
+		const verification = payload.verifyDesign as Record<string, unknown>;
+		if (!scope.length || scope.length > 500 || payload.allPages === true || !verification || typeof verification !== 'object' || Array.isArray(verification)
+			|| Object.keys(verification).some(key => !['expectedPins', 'expectedIdentities', 'wireIds'].includes(key))
+			|| !verification.expectedPins || typeof verification.expectedPins !== 'object' || Array.isArray(verification.expectedPins)
+			|| !Object.keys(verification.expectedPins).length
+			|| (verification.wireIds !== undefined && (!Array.isArray(verification.wireIds) || verification.wireIds.some(id => typeof id !== 'string' || !id)))) {
+			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'verifyDesign requires a bounded local scope and explicit expectedPins/expectedIdentities.');
+		}
+		const before = await readResponseContext();
+		// A separate read request lets the host commit the preceding write; never replay it to obtain evidence.
+		const response = await schematicComponentsList({ primitiveIds: scope, includePins: true, includePinNets: true, includeNetIndex: true,
+			includeWires: true, includeBBox: true, includeTexts: true });
+		const facts = response.result as Record<string, any>;
+		const context = await readResponseContext();
+		if (!before.projectUuid || !before.documentUuid || before.projectUuid !== context.projectUuid || before.documentUuid !== context.documentUuid
+			|| facts.readScope?.concurrentChange === true || facts.readScope?.missingIds?.length) {
+			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Design readback target or scope changed.');
+		}
+		const identityIssue = expectedIdentityIssue(facts, scope, verification.expectedIdentities);
+		if (identityIssue) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, identityIssue);
+		const keys = new Set<string>((facts.components ?? []).flatMap((part: Record<string, any>) => (part.pins ?? [])
+			.flatMap((pin: Record<string, any>) => [`${part.primitiveId}.${pin.pinNumber}`, `${part.designator}.${pin.pinNumber}`])));
+		if (Object.keys(verification.expectedPins).some(key => !keys.has(key))) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Design pin target lies outside the observed scope.');
+		const items = localRules(facts, facts, 'design', verification.expectedPins as Record<string, string | null | { members: string[] }>,
+			{ wireIds: verification.wireIds as string[] | undefined });
+		items.push({ id: 'target', status: 'pass', severity: 'error', coverage: 'checked', targets: scope, evidence: context });
+		const required = items.filter(item => item.severity === 'error' && item.coverage !== 'not_applicable');
+		return { context, result: { ...facts, designVerification: { ...verification, primitiveIds: scope, mode: 'design' },
+			rules: { version: 'open-local-1', mode: 'design', scope, items,
+				status: required.some(item => item.status === 'fail') ? 'fail' : required.some(item => item.status === 'unknown') ? 'unknown' : 'pass', visualRequired: true },
+			_readback: [{ action: 'schematic.components.list', result: facts }] } };
+	}
 	await reads?.begin();
 	const readSequence = sceneObservation().sequence;
 	const allPages = optionalBoolean(payload, 'allPages') === true;
@@ -1255,12 +1313,14 @@ export const schematicComponentsList = async (payload: Payload, _execution?: Exe
 	// for block instances while the real cause was a muted netlist export).
 	let pinNetsAvailable = false;
 	let pinNetsError: string | undefined;
+	let netlistProvenance: NetlistProvenance | undefined;
 	if (includePins && includePinNets) {
 		try {
 			const collected = await (reads ? reads.netlist() : collectNetlistPinNets());
 			pinNetsByDesignator = collected.byDesignator;
 			pinNetsAvailable = collected.available;
 			pinNetsError = collected.error;
+			netlistProvenance = collected.provenance;
 		}
 		catch (err) {
 			if (err instanceof NetlistContextError) throw err;
@@ -1307,16 +1367,52 @@ export const schematicComponentsList = async (payload: Payload, _execution?: Exe
 	// Request-local only: ref/position do not affect identity, but every resolver
 	// input (including instance provenance and stable name) must match exactly.
 	const identityCache = new Map<string, DeviceResolution>();
+	const identityStarted = Date.now();
+	const records = components.map(serializeComponent);
+	const identityKeyOf = (record: Record<string, unknown>) => JSON.stringify([record.device, record.component, record.footprint, record.name, record.supplierId, record.manufacturerId]);
+	let candidateInventory: Promise<Array<Record<string, unknown>>> | undefined;
+	const supplierIds = [...new Set(records.filter(record => record.componentType === 'part').map(record => record.supplierId)
+		.filter((value): value is string => typeof value === 'string' && /^C\d+$/.test(value)))];
+	const getCandidates = async (supplierId: string) => {
+		candidateInventory ??= (async () => {
+			const queried = await withTimeout(eda.lib_Device.getByLcscIds(supplierIds, undefined, true), 7000, 'identity batched LCSC query timed out after 7000ms');
+			if (!Array.isArray(queried)) throw new Error('complete batched LCSC candidate inventory unavailable');
+			const values = queried as unknown as Array<Record<string, unknown>>;
+			if (values.some(hit => !/^C\d+$/.test(String(hit.supplierId ?? identityRecord(hit.otherProperty)['Supplier Part'] ?? '')))) {
+				throw new Error('batched LCSC candidate lacks exact source number; cannot attribute ambiguous results');
+			}
+			return values;
+		})();
+		return (await candidateInventory).filter(hit => (hit.supplierId ?? identityRecord(hit.otherProperty)['Supplier Part']) === supplierId);
+	};
+	if (includeDeviceIdentity) {
+		const unique = new Map<string, Record<string, unknown>>();
+		for (const record of records) {
+			const uuid = (record.device as Record<string, unknown> | undefined)?.uuid;
+			if (record.componentType === 'part' && !(typeof uuid === 'string' && uuid.length === 32)) unique.set(identityKeyOf(record), record);
+		}
+		const jobs = [...unique.entries()];
+		if (jobs.length) await getNativeFootprints();
+		let next = 0;
+		// Independent library reads share one fresh project inventory; never parallelize EDA writes.
+		await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, async () => {
+			while (next < jobs.length) {
+				const [key, record] = jobs[next++];
+				identityCache.set(key, await resolvePlacedDevice(record, getNativeFootprints, getCandidates));
+			}
+		}));
+	}
+	const identityElapsedMs = Date.now() - identityStarted;
 	const serialized: Array<Record<string, unknown>> = [];
-	for (const component of components) {
-		const record = serializeComponent(component);
+	for (const [index, component] of components.entries()) {
+		const record = records[index];
 		if (includeDeviceIdentity && record.componentType === 'part') {
 			const rawDevice = record.device as Record<string, unknown> | undefined;
 			const rawUuid = typeof rawDevice?.uuid === 'string' ? rawDevice.uuid : '';
 			// A valid library uuid is already authoritative; only resolve the
 			// suspicious instance-shaped identity to avoid needless API calls.
 			if (rawUuid.length !== 32) {
-				const identityKey = JSON.stringify([record.device, record.component, record.footprint, record.name, record.supplierId, record.manufacturerId]);
+				const identityKey = identityKeyOf(record);
 				let resolved = identityCache.get(identityKey);
 				if (!resolved) {
 					resolved = await resolvePlacedDevice(record, getNativeFootprints);
@@ -1384,6 +1480,7 @@ export const schematicComponentsList = async (payload: Payload, _execution?: Exe
 			}
 			if (includePins && includePinNets) {
 				record.netlistAvailable = pinNetsAvailable;
+				if (netlistProvenance) record.netlistProvenance = netlistProvenance;
 				if (!pinNetsAvailable) record.netlistError = pinNetsError ?? 'netlist unavailable';
 			}
 		}
@@ -1410,6 +1507,14 @@ export const schematicComponentsList = async (payload: Payload, _execution?: Exe
 		}
 	}
 	const pagePrimitives = includePagePrimitives ? await readSchPagePrimitiveState() : undefined;
+	const pagePrimitiveBounds: Record<string, unknown> = {};
+	if (includeBBox && pagePrimitives) {
+		const records = Object.entries(pagePrimitives!).filter(([key]) => key !== 'components' && key !== 'wires').flatMap(([, rows]) => rows);
+		for (let offset = 0; offset < records.length; offset += 4) await Promise.all(records.slice(offset, offset + 4).map(async record => {
+			try { pagePrimitiveBounds[String(record.primitiveId)] = { bbox: await eda.sch_Primitive.getPrimitivesBBox([String(record.primitiveId)]) }; }
+			catch (error) { pagePrimitiveBounds[String(record.primitiveId)] = { bbox:null, error:describeThrown(error) }; }
+		}));
+	}
 	const texts: Array<Record<string, unknown>> = [];
 	let textsAvailable = includeTexts;
 	if (includeTexts) {
@@ -1441,6 +1546,7 @@ export const schematicComponentsList = async (payload: Payload, _execution?: Exe
 		result: {
 			components: serialized,
 			count: serialized.length,
+			...(includeDeviceIdentity ? { identityTiming: { elapsedMs: identityElapsedMs, uniqueLookups: identityCache.size, maxConcurrency: 4, cacheScope: 'this-request-only' } } : {}),
 			readScope: { complete: !primitiveIds && !allPages, allPages, primitiveIds: primitiveIds ?? [],
 				concurrentChange: sceneObservation().sequence !== readSequence,
 				missingIds: primitiveIds?.filter(id => !serialized.some(c => c.primitiveId === id)) ?? [],
@@ -1450,13 +1556,14 @@ export const schematicComponentsList = async (payload: Payload, _execution?: Exe
 			...(payload.includeNetIndex === true && pinNetsByDesignator ? { _netIndex:Object.fromEntries([...pinNetsByDesignator].map(([d,pins])=>[d,Object.fromEntries(pins)])) } : {}),
 			wires,
 			...(includeWires ? { wiresAvailable, ...(wiresError ? { wiresError } : {}) } : {}),
-			...(includePagePrimitives ? { pagePrimitives } : {}),
+			...(includePagePrimitives ? { pagePrimitives, ...(includeBBox ? {pagePrimitiveBounds} : {}) } : {}),
 			// Netlist trust flag: without it a caller cannot tell "every pin is
 			// genuinely unconnected" from "the netlist read failed, so every pin's net
 			// is null". Emitted only when the caller asked for pin nets at all.
 			...(includePins && includePinNets
 				? { pinNetsAvailable, ...(pinNetsAvailable ? {} : { pinNetsError: pinNetsError ?? 'netlist unavailable' }) }
 				: {}),
+			...(netlistProvenance ? { netlistProvenance } : {}),
 			...(connectivitySummary ? { connectivitySummary } : {}),
 		},
 	};
@@ -1642,6 +1749,7 @@ const placeSchematicComponent: Handler = async (payload) => {
 	const addIntoBom = optionalBoolean(payload, 'addIntoBom');
 	const addIntoPcb = optionalBoolean(payload, 'addIntoPcb');
 	const designator = optionalString(payload, 'designator');
+	const uniqueId = optionalString(payload, 'uniqueId');
 
 	// Read-only V4 model guard must run before sch_PrimitiveComponent.create.
 	await preflightV4DeviceVariant(libraryUuid, uuid);
@@ -1671,11 +1779,11 @@ const placeSchematicComponent: Handler = async (payload) => {
 	// placed component keeps a placeholder designator (e.g. U?/C?); the modify
 	// return is the authoritative post-assignment state, so overwrite the local
 	// reference with it before serializing.
-	if (designator) {
+	if (designator || uniqueId) {
 		const primitiveId = component.getState_PrimitiveId();
 		let modified;
 		try {
-			modified = await eda.sch_PrimitiveComponent.modify(primitiveId, { designator });
+			modified = await eda.sch_PrimitiveComponent.modify(primitiveId, { ...(designator ? { designator } : {}), ...(uniqueId ? { uniqueId } : {}) });
 		}
 		catch (err) {
 			throw edaError(err, `Placed component "${primitiveId}" but failed to assign designator "${designator}".`);
@@ -1794,9 +1902,14 @@ const modifySchematicComponent: Handler = async (payload) => {
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'preserveInstance permits geometry-only patches; instance properties cannot be changed.');
 		}
 		const current = await getComponentOrThrow(primitiveId);
+		const observedBefore = serializeComponent(current);
 		let source: Record<string, unknown>;
-		try { source = preservedInstance(serializeComponent(current)); }
+		try { source = preservedInstance(observedBefore); }
 		catch (err) { throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, describeThrown(err)); }
+		if (Object.entries(normalizedPatch).every(([key, value]) => value !== undefined && exactJSON(observedBefore[key]) === exactJSON(value))) {
+			return { result: { component: observedBefore, instancePreserved: true, geometryVerified: true,
+				skipped: true, reason: 'Requested geometry already matches the native instance; no component write performed.' } };
+		}
 		const safePatch = { ...normalizedPatch };
 		for (const key of ['designator', 'uniqueId', 'name', 'manufacturer', 'manufacturerId', 'supplier', 'supplierId', 'addIntoBom', 'addIntoPcb', 'otherProperty']) safePatch[key] = source[key];
 		let modified;
@@ -1805,9 +1918,12 @@ const modifySchematicComponent: Handler = async (payload) => {
 		if (!modified) throw new ActionError(ErrorCodes.EDA_CALL_FAILED, 'Preserved component modify returned no instance.');
 		try {
 			const fresh = await getComponentOrThrow(primitiveId);
-			const actual = preservedInstance(serializeComponent(fresh));
-			const notApplied = Object.keys(source).filter(k => exactJSON(source[k]) !== exactJSON(actual[k]));
-			return { result: { component: serializeComponent(fresh), instancePreserved: notApplied.length === 0,
+			const observed = serializeComponent(fresh);
+			const actual = preservedInstance(observed);
+			const identityNotApplied = Object.keys(source).filter(k => exactJSON(source[k]) !== exactJSON(actual[k]));
+			const geometryNotApplied = Object.keys(normalizedPatch).filter(k => exactJSON(normalizedPatch[k]) !== exactJSON(observed[k]));
+			const notApplied = [...identityNotApplied, ...geometryNotApplied];
+			return { result: { component: observed, instancePreserved: identityNotApplied.length === 0, geometryVerified: geometryNotApplied.length === 0,
 				...(notApplied.length ? { partial: true, notApplied, instanceBefore: source } : {}) } };
 		}
 		catch (err) {
@@ -2324,6 +2440,7 @@ function schPrimitiveStateRecord(primitive: SchPrimitiveLike, kind: string, nati
 		if (value === undefined && kind === 'attributes' && native) {
 			if (field === 'KeyVisible') value = native.keyVisible;
 			if (field === 'ValueVisible') value = native.valueVisible;
+			if (field === 'AlignMode' && native.align === null) value = null;
 		}
 		if (value === undefined || (typeof value === 'number' && !Number.isFinite(value)) || (typeof File !== 'undefined' && value instanceof File)) throw new Error(`Page ${kind}.${field} state unavailable or unsupported for ${primitiveId}.`);
 		record[field] = value;
@@ -2362,12 +2479,13 @@ async function schAttributeStateRecord(
 		catch (rereadError) {
 			if (nativeReader) {
 				const native = (await nativeReader()).get(id);
-				if (!native) throw new Error(`Page attribute ${id} is absent from the current native SCH_PAGE source.`);
+				if (!native || native.id !== id) throw new Error(`Page attribute ${id} is absent from the current native SCH_PAGE source.`);
 				const item = reread as unknown as Record<string, () => unknown>;
-				if (item.getState_Key?.() !== native.key || item.getState_ParentPrimitiveId?.() !== native.parentId
-					|| item.getState_Value?.() !== native.value) {
-					throw new Error(`Page attribute ${id} identity/value differs from the current native SCH_PAGE source.`);
+				if (item.getState_Key?.() !== native.key || item.getState_ParentPrimitiveId?.() !== native.parentId) {
+					throw new Error(`Page attribute ${id} identity differs from the current native SCH_PAGE source.`);
 				}
+				// Native ATTR values may be null while the SDK projects an inherited value.
+				// Recovery uses only exact identity plus nullable style fields; Value stays typed.
 				try { return schPrimitiveStateRecord(reread, 'attributes', native); }
 				catch (nativeError) { throw new Error(`Page attribute ${id} remains unreadable after exact native SCH_PAGE recovery: ${describeThrown(nativeError)}.`); }
 			}
@@ -2487,6 +2605,7 @@ async function readSchPagePrimitiveState(): Promise<Record<string, Array<Record<
 	out.attributes = [];
 	const attributeValues = [...attributes.values()];
 	let nativePromise: Promise<Map<string, NativeSchematicAttribute>> | undefined;
+	// This full snapshot is SDK semantic state, not an original-byte snapshot.
 	// The SDK may expose generated, fully readable attributes absent from the
 	// persisted source. Native source is evidence only for an unreadable getter,
 	// never an alternate inventory of everything the editor exposes.
@@ -4021,6 +4140,7 @@ export function connectivityWireSegments(segments: CheckWireSegment[]): CheckWir
 interface NetlistPinNets {
 	byDesignator: Map<string, Map<string, string>>;
 	available: boolean;
+	provenance?: NetlistProvenance;
 	/** Why the netlist could not be fetched/parsed. Set only when available===false,
 	 * so callers can report a CAUSE instead of silently degrading to "no nets". */
 	error?: string;
@@ -4030,7 +4150,7 @@ async function collectNetlistPinNets(_allPages = false): Promise<NetlistPinNets>
 	const byDesignator = new Map<string, Map<string, string>>();
 	const muted = (error?: string): NetlistPinNets =>
 		({ byDesignator, available: false, ...(error ? { error } : {}) });
-	let file: File | undefined;
+	let file: NetlistFile | undefined;
 	try { file = await getSchematicNetlistFile(); }
 	catch (err) { if (err instanceof NetlistContextError) throw err; return muted(describeThrown(err)); }
 	if (!file) return muted('netlist export returned no file');
@@ -4050,7 +4170,7 @@ async function collectNetlistPinNets(_allPages = false): Promise<NetlistPinNets>
 		}
 		byDesignator.set(designator, pins);
 	}
-	return { byDesignator, available: true };
+	return { byDesignator, available: true, ...(file.netlistProvenance ? { provenance: file.netlistProvenance } : {}) };
 }
 
 // ─── Polarity-convention outlier (#183 phase 1) ─────────────────────────────
@@ -4769,7 +4889,8 @@ const schematicExportNetlist: Handler = async (payload) => {
 		file.name || `${fileName ?? 'netlist'}.net`,
 		'text/plain',
 	);
-	return { result: { artifactId: artifact.id, netlistType: netlistType ?? null }, artifacts: [artifact] };
+	return { result: { artifactId: artifact.id, netlistType: file.netlistProvenance ? 'analysis-json' : netlistType ?? null,
+		...(file.netlistProvenance ? { requestedNetlistType: netlistType ?? 'JLCEDA', netlistProvenance: file.netlistProvenance } : {}) }, artifacts: [artifact] };
 };
 
 /**
@@ -4916,6 +5037,7 @@ const schematicExportImage: Handler = async (payload) => {
 			format,
 			scope,
 			selectedCount: selected.length,
+			selectedPrimitiveIds: scope === 'selection' ? selected : undefined,
 			bytes: file.size,
 			fileName: file.name || fileName,
 		},
@@ -4962,7 +5084,7 @@ const schematicRead = async (payload: Payload, _execution?: Execution, reads?: S
 	}
 
 	// JSON-authoritative pin→net per designator (same source as schematic.check).
-	const { byDesignator: pinNets, available: netlistAvailable, error: netlistError } = await (reads ? reads.netlist() : collectNetlistPinNets(allPages));
+	const { byDesignator: pinNets, available: netlistAvailable, error: netlistError, provenance: netlistProvenance } = await (reads ? reads.netlist() : collectNetlistPinNets(allPages));
 
 	const netToPins = new Map<string, Array<string>>();
 	const floating: Array<string> = [];
@@ -5040,6 +5162,7 @@ const schematicRead = async (payload: Payload, _execution?: Execution, reads?: S
 			// per-pin net is null. That is not a statement about the design; the flag
 			// (and the cause) have to travel with the data so nobody reads it as one.
 			netlistAvailable,
+			...(netlistProvenance ? { netlistProvenance } : {}),
 			...(netlistAvailable ? {} : { netlistError: netlistError ?? 'netlist unavailable' }),
 			check,
 		},
@@ -7133,6 +7256,7 @@ async function loadNativeFootprintInventory(expectedContext?: { projectUuid?: st
 async function resolveInstanceFootprintDevice(
 	snapshot: Record<string, unknown>,
 	getNativeFootprints: () => Promise<NativeFootprintInventory>,
+	getCandidates?: (supplierId: string) => Promise<Array<Record<string, unknown>>>,
 ): Promise<DeviceResolution> {
 	const instanceFp = readDeviceFootprint(snapshot);
 	const supplierId = identityText(snapshot.supplierId);
@@ -7155,7 +7279,8 @@ async function resolveInstanceFootprintDevice(
 	let raw: Array<Record<string, unknown>>;
 	try {
 		// Without allowMultiMatch=true the API may hide an equally valid device.
-		const queried = await withTimeout(eda.lib_Device.getByLcscIds([supplierId], undefined, true), 7000, `identity getByLcscIds ${supplierId} timed out after 7000ms`);
+		const queried = getCandidates ? await getCandidates(supplierId)
+			: await withTimeout(eda.lib_Device.getByLcscIds([supplierId], undefined, true), 7000, `identity getByLcscIds ${supplierId} timed out after 7000ms`);
 		if (!Array.isArray(queried)) return failure('complete LCSC candidate inventory unavailable');
 		raw = queried as unknown as Array<Record<string, unknown>>;
 	} catch (err) {
@@ -7237,10 +7362,11 @@ async function resolveInstanceFootprintDevice(
 async function resolvePlacedDevice(
 	snapshot: Record<string, unknown>,
 	getNativeFootprints: () => Promise<NativeFootprintInventory> = loadNativeFootprintInventory,
+	getCandidates?: (supplierId: string) => Promise<Array<Record<string, unknown>>>,
 ): Promise<DeviceResolution> {
 	const instanceFp = readDeviceFootprint(snapshot);
 	if (instanceIdentityUuid(identityRecord(snapshot.device).uuid) && instanceIdentityUuid(instanceFp.uuid)) {
-		return resolveInstanceFootprintDevice(snapshot, getNativeFootprints);
+		return resolveInstanceFootprintDevice(snapshot, getNativeFootprints, getCandidates);
 	}
 	const fpIdentity = instanceFp.name || instanceFp.uuid || instanceFp.libraryUuid;
 	const finish = (hits: Array<Record<string, unknown>>, via: string): DeviceResolution | undefined => {
@@ -14543,7 +14669,10 @@ const viewRegion: Handler = async (payload) => {
  */
 const debugExecJs = async (payload: Payload, execution?: Execution, inheritedTarget?: Awaited<ReturnType<typeof readResponseContext>>): Promise<ActionResult> => {
 	const code = requireString(payload, 'code');
-	type ScriptHelpers = { call(action: string, payload: Payload): Promise<ActionResult> };
+	type ScriptHelpers = {
+		call(action: string, payload: Payload): Promise<ActionResult>;
+		progress(phase: 'createSchematic' | 'getSchematicInfo', boundary: 'enter' | 'leave', schematicUuid?: string): void;
+	};
 	let fn: (eda: unknown, signal: ExecutionSignal | undefined, helpers: ScriptHelpers) => Promise<unknown>;
 	let value: unknown;
 	try {
@@ -14561,8 +14690,16 @@ const debugExecJs = async (payload: Payload, execution?: Execution, inheritedTar
 	}
 	try {
 		// Reuse the enclosing checked target; otherwise bind helpers after compile, before script execution.
+		if (!inheritedTarget) execution?.progress({ phase: 'target_context', boundary: 'enter', source: 'adapter' });
 		const helperTarget = inheritedTarget ?? await readResponseContext();
-		const helpers: ScriptHelpers = { call: async (action, args) => {
+		if (!inheritedTarget) execution?.progress({ phase: 'target_context', boundary: 'leave', source: 'adapter' });
+		const helpers: ScriptHelpers = { progress: (phase, boundary, schematicUuid) => {
+			if (!['createSchematic', 'getSchematicInfo'].includes(phase) || !['enter', 'leave'].includes(boundary) ||
+				(schematicUuid !== undefined && (typeof schematicUuid !== 'string' || !schematicUuid || schematicUuid.length > 256))) {
+				throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Invalid preparation progress phase, boundary or UUID.');
+			}
+			execution?.progress({ phase, boundary, source: 'preparation_script', ...(schematicUuid === undefined ? {} : { schematicUuid }) });
+		}, call: async (action, args) => {
 			const supported: Record<string, Handler> = {
 				'schematic.component.place': schematicComponentPlace,
 				'schematic.component.modify': schematicComponentModify,
@@ -15060,7 +15197,9 @@ export async function runAction(
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, '_target must be an object.');
 		}
 		const expected = _target as Record<string, unknown>;
+		if (action === 'debug.exec_js') execution?.progress({ phase: 'target_context', boundary: 'enter', source: 'adapter' });
 		const current = await readResponseContext();
+		if (action === 'debug.exec_js') execution?.progress({ phase: 'target_context', boundary: 'leave', source: 'adapter' });
 		helperTarget = current;
 		for (const key of ['projectUuid', 'documentUuid'] as const) {
 			if (expected[key] !== undefined && (typeof expected[key] !== 'string' || !expected[key] || expected[key] !== current[key])) {
@@ -15072,6 +15211,7 @@ export async function runAction(
 	const edit = _edit && typeof _edit === 'object' ? _edit as Record<string, unknown> : {};
 	const scope = [...new Set([...(Array.isArray(_scope)?_scope:[]),...(Array.isArray(edit.primitiveIds)?edit.primitiveIds:[])])];
 	const autoCheck = attachContext && _mutation === true && args.dryRun !== true;
+	const identityGuard = edit.expectedIdentities !== undefined;
 	const displayOnly = _displayOnly === true && displayOnlyAction(action,args);
 	// Two disjoint read phases. Never retain these facts across a write or request.
 	const reads = autoCheck && action === 'debug.batch' && args.verifyPreservedSchematic === true
@@ -15084,17 +15224,24 @@ export async function runAction(
 	if (_expectedObserved !== undefined || _resumeBaseline !== undefined) {
 		const expected=_expectedObserved as Record<string,any>|undefined;
 		if(!scope.length || !expected?.components?.length || !expected.readScope) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED,'Continuation observation unavailable; read the affected scope and submit the remaining plan. No action executed.');
-		currentFacts=(await schematicComponentsList({primitiveIds:scope,includePins:true,includePinNets:expected.readScope.netRead==='document-netlist',includeNetIndex:expected.readScope.netRead==='document-netlist',includeWires:true,includeBBox:true,includeTexts:true})).result as Record<string,unknown>;
-		if((currentFacts.readScope as Record<string,unknown>|undefined)?.concurrentChange===true || localObservationKey(expected)!==localObservationKey(currentFacts)) {
+		// Checked save compares the daemon's prior observation using the same read profile; it is not a new display edit.
+		const observationDisplayOnly = displayOnly || (action === 'schematic.save' && expected.readScope.netRead === 'not-requested'
+			&& expected.wiresAvailable === undefined && expected.components.every((c:Record<string,unknown>) => c.pinsAvailable === undefined && c.pins === undefined));
+		currentFacts=(await schematicComponentsList({primitiveIds:scope,includePins:!observationDisplayOnly,includePinNets:!observationDisplayOnly&&expected.readScope.netRead==='document-netlist',includeNetIndex:!observationDisplayOnly&&expected.readScope.netRead==='document-netlist',includeWires:!observationDisplayOnly,includeBBox:true,includeTexts:true})).result as Record<string,unknown>;
+		if((currentFacts.readScope as Record<string,unknown>|undefined)?.concurrentChange===true || localObservationKey(expected,observationDisplayOnly)!==localObservationKey(currentFacts,observationDisplayOnly)) {
 			return {context:await readResponseContext(),result:{ok:false,partial:true,completed:0,total:Array.isArray(args.steps)?args.steps.length:1,reason:'Affected scope changed since the confirmed observation; no remaining action or save executed. Use this local readback to update the plan.',_readback:[{action:'schematic.components.list',result:currentFacts}],rules:{version:'open-local-1',scope,status:'unknown',items:[{id:'observation',severity:'error',status:'unknown',coverage:'unavailable',targets:scope,evidence:'Local native readback differs from the prior scope; Beta event silence is not freshness.'}]}}};
 		}
 	}
-	if (autoCheck && edit.complete !== false && scope.length && action !== 'debug.exec_js') {
+	if ((autoCheck && edit.complete !== false && scope.length && action !== 'debug.exec_js') || identityGuard) {
 		try {
 			beforeTarget = await readResponseContext();
-			if (beforeTarget.documentType === 'schematic') beforeFacts = _resumeBaseline && typeof _resumeBaseline === 'object'
-				? _resumeBaseline as Record<string, unknown> : currentFacts ?? (await schematicComponentsList({primitiveIds:scope,includePins:!displayOnly,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:!displayOnly}, undefined, reads?.before)).result as Record<string, unknown>;
+			if (beforeTarget.documentType === 'schematic') beforeFacts = !identityGuard && _resumeBaseline && typeof _resumeBaseline === 'object'
+				? _resumeBaseline as Record<string, unknown> : currentFacts ?? (await schematicComponentsList({primitiveIds:scope,includePins:!displayOnly,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:!displayOnly,includeBBox:displayOnly,includeTexts:displayOnly}, undefined, reads?.before)).result as Record<string, unknown>;
 		} catch (error) { checkError = describeThrown(error); }
+	}
+	if (identityGuard) {
+		const identityIssue = expectedIdentityIssue(beforeFacts, scope, edit.expectedIdentities);
+		if (identityIssue) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `${identityIssue} No action executed.`);
 	}
 	const observationBefore = sceneObservation();
 	const result = action === 'debug.batch' ? await debugBatch(args, execution, reads, helperTarget)
@@ -15106,7 +15253,7 @@ export async function runAction(
 			try {
 				const afterTarget = await readResponseContext();
 				if (!afterTarget.projectUuid || !afterTarget.documentUuid || afterTarget.projectUuid !== beforeTarget?.projectUuid || afterTarget.documentUuid !== beforeTarget?.documentUuid) throw new Error('Target changed or is unavailable during the modification unit.');
-				const afterFacts = (await schematicComponentsList({primitiveIds:scope,includePins:true,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:true,includeBBox:true,includeTexts:true}, undefined, reads?.after)).result as Record<string, unknown>;
+				const afterFacts = (await schematicComponentsList({primitiveIds:scope,includePins:!displayOnly,includePinNets:!displayOnly,includeNetIndex:!displayOnly,includeWires:!displayOnly,includeBBox:true,includeTexts:true}, undefined, reads?.after)).result as Record<string, unknown>;
 				const mode = edit.mode === 'design' ? 'design' : 'layout';
 				const wireIds:string[]=[];
 				const collectWires=(name:string,p:Record<string,unknown>,r:Record<string,unknown>|undefined)=>{
@@ -15114,7 +15261,7 @@ export async function runAction(
 				};
 				collectWires(action,args,result.result);
 				if(action==='debug.batch'&&Array.isArray(args.steps)&&Array.isArray(result.result?.results))for(const step of result.result.results as Array<Record<string,any>>)collectWires(step.action,args.steps[Number(step.index)]?.payload??{},step.result);
-				checks = localRules(beforeFacts,afterFacts,mode,edit.expectedPins as Record<string,string|null>|undefined,{displayOnly,wireIds});
+				checks = localRules(beforeFacts,afterFacts,mode,edit.expectedPins as Record<string,string|null|{members:string[]}>|undefined,{displayOnly,wireIds});
 				checks.push({id:'target',status:'pass',severity:'error',coverage:'checked',targets:scope as string[],evidence:afterTarget});
 				if (mode === 'layout' && !displayOnly) checks.push({id:'network_scope',status:!beforeFacts._netIndex||!afterFacts._netIndex?'unknown':exactJSON(beforeFacts._netIndex)===exactJSON(afterFacts._netIndex)?'pass':'fail',severity:'error',coverage:beforeFacts._netIndex&&afterFacts._netIndex?'checked':'unavailable',targets:[],evidence:'Compare the already-exported net index; no extra component inventory.'});
 				result.result = {...result.result,_readback:[{action:'schematic.components.list',result:afterFacts}]};
@@ -15130,7 +15277,9 @@ export async function runAction(
 		result.result = { ...result.result, _scene: { ...observation, changedDuringAction: observation.sequence !== observationBefore.sequence } };
 	}
 	if (attachContext && !result.context && !execution?.signal.aborted) {
+		if (action === 'debug.exec_js') execution?.progress({ phase: 'response_context', boundary: 'enter', source: 'adapter' });
 		result.context = await readResponseContext();
+		if (action === 'debug.exec_js') execution?.progress({ phase: 'response_context', boundary: 'leave', source: 'adapter' });
 	}
 	return result;
 }

@@ -80,6 +80,25 @@ test('preserveInstance refuses non-geometric changes before any modify', async t
  assert.equal(fx.patches.length, 0);
 });
 
+test('preserveInstance skips native writes only when requested geometry already matches', async t => {
+ const fx = install(t);
+ const result: any = await schematicComponentModify({ primitiveId: 'p1', patch: { x: fx.part.x, y: fx.part.y }, preserveInstance: true });
+ assert.equal(result.result.skipped, true);
+ assert.equal(result.result.geometryVerified, true);
+ assert.equal(result.result.instancePreserved, true);
+ assert.equal(fx.patches.length, 0);
+});
+
+test('preserveInstance refuses unchanged native coordinates as a successful move', async t => {
+ install(t);
+ (globalThis as any).eda.sch_PrimitiveComponent.modify = async (id: string) => (globalThis as any).eda.sch_PrimitiveComponent.get(id);
+ const result: any = await schematicComponentModify({ primitiveId: 'p1', patch: { x: 30 }, preserveInstance: true });
+ assert.equal(result.result.instancePreserved, true);
+ assert.equal(result.result.geometryVerified, false);
+ assert.equal(result.result.partial, true);
+ assert.deepEqual(result.result.notApplied, ['x']);
+});
+
 for (const options of [{ drop: 'Value' }, { drop: 'uniqueId' }, { failReadback: true }]) {
  test(`preserveInstance reports partial failure on silent loss ${JSON.stringify(options)}`, async t => {
   const fx = install(t, options);

@@ -40,11 +40,11 @@ export function documentTypeLabel(documentType: number | undefined): string | un
 
 /**
  * Read the best-effort current context (project + active document). Every field
- * is optional; failures are swallowed so context never blocks an action.
+ * is optional; failures are swallowed unless strict diagnostic reads are requested.
  *
  * @returns a partial response context
  */
-export async function readResponseContext(): Promise<ResponseContext> {
+export async function readResponseContext(strict = false): Promise<ResponseContext> {
 	const context: ResponseContext = {};
 
 	try {
@@ -54,7 +54,7 @@ export async function readResponseContext(): Promise<ResponseContext> {
 			context.projectName = project.friendlyName || project.name;
 		}
 	}
-	catch { /* best-effort */ }
+	catch (error) { if (strict) throw error; }
 
 	try {
 		const doc = await eda.dmt_SelectControl.getCurrentDocumentInfo();
@@ -67,7 +67,7 @@ export async function readResponseContext(): Promise<ResponseContext> {
 			}
 		}
 	}
-	catch { /* best-effort */ }
+	catch (error) { if (strict) throw error; }
 
 	return context;
 }

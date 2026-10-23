@@ -60,3 +60,8 @@ The embedded API index is generated from @jlceda/pro-api-types 0.4.25
 EasyEDA Agent Open distribution maintained by yitengchun833-gif.
 Repository: https://github.com/yitengchun833-gif/easyeda-agent-open
 2026-09-30: changed branding, icon and user documentation; original notices retained.
+
+eext-knowledge-base (Apache-2.0), commit 39acb6a4dc9e04d9216a1bcb0d2218ff60cb7a11.
+Copyright 2025 JLCEDA. Hardware knowledge UI and CJK keyword patterns adapted locally;
+chat removed, local source/retrieval/review added. Original Apache license retained.
+Source: https://github.com/easyeda/eext-knowledge-base

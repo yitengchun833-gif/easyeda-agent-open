@@ -2,12 +2,10 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
+	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +15,7 @@ import (
 // Task is caller-authored intent, never evidence of execution or permission to
 // replay actions. The existing receipts and native observations remain truth.
 type runtimeTask struct {
+	ID           string    `json:"id,omitempty"`
 	Revision     uint64    `json:"revision"`
 	Goal         string    `json:"goal"`
 	PrimitiveIDs []string  `json:"primitiveIds"`
@@ -33,129 +32,37 @@ type runtimeCheckpoint struct {
 	Receipts  []*runtimeReceipt           `json:"receipts"`
 }
 
-// The one checkpoint is a persisted projection of the existing runtime. Audit
-// JSONL remains the history; queues, private baselines and replay proofs are not
-// serialized. This deliberately does not implement another workflow engine.
-func (s *runtimeStore) restoreCheckpoint(path string) bool {
-	s.checkpointPath, s.dirty = path, make(chan struct{}, 1)
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	if err != nil {
-		s.checkpointError = err.Error()
-		return false
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, 64*1024*1024+1))
-	var saved runtimeCheckpoint
-	if err != nil || len(data) > 64*1024*1024 || json.Unmarshal(data, &saved) != nil || saved.Version != 1 || len(saved.Documents) > 8 || len(saved.Receipts) > 256 {
-		s.checkpointError = "Checkpoint unreadable or unsupported; audit receipts only"
-		return false
-	}
-	for key, d := range saved.Documents {
-		if d == nil || d.Context.ProjectUUID == "" || d.Context.DocumentUUID == "" || key != d.WindowID+"|"+d.Context.ProjectUUID+"|"+d.Context.DocumentUUID {
-			s.checkpointError = "Checkpoint document identity invalid; audit receipts only"
-			return false
-		}
-		if d.Task == nil && len(d.Objects) == 0 {
-			delete(saved.Documents, key)
-			continue
-		}
-		if d.Objects == nil {
-			d.Objects = map[string]*runtimeObject{}
-		}
-		for id, object := range d.Objects {
-			if object == nil || object.Data == nil {
-				delete(d.Objects, id)
-				continue
-			}
-			object.StaleFields = map[string]bool{"identity": true, "geometry": true, "pins": true}
-		}
-		d.Coverage = map[string]bool{}
-		// Preserve the connector session identity for routing only, not freshness.
-		d.Checks, d.Recovery, d.EventCoverage = nil, nil, "unknown"
-		d.Restored = true
-		d.Generation++
-	}
-	for _, receipt := range saved.Receipts {
-		if receipt == nil {
-			s.checkpointError = "Invalid checkpoint receipt"
-			return false
-		}
-		receipt.Historical = true
-		receipt.Checks, receipt.ObservedFacts = nil, nil
-		receipt.ImageAvailable, receipt.DRCPassed = false, false
-		switch receipt.Status {
-		case "queued", "running", "resuming", "saving", "paused":
-			receipt.Status = "needs_readback"
-		}
-	}
-	if saved.Documents != nil {
-		s.documents = saved.Documents
-	}
-	for window, key := range saved.Current {
-		if s.documents[key] != nil && s.documents[key].WindowID == window {
-			s.current[window] = key
-		}
-	}
-	s.receipts, s.checkpointAt = saved.Receipts, &saved.At
-	return true
+// Legacy intent did not have a task UUID. Its source identity and revision
+// supply a stable label without inventing execution or replay permission.
+func legacyRuntimeTaskID(scopeKey string, revision uint64) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d", scopeKey, revision)))
+	return fmt.Sprintf("legacy-%x", digest[:16])
 }
 
 func (s *runtimeStore) persistenceStatus() map[string]any {
-	return map[string]any{"enabled": s.checkpointPath != "", "savedAt": s.checkpointAt, "error": s.checkpointError,
-		"taskIsIntent": true, "automaticReplay": false}
+	backend := "unavailable"
+	if s.recovery != nil {
+		backend = "sqlite"
+	}
+	return map[string]any{"enabled": s.checkpointPath != "" && s.checkpointPath != ":memory:", "backend": backend, "savedAt": s.checkpointAt, "error": s.checkpointError,
+		"historicalScopes": len(s.scopeVersions), "taskIsIntent": true, "automaticReplay": false, "legacyCheckpointReadOnly": s.recovery != nil}
 }
 
 func (s *runtimeStore) flushCheckpoint() error {
-	if s.checkpointPath == "" {
-		return nil
+	if s.recovery != nil {
+		return s.flushRecoveryScopes()
 	}
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	now := time.Now().UTC()
-	s.mu.Lock()
-	data, err := json.Marshal(runtimeCheckpoint{1, now, s.documents, s.current, s.receipts})
-	s.mu.Unlock()
-	if err == nil && len(data) > 64*1024*1024 {
-		err = fmt.Errorf("checkpoint exceeds 64 MiB; audit history retained")
+	if s.recoveryError != nil {
+		return s.recoveryError
 	}
-	if err == nil {
-		err = os.MkdirAll(filepath.Dir(s.checkpointPath), 0o700)
+	if s.checkpointPath != "" {
+		return s.failRecovery(fmt.Errorf("recovery storage is unavailable"))
 	}
-	if err == nil {
-		var f *os.File
-		f, err = os.CreateTemp(filepath.Dir(s.checkpointPath), ".runtime-*.tmp")
-		if err == nil {
-			name := f.Name()
-			defer os.Remove(name)
-			_, err = f.Write(data)
-			if err == nil {
-				err = f.Sync()
-			}
-			closeErr := f.Close()
-			if err == nil {
-				err = closeErr
-			}
-			if err == nil {
-				err = os.Rename(name, s.checkpointPath)
-			}
-		}
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err != nil {
-		s.checkpointError = err.Error()
-	} else {
-		s.checkpointError = ""
-		s.checkpointAt = &now
-	}
-	return err
+	return nil
 }
 
-// Coalesce writes without adding disk I/O to each EDA call. A forced kill can
-// lose the last 200 ms of this cache; audit is retained and all recovery is stale.
+// Coalesce disposable observation updates. Execution intents and results use
+// synchronous recovery commits on the dispatch path, outside this timer.
 func (s *runtimeStore) checkpointLoop(ctx context.Context) {
 	if s.checkpointPath == "" {
 		return
@@ -234,12 +141,29 @@ func (s *Server) commitRuntimeTask(w http.ResponseWriter, window string, target 
 		http.Error(w, targetErr.Error(), 409)
 		return
 	}
+	previousTask := d.Task
+	if previousTask != nil && previousTask.ID != "" && extra["replaced"] != true {
+		task.ID = previousTask.ID
+	} else {
+		task.ID = rand.Text()
+	}
 	task.Revision, task.UpdatedAt = *expected+1, time.Now().UTC()
 	d.Task = task
+	if s.runtime.recovery != nil {
+		if err := s.runtime.saveScopeLocked(d); err != nil {
+			d.Task = previousTask
+			s.runtime.failRecovery(err)
+			s.runtime.mu.Unlock()
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "persisted": false, "taskIsIntent": true,
+				"error": map[string]any{"code": "RECOVERY_STORE_FAILED", "message": err.Error()}, "edaReads": 0, "automaticReplay": false})
+			return
+		}
+	}
 	s.runtime.emit("task_updated", map[string]any{"windowId": window, "revision": task.Revision})
 	result := runtimeClone(task)
 	s.runtime.mu.Unlock()
-	// Only explicit goal changes wait for durability; ordinary drawing does not.
+	// The task is local intent. SQLite has already committed this update; legacy
+	// readers still flush their projection through the compatibility path.
 	err := s.runtime.flushCheckpoint()
 	response := map[string]any{"ok": true, "task": result, "edaReads": 0, "taskIsIntent": true, "persisted": err == nil && s.runtime.checkpointPath != ""}
 	for key, value := range extra {

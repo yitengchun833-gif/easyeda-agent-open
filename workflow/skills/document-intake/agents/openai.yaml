@@ -1,0 +1,6 @@
+interface:
+  display_name: "Document Intake Router"
+  short_description: "Route documents through the approved local intake tools."
+  default_prompt: "Use $document-intake to handle this task safely."
+policy:
+  allow_implicit_invocation: true

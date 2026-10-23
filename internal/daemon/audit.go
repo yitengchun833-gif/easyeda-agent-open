@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,9 +17,11 @@ import (
 // intentionally flat so future `easyeda audit` tooling can pipe it through
 // jq/grep without parsing nested envelopes.
 type auditEntry struct {
-	Timestamp time.Time `json:"ts"`
-	RequestID string    `json:"requestId"`
-	WindowID  string    `json:"windowId,omitempty"`
+	runtimeObserved      bool      `json:"-"`
+	runtimeNotDispatched bool      `json:"-"`
+	Timestamp            time.Time `json:"ts"`
+	RequestID            string    `json:"requestId"`
+	WindowID             string    `json:"windowId,omitempty"`
 	// ClientID attributes the entry to the calling client process
 	// ("<hostname>:<pid>[:<label>]", see protocol.Request.ClientID) so
 	// multi-client incidents are attributable from the audit log alone
@@ -39,6 +43,11 @@ type auditEntry struct {
 	ErrorDetail string              `json:"errorDetail,omitempty"`
 	Context     *protocol.Context   `json:"context,omitempty"`
 	Artifacts   []protocol.Artifact `json:"artifacts,omitempty"`
+}
+
+func (a *auditWriter) appendNotDispatched(entry auditEntry) {
+	entry.runtimeNotDispatched = true
+	a.Append(entry)
 }
 
 // EnvAuditDir overrides the audit log root, mirroring EASYEDA_WORKFLOW_DIR
@@ -84,28 +93,45 @@ func newAuditWriter(dir string) *auditWriter {
 	return &auditWriter{dir: dir}
 }
 
-// Append writes one entry. Failures are best-effort: audit-log errors must
-// never break the dispatch path.
+// Append maintains the legacy diagnostic mirror. Recovery durability belongs
+// to the recovery store, not this best-effort JSONL projection.
 func (a *auditWriter) Append(entry auditEntry) {
-	if a != nil && a.observe != nil {
+	_ = a.AppendChecked(entry)
+}
+
+// AppendChecked reports mirror failures without hiding an already executed
+// operation. Callers must not retry an EDA write when this mirror fails.
+func (a *auditWriter) AppendChecked(entry auditEntry) error {
+	if a != nil && a.observe != nil && !entry.runtimeObserved {
 		a.observe(entry)
 	}
 	if a == nil || a.disabled {
-		return
+		return nil
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("encode audit mirror: %w", err)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := os.MkdirAll(a.dir, 0o755); err != nil {
-		return
+		return fmt.Errorf("create audit mirror directory: %w", err)
 	}
 	day := entry.Timestamp.UTC().Format("2006-01-02")
 	path := filepath.Join(a.dir, day+".jsonl")
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return
+		return fmt.Errorf("open audit mirror: %w", err)
 	}
-	defer f.Close()
-	_ = json.NewEncoder(f).Encode(entry)
+	_, writeErr := f.Write(append(data, '\n'))
+	var syncErr error
+	if writeErr == nil {
+		syncErr = f.Sync()
+	}
+	if err := errors.Join(writeErr, syncErr, f.Close()); err != nil {
+		return fmt.Errorf("persist audit mirror: %w", err)
+	}
+	return nil
 }
 
 // Path returns the audit log file path for a given day.

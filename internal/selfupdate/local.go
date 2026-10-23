@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -127,7 +128,7 @@ func ReadLocalBundle(dir string) (*LocalBundle, error) {
 			return nil, e
 		}
 		name := strings.TrimPrefix(h.Name, SkillName+"/")
-		if name == h.Name || name == "." || name == ".version" || strings.Contains(name, `\`) || filepath.IsAbs(name) || filepath.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") || h.Typeflag != tar.TypeReg {
+		if name == h.Name || name == "." || name == ".version" || strings.Contains(name, `\`) || filepath.IsAbs(name) || path.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") || h.Typeflag != tar.TypeReg {
 			return nil, fmt.Errorf("unsafe skill entry: %s", h.Name)
 		}
 		if _, exists := b.Skill[name]; exists {

@@ -162,3 +162,22 @@ test('read: missing pin API data is explicit partial data, not an empty healthy 
  assert.equal(out.result.components[0].pinsAvailable, false);
  assert.match(out.result.components[0].pinsError, /pin read unavailable/);
 });
+
+test('analysis netlist provenance survives list, read and export instead of implying manufacturing success', async t => {
+	const provenance = { source: 'host-compiled-connectivity', manufacturingExportAvailable: false,
+		purpose: 'analysis', scope: 'single-flat-page', warning: 'native production export unavailable' };
+	const native = await goodNetlist();
+	const file = Object.assign(new File([await native.text()], 'board.analysis-netlist.json'), { netlistProvenance: provenance });
+	install(t, async () => file);
+	const list: any = await schematicComponentsList({ includePins: true });
+	assert.equal(list.result.pinNetsAvailable, true);
+	assert.deepEqual(list.result.netlistProvenance, provenance);
+	assert.deepEqual(list.result.components[0].netlistProvenance, provenance);
+	const read: any = await runAction('schematic.read', { includeCheck: false });
+	assert.equal(read.result.netlistAvailable, true);
+	assert.deepEqual(read.result.netlistProvenance, provenance);
+	const exported: any = await runAction('schematic.export.netlist', {});
+	assert.equal(exported.result.netlistType, 'analysis-json');
+	assert.equal(exported.result.requestedNetlistType, 'JLCEDA');
+	assert.deepEqual(exported.result.netlistProvenance, provenance);
+});

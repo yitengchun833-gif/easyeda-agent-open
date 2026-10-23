@@ -1,3 +1,5 @@
+> Public copy: local account paths and runtime identities were anonymized; original acceptance evidence is retained locally.
+
 # PCB 多边形焊盘投影详细记录
 
 面向用户结论见[主记录](2026-09-27-pcb-polygon-projection-fix.md)。
@@ -75,7 +77,7 @@ Go VCS 为 `faac8be`、modified=false。早先两个未安装包和不同哈希�
 清单 `a8fb7b8382018f13e68182dec6a91e763d56c1961387108ee475bdfdb16e0fab`。
 4 页逐页显式 saved:true，已有 connector UUID/权限/旧版本/bundle 与独立本地旧包相符。
 使用提交的 extension-only hot-reload 脚本；新的窗口
-`ec89ce47-091f-44f8-84ee-4ea323961c24` 上报精确 dev.13、Web 4.1.60 和目标 PCB。
+`UUID-7e885c7d9854` 上报精确 dev.13、Web 4.1.60 和目标 PCB。
 local check READY，51 件/203 pad 的完整 typed result 升级前后相同，board 除 capturedAt 相同，
 仍为 2 层、无板框/铜；板框不可用的 partial 原文保留，不误称完整设计已通过。
 

@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/assets/easyeda-agent-logo.png" width="96" alt="easyeda-agent logo" />
-</p>
-
 <h1 align="center">easyeda-agent</h1>
 
 <p align="center">
@@ -13,8 +9,6 @@
   <a href="https://jlc-ext.com/item/zhoushoujian/easyeda-agent-connector"><b>Plugin marketplace</b></a> ·
   <a href="README.md">中文</a>
 </p>
-
-![easyeda-agent workflow](docs/assets/easyeda-agent-workflow.svg)
 
 > **Version 1.4.5.** Schematic work starts from component,
 > pin, and connectivity data: design each Lib circuit and its geometry locally,
@@ -243,15 +237,11 @@ designators and component identities stay intact.
 
 #### Power and RF controller
 
-![Access control example: power and RF controller sheet, with pin-oriented peripheral wiring and pink dashed functional frames](docs/images/access-control-power-rf.png)
-
 Power, the RF controller, and the programming interface each form a Lib.
 Peripheral wiring follows pin directions, terminal wires use staggered lengths,
 and pink dashed frames with 0.2 inch titles are calculated from the data.
 
 #### Talk controller and peripheral interfaces
-
-![Access control example: talk and interface sheet, with compact functional frames in Z-order reading sequence](docs/images/access-control-talk-interfaces.png)
 
 Libs follow a Z-order reading sequence from the top left. Each frame fits its own
 contents with a minimum inset; frames align at the top of each row, and the next
@@ -260,10 +250,8 @@ the circuit to reduce height.
 
 #### SCH Apply in action
 
-![Actual SCH Apply stages for the access control example, captured and played back at an accelerated pace](docs/assets/access-control-sch-apply.gif)
-
-The animation uses 12 official exports captured during the power and RF controller
-sheet's actual Apply, played back at an accelerated pace. Both still images come from official EasyEDA exports, with the displayed project name anonymized.
+The historical animation used 12 official exports captured during the power and RF controller
+sheet's actual Apply. Its image assets are no longer included in this development source.
 See [Apply capture instructions](docs/schematic-showcase.md) for the script and reproduction steps.
 Both sheets passed local layout and connectivity checks with zero errors and
 warnings. Official DRC still reports 3 warnings, so the strict gate did not pass;
@@ -275,23 +263,9 @@ This separate regression case starts from the raw requirement in
 [esp32MiniRequire.md](esp32MiniRequire.md), with the agent selecting real LCSC
 parts and designing the circuit. See the [full PCB case study](docs/showcase-esp32-mini.md).
 
-![AI executing PCB placement, board outline creation, and copper pours in EasyEDA](docs/assets/demo-pcb-layout.gif)
-
-The board below was produced by the agent driving the full PCB flow — **auto-place →
+The historical board was produced by the agent driving the full PCB flow — **auto-place →
 outline-fit → rule-aware route → 4-layer power planes → collision-aware silk** — then
 verified on the real EasyEDA canvas (DRC 31 → 3 violations, No-Connection → 0):
-
-<p align="center">
-  <img src="docs/assets/demo-esp32-board.png" width="560" alt="ESP32-S3 board the agent produced: 4-layer power planes, rounded outline, aligned designators" />
-</p>
-
-A few individual steps, each a real before/after on the same board:
-
-| `pcb outline-fit` — tighten board to parts (17% → 71% utilization) | `pcb silk-align` — collision-aware designators |
-|---|---|
-| <img src="docs/assets/demo-outline-before.png" width="330" alt="before: oversized board outline"/> → <img src="docs/assets/demo-outline-after.png" width="330" alt="after: outline tightened to parts"/> | <img src="docs/assets/demo-silk-before.png" width="330" alt="before: scattered overlapping designators"/> → produces the aligned designators in the board above |
-
-> The images above are real `pcb snapshot` captures from the fixed regression board.
 
 ## Repository Layout
 

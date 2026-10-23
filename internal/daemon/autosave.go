@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
@@ -226,7 +227,7 @@ func (s *Server) deferAutosave(windowID, saveAction string) bool {
 // dispatchSave forwards the debounced save to the window's connector. Best-effort
 // and fired from a timer (no HTTP caller): logged + audited, never surfaced.
 func (s *Server) dispatchSave(windowID, saveAction string) {
-	target, ok := s.hub.target(windowID)
+	_, ok := s.hub.target(windowID)
 	if !ok {
 		s.autosave.clearDeferred(windowID)
 		return // window disconnected before the timer fired
@@ -246,12 +247,8 @@ func (s *Server) dispatchSave(windowID, saveAction string) {
 	}
 	ctx, cancel := context.WithTimeout(s.connCtx, dispatchTimeout)
 	defer cancel()
-	started := time.Now().UTC()
-	resp, err := target.dispatch(ctx, req)
-	if err != nil {
-		s.logf("autosave: %s on %s failed: %v", saveAction, windowID, err)
-		return
-	}
-	s.audit.Append(fromResponse(started, &req, resp))
-	s.logf("autosave: %s on %s (ok=%v)", saveAction, windowID, resp.OK)
+	recorder := &runtimeResponseWriter{header: map[string][]string{}}
+	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/action", nil)
+	s.runtimeDispatch(recorder, request, req)
+	s.logf("autosave: %s on %s (http=%d)", saveAction, windowID, recorder.status)
 }

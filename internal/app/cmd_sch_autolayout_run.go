@@ -980,7 +980,7 @@ func renderAutolayoutReport(rep alReport, apply bool, w io.Writer) {
 func newAutolayoutCmd(cfg *appConfig, window *string, stdout, stderr io.Writer) *cobra.Command {
 	var (
 		spec                                            string
-		engine                                          string
+		engine, from                                    string
 		dryRun, apply, rewire                           bool
 		allPages, asJSON                                bool
 		zoneDraw                                        bool
@@ -1051,12 +1051,15 @@ Spec shape:
   easyeda sch autolayout --engine official --apply             # unwired page: place only
   easyeda sch autolayout --engine official --apply --rewire    # wired page: layout + rebuild wiring`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if from != "" && (apply || allPages || engine != "template" || rewire) {
+				return fmt.Errorf("--from is an offline template preview only; no apply, official engine, rewire or all-pages")
+			}
 			if dryRun && apply {
 				return fmt.Errorf("--dry-run and --apply are mutually exclusive")
 			}
 			// v1 group awareness (warn only): both engines place parts individually
 			// and do NOT preserve intra-group relative geometry.
-			warnSchGroupsPresent(cfg, *window, "autolayout", stderr)
+			if from == "" { warnSchGroupsPresent(cfg, *window, "autolayout", stderr) }
 			// The official engine has a totally different interface (no spec): it
 			// wraps the platform's own long-running autoLayout over the active page.
 			switch engine {
@@ -1118,17 +1121,19 @@ Spec shape:
 				rules.PartGap = partGap
 			}
 
+			if from != "" { return offlineAutolayout(from, s, rules, asJSON, stdout) }
 			return runAutolayout(cfg, *window, s, rules, apply, allPages, asJSON, zoneDraw, stdout, stderr)
 		},
 	}
 	c.Flags().StringVar(&spec, "spec", "", "layout spec JSON file (required for --engine template)")
+	c.Flags().StringVar(&from, "from", "", "offline components/bbox/pins JSON; reuse the template solver with unclaimed parts fixed; never contacts EDA")
 	c.Flags().StringVar(&engine, "engine", "template", "placement engine: template (our spec-driven planner) | official (platform eda.sch_Document.autoLayout fallback)")
 	c.Flags().BoolVar(&rewire, "rewire", false, "official only (not a template override): after layout, delete broken wiring and rebuild it from the pre-run netlist")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "plan and print proposed coordinates without mutating (default behavior)")
 	c.Flags().BoolVar(&apply, "apply", false, "pin one page, require zero connectivity + complete geometry, move/readback/save, and verify any rollback")
 	c.Flags().BoolVar(&allPages, "all-pages", false, "build the scene from all schematic pages (template dry-run only; incompatible with --apply)")
 	c.Flags().BoolVar(&asJSON, "json", false, "emit the report as JSON")
-	c.Flags().BoolVar(&zoneDraw, "zone-draw", true, "template --apply: auto-draw functional zone frames + labels from modules[].zone after placement (issue #142; --zone-draw=false to skip)")
+	c.Flags().BoolVar(&zoneDraw, "zone-draw", false, "template --apply: explicitly opt in to functional zone frames + labels; default preserves the engineer's drawing style")
 	c.Flags().BoolVar(&avoidTitleBlock, "avoid-titleblock", true, "treat the title block as a hard keep-out")
 	c.Flags().BoolVar(&preserveFanout, "preserve-pin-fanout", true, "keep peripherals out of core pin lead-out lanes")
 	c.Flags().BoolVar(&preferVertical, "prefer-vertical", true, "try vertical peripheral placement before horizontal")
