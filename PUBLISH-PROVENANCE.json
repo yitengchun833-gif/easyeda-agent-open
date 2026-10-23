@@ -113,5 +113,30 @@
     "workflowTestIsolationCommit": "7bba6f714d54c4b12248a34e8cb5f611fffb2586",
     "liveCandidateAcceptance": false,
     "existingDeployedReleaseUnchanged": true
+  },
+  "pcbRouteApplyCandidate": {
+    "date": "2026-10-23",
+    "publicBaseCommit": "8a7d35a3de7f07a70720b25b8b8a72dd3a79e21a",
+    "sourceBaseCommit": "8d0f1bc023557bb396b09d2b888e2b3068ce9a91",
+    "sourceHeadCommit": "88615c79f508f27483d545d3355149904a2887a4",
+    "commits": [
+      {
+        "source": "fadc12c31e087ba0ca02c52925d409a43c45cc6d",
+        "public": "da123e14917539fd8fe3bbdb867ed73ab614cd21"
+      },
+      {
+        "source": "88615c79f508f27483d545d3355149904a2887a4",
+        "public": "3e5bb9b981914fb4965e69498ba2d476d958fcec"
+      }
+    ],
+    "transfer": "exact reviewed patches; public-only files preserved; public attribution with Source-Commit trailers",
+    "coreVersion": "1.8.1-open.9.7-rc.2",
+    "connectorVersion": "1.8.1-open.9.7-rc.1-kb.33",
+    "connectorUnchanged": true,
+    "privateGitHistoryIncluded": false,
+    "runtimeDataAndCredentialsIncluded": false,
+    "liveCandidateAcceptance": false,
+    "persistence": "unverified",
+    "existingDeployedReleaseUnchanged": true
   }
 }
