@@ -61,7 +61,7 @@
     "Playwright"
   ],
   "build": {
-    "go": "1.26.3 windows/amd64",
+    "go": "1.26.8 windows/amd64",
     "node": "24.16.0",
     "proApiTypes": "0.4.25",
     "sdkDeclarationsSha256": "33366e9e7bf8abc0b7405de87b888059ac7123d0b4fdde816b46a0c980e753b7"
