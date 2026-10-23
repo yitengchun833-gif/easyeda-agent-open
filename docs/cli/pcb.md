@@ -39,6 +39,7 @@
 |---|---|---|
 | 短线启发式 | `pcb route-short` | 每网 MST、规则感知线宽(按网络角色给宽)、障碍感知 L 朝向、默认跳电源/地(该铺铜) |
 | 离线局部寻路 | `pcb route solve/check --board board.json --from request.json --out report.json` | 公共 Go 包 `pkg/pcbrouting`；TOP/BOTTOM 单层零过孔、直线/45°有界寻路。默认同时输出同名 SVG，显示整板障碍、搜索范围、路径线宽/净距和失败原因；`check` 另传 `--plan plan.json`，按独立需求重验；不连接编辑器、不是整板自动布线 |
+| 候选落铜 | `pcb route apply --board board.json --from request.json --plan report.json --window ID --project UUID --doc UUID --out new-receipt.json` | 单网、TOP/BOTTOM 单层、零新增过孔；绑定当前目标并复核新鲜基线，禁止切分或替换旧铜，逐段写线后回读真实覆盖，partial/unknown 立即停止且不重试。原生 DRC 与实际落铜分别报告；不显式保存，持久性仍未验证。`--dry-run` 只读检查 |
 | 布局/多网反馈闭环 | `pcb layout solve --board board.json --from request.json --out report.json` | `pkg/pcbsolve` 在每个完整布局投影上共同求解所有需求；先有界回溯路径/排网次序，实际阻挡再驱动完整组平移/声明旋转，总预算耗尽为 incomplete。`check` 从 move 重建候选；`render --from request.json` 核对板/请求来源并显示相同机械禁放区，无 `--from` 的旧调用仍兼容 |
 | 关键网先行 | `pcb route-critical` | P7.0 一条命令:电源按层数走 planes/pour → 差分对双源识别成对布线+skew 实测 → 自动 `track-lock` |
 | 逐焊盘铜路径核查 | `pcb net-path --from REF.PAD [--through REF.PAD] --to REF.PAD [--layer 1]` | 只读按支持的原始 pad shape + track/arc/via 构图；`--layer` 在受限图求路并排除物理过孔，回报 requestedLayer/连续路径/层/线宽/过孔数；未知焊盘几何、缺失 arc 回读或 ordered proof 的重叠铜返回 unknown/error，同网名不等于连通，铺铜/PLANE 明确排除 |

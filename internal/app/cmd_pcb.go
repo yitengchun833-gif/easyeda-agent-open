@@ -449,7 +449,9 @@ func newPcbCmd(cfg *appConfig, stdout, stderr io.Writer) *cobra.Command {
 	pcb.PersistentFlags().StringVar(&window, "window", "", "EasyEDA window ID")
 	pcb.AddCommand(newPcbConfigCmd(cfg, &window, stdout, stderr))
 	pcb.AddCommand(newPcbNetPathCmd(cfg, &window, stdout, stderr))
-	pcb.AddCommand(newPcbRouteCmd(stdout, stderr))
+	route := newPcbRouteCmd(stdout, stderr)
+	route.AddCommand(newPcbRouteApplyCmd(cfg, &window, stdout, stderr))
+	pcb.AddCommand(route)
 	pcb.AddCommand(newPcbLayoutCmd(stdout, stderr))
 
 	// ── drc ───────────────────────────────────────────────────────────────
