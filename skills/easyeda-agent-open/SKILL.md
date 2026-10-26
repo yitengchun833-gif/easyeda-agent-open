@@ -2,7 +2,7 @@
 name: easyeda-agent-open
 description: 通过开放 MCP 读取、分析和修改嘉立创 EDA 专业版，支持局部原理图返工、规则回执、任务续接、原生 eda API、PCB 数据与图面查看。
 metadata:
-  version: "1.8.1-open.9.7-rc.3"
+  version: "1.8.1-open.9.7-rc.4"
 ---
 
 # 嘉立创 EDA Open
