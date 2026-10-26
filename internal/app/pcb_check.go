@@ -2192,7 +2192,11 @@ func fetchPcbSilk(cfg *appConfig, window string) ([]pcbSilkText, error) {
 	if err != nil {
 		return nil, err
 	}
-	rawTexts, _ := mnav(res.Result, "texts").([]any)
+	return parsePcbSilk(res.Result), nil
+}
+
+func parsePcbSilk(result map[string]any) []pcbSilkText {
+	rawTexts, _ := mnav(result, "texts").([]any)
 	var silk []pcbSilkText
 	for _, rt := range rawTexts {
 		tm, ok := rt.(map[string]any)
@@ -2228,7 +2232,7 @@ func fetchPcbSilk(cfg *appConfig, window string) ([]pcbSilkText, error) {
 			BBox: bbox,
 		})
 	}
-	return silk, nil
+	return silk
 }
 
 // fetchAntennaContext resolves antenna-bearing components (by device name from the
