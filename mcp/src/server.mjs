@@ -23,6 +23,7 @@ import { requirementsSchema, expressionSchema } from './project-files.mjs';
 import { compileRoutes } from './route-tools.mjs';
 import { compileLabels } from './label-tools.mjs';
 import { knowledgeTool, knowledgeTools } from './knowledge-tools.mjs';
+import { callWithRuleFiles, hasRuleFile } from './pcb-rule-tools.mjs';
 
 const catalogExecution = await runEasyeda(['actions'], 30_000);
 if (!catalogExecution.ok || !Array.isArray(catalogExecution.result)) {
@@ -79,7 +80,7 @@ function domainTool(domain) {
   return {
     name: `easyeda_${domain}`,
     title: `EasyEDA ${domain}`,
-    description: `Run one typed ${domain} action through easyeda-agent. Use easyeda_actions for input guidance.`,
+    description: `Run one typed ${domain} action through easyeda-agent. Use easyeda_actions for input guidance.${domain === 'pcb' ? ' pcb.drc.rules.set accepts payload {fromFile:absolutePath,module:ruleConfig,dryRun:true|false} through the companion CLI parser; use window/target. Returns ruleImports with JSON changes and unprocessed modules; apply requires verified:true.' : ''}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -108,7 +109,14 @@ const tools = [
     name: 'easyeda_plan',
     description: 'Prepare/render/inspect a bound schematic plan. prepare with optional planFile compiles existing caller-confirmed module declarations and a complete page snapshot into the fixed continuous stages and hashed job, without EDA calls or inferred design/approval. compile_routes and compile_labels use actual geometry/wire IDs. run executes a reviewed contiguous range through the same apply path, stopping on failure or unknown. apply binds supported requirements to native evidence, derives scoped checks and independent identity/pin targets, and runs declared DRC only at final delivery. Managed receipts enforce predecessor completion and prevent replay. reconcile reads receipts and the current target without modifying evidence; resume only skips a verified completed prefix and reuses the same remaining-stage executor. Pending/unknown/corrupt writes or any existing delivery receipt block resume. final checks the independent target; run never saves. verify_delivery only reads a confirmed saved delivery, native close/open receipts and fresh page/DRC; compares it with pre-save native evidence through existing Go design-diff and reports persistence/scope separately. It never closes, opens or saves the page. After actual image inspection, finish binds a hashed run to managed execution/image, calls existing visual_review/finish gates, writes raw delivery.json, then derives its summary separately. summary rebuilds only a local derived view with original fail/unknown and UTC timing; no EDA/knowledge calls or edits to originals. No automatic retry; saved:true is not reopen proof, and a summary is not new execution evidence.',
     inputSchema: { type: 'object', properties: {
-      operation: { type: 'string', enum: ['prepare', 'render', 'inspect', 'check', 'apply', 'run', 'reconcile', 'resume', 'finish', 'verify_delivery', 'summary', 'bind', 'compile_routes', 'compile_labels'] },
+      operation: { type: 'string', enum: ['prepare', 'prepare_correction', 'prepare_rewire', 'render', 'inspect', 'check', 'apply', 'run', 'reconcile', 'resume', 'finish', 'verify_delivery', 'summary', 'bind', 'compile_routes', 'compile_labels'] },
+      primitiveId:{type:'string',minLength:1,description:'prepare_rewire: explicitly selected existing component ID.'},
+      pinNumber:{type:'string',minLength:1,description:'prepare_rewire: exact measured pin number.'},
+      wireId:{type:'string',minLength:1,description:'prepare_rewire: exact wrong wire ID; only one isolated single-segment named stub is supported.'},
+      targetNet:{type:'string',minLength:1,description:'prepare_rewire: engineer-specified existing named target net. Preview preserves geometry, rejects branches/crossings/other endpoints before writes and returns a scoped apply job.'},
+      primitiveIds:{type:'array',items:{type:'string',minLength:1},minItems:1,maxItems:500,uniqueItems:true,description:'prepare_correction: exact existing component IDs; choose this or region.'},
+      region:{type:'object',properties:{minX:{type:'number'},minY:{type:'number'},maxX:{type:'number'},maxY:{type:'number'}},required:['minX','minY','maxX','maxY'],additionalProperties:false,description:'prepare_correction: selects only components fully inside this native-coordinate rectangle.'},
+      corrections:{type:'array',minItems:1,maxItems:500,items:{type:'object',properties:{primitiveId:{type:'string',minLength:1},props:{type:'object',minProperties:1},fontSizeUnit:{type:'string',enum:['native','display']}},required:['primitiveId','props'],additionalProperties:false},description:'prepare_correction: explicit existing component attribute display edits only (position, rotation, font/style/visibility). No Value/Key, component movement, wires or topology edits. Outputs one scoped batch plan/job; stale baseline and outside changes stop completion.'},
       continuous: { type: 'boolean', description: 'run only, candidate continuous v0: confirmed five-stage place/measurement/routeFrom/labelsFrom/final module; derives stages and edits, binds actual placement IDs and the new plan hash, compiles routes/labels and returns current image. No automatic retry, design or visual acceptance. Do not also pass runStages.' },
       recheckFinal: { type:'boolean', const:true, description:'apply/run only: one explicit last empty final stage after its unchanged settled fail/unknown target check. Preserves original stage.json and writes one stage.recheck.json bound to its hash; never retries mutation stages or repeats an existing recheck.' },
       runResultFile: { type: 'string', description: 'finish only: absolute successful run result file; binds the managed plan, edit and image.' },
@@ -220,7 +228,7 @@ const tools = [
   },
   {
     name: 'easyeda_batch',
-    description: 'Execute ordered typed actions in one Connector request. Not atomic. edit declares a complete local modification unit for automatic scoped checks, with no intermediate DRC. Legacy verifyPreservedSchematic does a whole-page comparison; use one comparison path to avoid duplicate reads.',
+    description: 'Execute ordered typed actions in one Connector request. Not atomic. Rule file steps use pcb.drc.rules.set payload.fromFile/module/dryRun; step payload.dryRun:true reads rule differences, while top-level dryRun only lists actions. All rule files are parsed before dispatch. edit declares a complete local modification unit for automatic scoped checks, with no intermediate DRC. Legacy verifyPreservedSchematic does a whole-page comparison; use one comparison path to avoid duplicate reads.',
     inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs, edit:commonRouteProperties.edit, steps: { type: 'array', minItems: 1, maxItems: 500, items: { type: 'object', properties: { action: { type: 'string' }, payload: { type: 'object', additionalProperties: true } }, required: ['action'], additionalProperties: false } }, dryRun: { type: 'boolean' }, stopOnError: { type: 'boolean' }, verifyPreservedSchematic: { type: 'boolean', description: 'Use only when this batch contains the complete layout edit and original part identities/pin nets must be preserved. Reads the active page before and after; unavailable evidence is unknown, not pass.' } }, required: ['steps'], additionalProperties: false },
   },
   {
@@ -320,7 +328,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     if (name === 'easyeda_batch') {
       const steps = input.steps;
       for (const step of steps || []) if (!byName.has(step.action)) throw new Error(`Unknown action: ${step.action}`);
-      return callAction('debug.batch', { ...input, payload: { steps, dryRun: input.dryRun, stopOnError: input.stopOnError, verifyPreservedSchematic: input.verifyPreservedSchematic } });
+      return await callWithRuleFiles('debug.batch', { ...input, payload: { steps, dryRun: input.dryRun, stopOnError: input.stopOnError, verifyPreservedSchematic: input.verifyPreservedSchematic } });
     }
     if (name === 'easyeda_screenshot') {
       return imageResult(await callAction('view.capture', { ...input, payload: { fit: input.fit } }));
@@ -419,6 +427,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       if (!action || action.domain !== domain) {
         throw new Error(`action ${input.action || '(missing)'} does not belong to domain ${domain}`);
       }
+      if (hasRuleFile(action.name, input.payload)) return await callWithRuleFiles(action.name, input);
       if (input.project || input.doc) {
         if (input.target || input.timeoutMs) throw new Error('Use window without project/doc navigation for target assertions or custom timeout.');
         return toMcpResult(await runEasyeda(buildActionCallArgs(action, input)));

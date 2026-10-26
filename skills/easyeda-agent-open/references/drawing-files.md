@@ -73,11 +73,41 @@ Compiler 将同网、共享端点且无分支的连续段合并为完整 polylin
 
 ### 局部显示任务的明确验收范围
 
+#### 工程师审图后的批量文字纠错
+
+需要同时修正多处位号/参数排版，并证明范围外图元及逐脚网络保持时，使用 `easyeda_plan(operation:"prepare_correction")`。准备阶段只读取本地快照，输出原有 `easyeda.plan/1`、Markdown 和 `.job.json`，不调用 EDA。输入示例（路径与 ID 使用本次实际值）：
+
+```json
+{"operation":"prepare_correction","window":"实际窗口ID","snapshotFile":"绝对路径/snapshot.json","outputFile":"绝对路径/correction.json","primitiveIds":["器件ID"],"corrections":[{"primitiveId":"位号属性ID","props":{"x":100,"y":120}},{"primitiveId":"参数属性ID","props":{"rotation":0,"fontSize":8},"fontSizeUnit":"display"}]}
+```
+
+`primitiveIds` 与 `region:{minX,minY,maxX,maxY}` 二选一；区域仅选择边界完全在矩形内的现有器件。每项 correction 必须属于所选器件的原生属性，只支持位置、旋转、字体/样式和可见性，禁止修改 Key/Value、器件位置和接线。该入口的基线需单页完整 `full` 快照、`includeTexts:true`，含已知引脚网络及页面图元；普通局部档案不能冒充完整保留依据。
+
+审阅返回的 plan 和 job 后，将原样 job 交同包 `easyeda_plan` 或 `plan-cli.mjs` 执行。所有属性修改在一个原生批次内，批前核基线，批后复用现有比较器核范围外图元、全部器件/网表以及被改属性的其他字段。一个批次固定进行前后完整保留读取与一次局部显示回读，不逐属性往返。返回现有图面审阅入口，不自动保存、不声明整页或工程师验收。旧基线、partial/unknown、范围外变化或已有执行回执均停止；按实际回读重新准备剩余修正，禁止重放整批。新入口须由采用该源码的新 MCP/CLI 进程提供。
+
 仅修改文字位置/可见性的任务可在同一方案明确`acceptanceScope:"local_display"`，默认仍为page。该路径只允许非空scoped、纯官方attribute.modify显示阶段；禁止final及delivery requirements。原始阶段回执仍核属性owner/Key/Value/字段、器件身份/姿态与范围，末端阶段代表局部验收，不执行整页target.check；完整语义资料仅作引用。当前局部读回包含必要texts，不取引脚、网表、BBox或导线。业务层再用当前图面、受保护finish和固定原始保存/关闭/打开/局部回读证明持久化；原生缺少的样式字段不能宣称保存重开通过。局部范围及stage绑定acceptanceSha256，改成page或改scope不能继承旧通过；page、电气/几何及接线任务保持完整原契约。
 
 局部图面证据须保存runtime的原始修改/截图记录和实际导图回执，绑定本次target、scope、generation与PNG哈希；单独的visual_review成功响应不含这些事实。业务文件字段只维护在资料到交付的structured-workflow.md；程序核图像归属，AI/工程师负责图面判断。
 
 保存重开时先读当前document，close固定uuid/tabId，open显式uuid并保留返回splitScreenId。页面已经关闭时，不把旧documentUuid当成打开前的当前文档断言；open前断言工程，成功后从原生context及局部回读核对完整目标。失败/duplicate先读取请求状态与现场，不能直接重放。
+
+#### 工程师明确指定的独立引脚短线误连
+
+`easyeda_plan(operation:"prepare_rewire")` 复用上述完整单页快照及现有计划/执行回执。工程师必须明确器件 ID、引脚号、错误导线 ID 和已有目标网名；准备只读本地文件，返回删除/新建内容、受影响端点、目标网络的现有引脚及 `.job.json`，不会写 EDA：
+
+```json
+{"operation":"prepare_rewire","window":"实际窗口ID","snapshotFile":"绝对路径/snapshot.json","outputFile":"绝对新路径/rewire.json","primitiveId":"器件ID","pinNumber":"1","wireId":"错误导线ID","targetNet":"工程师指定的已有网名"}
+```
+
+当前仅支持具有原生 Name 属性、从指定引脚朝外延伸的独立正交单段短线，另一端必须悬空。原生 Relevance 属性仅在值严格为 `[]` 时作为空元数据接受；其他附属属性仍拒绝。保留原线坐标与可读线型，以目标网名替换这根线；旧线和其附属属性 ID 会变化，新 Name 的显示位置不承诺保持。总线、分支、交叉、其他引脚或网络标记接触、多段线、物理引脚间改接，以及未知/不存在的目标网络均在准备时拒绝，零写入；不推断设计或整页重画。
+
+审阅预览后，将返回的完整 `job` 原样交同包 `easyeda_plan`，或以 `node mcp/src/plan-cli.mjs <jobFile> <新结果文件>` 执行。一次批次先确认指定线确已删除，再原路径建线；写前核完整基线、独立器件身份及全部受影响器件引脚目标，写后核目标引脚网络、替换线几何/网名，以及范围外全部引脚连接和图元。过期基线在写前停止；部分删除/创建、未知响应、最终目标不符或范围外变化均不得通过，已有回执禁止重放，须先读现场再准备剩余修正。没有事务回滚、自动重试、自动保存或工程师验收；写前读取和实际批次之间不提供排他锁。本入口需要本次源码的 MCP/CLI 与支持 `requireDeleted:true` 的 Connector，旧安装不获得此能力。
+
+#### 更换器件前的身份来源核对
+
+`schematic.component.replace` 现在要求当前 SDK 的原始 `uniqueId` 为非空字符串，并与该实例唯一的原生 Unique ID 属性及全原理图实例清单一致。随后只消费本次官方 JLCEDA 制造网表，以同一非空 UID 为键，逐项核对工程、位号、原始 Device/Symbol/Footprint 引用和完整引脚号；仅位号相同不构成身份依据，分析回退网表也不构成制造身份依据。准备期间再次读取源对象及目标，变化则在删除前拒绝。空值、重复、缺少证据或来源冲突不会用历史快照/网表值填回，不执行替换写入。此门禁只用于更换器件，不限制普通显示或布局修改。
+
+原始属性与编译网表是不同表示：例如原始 Unique ID 为空、制造网表却存在 gge/Channel ID 时，只能报告来源不一致，不能据此认定工程身份丢失或将空值当通过。替换回执的 `identityEvidence` 分别保留原生来源、当前制造网表及新实例证据，`identityVerified` 表示身份核验；`componentObservation` 区分新鲜读取与未核实的最后写回包。恢复异常、最终读取未知、身份不符或旧实例仍存在时返回 `partial:true, verified:false` 和前后实例 ID，停止后续操作，不重放，不自动补值。引脚几何/接线及工程师验收仍须按原有规则核对；本次源码未部署时不能宣称现场已获得该门禁。
 
 ## R1：方案中的要求声明和表达意图
 

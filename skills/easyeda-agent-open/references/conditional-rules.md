@@ -18,6 +18,8 @@
 
 ## 仅在 PCB 布局任务启用（P02–P11、P13）
 
+下一版源码候选的指定旧线换线用同包 CLI `pcb route replace`：完整铜快照与独立两焊盘单网单层请求，先 `--dry-run --ids` 审阅 remove/add 与 SVG，再同输入 `--plan --window` 执行到新回执。仅独立 TOP/BOTTOM 单层 SMD 焊盘中心线链，无分支/未选铜接触/过孔/跨层/同网铜区，锁定和封装内线拒绝。首删前必须由新 Connector 按 expectedTracks 整组核对 ID/锁定/网/层/端点/线宽；旧运行 Connector 不具有该保证，不能采用旧副本执行。删除非事务，partial/unknown 后先读真实铜状态，不重放或自动恢复；不自动保存，DRC 与持久性另报。本能力尚未打包采用，版本由主线另行确定。
+
 - 机械尺寸、孔位、接口朝向与禁区以用户给定图纸为准；未指定时可依据封装占地和布线空间自定板框，不默认圆角。区分 anchor 与封装 bbox 中心，旋转后重读 bbox。封装不得越板或与其他封装／已知禁区冲突；间距按封装和当前制造要求判断。（P02–P04、P10）
 - 依据真实网络和功能关系聚拢器件，关键路径、专属外围优先，不靠位号或固定模板分区。去耦按真实供电／地引脚和回流路径放置；板边接口只在插拔、RF 或人手可接触等要求成立时考虑空间。（P05–P07）
 - 模拟／数字／RF／高压／隔离及开关电源／晶振／差分对的特殊约束仅在该设计确有对应条件时按资料处理，不凭网名臆定安全距离或拓扑。制造交付时审丝印、极性和接口可读性。局部摆放任务如实报告未布线与网表差异，不能因全板未连接就称摆放失败。（P08、P09、P11、P13）
@@ -32,7 +34,7 @@ PCB 路径候选可使用同包 Go `pcb route apply` 原生执行；以同包 CL
 
 ## 器件、同步及恢复的条件规则（L01–L05、C03、C05、C07–C09）
 
-规则模板导入复用同包CLI `pcb drc-rules-set --from <文件> --module ruleConfig --dry-run`。外部easyeda-eda-rule-config-set/schemaVersion1只提取完整data.ruleConfig；多模块必须明确选择，其他模块列为未处理，不能连带写入网络类/网络规则。先检查before/requested和真实单位；这条入口是完整规则覆盖，不是与当前规则自动合并。原生覆盖可能把当前预设转为自定义配置；恢复规则内容不等于恢复配置名称，不能通过修改新建PCB全局默认来冒充当前板回退。仅在本次授权允许时移除dry-run实际写入并独立回读；模板来源或工程正确性仍由工程师判断。旧裸配置、{name,config}及本项目导出格式保留，配置集不能藏进旧包装绕过格式检查。此解析在CLI，不要求更换Connector或重启后台；旧CLI不支持时使用已核实的新候选CLI，不把文件存在当当前工具已加载。
+日常AI规则模板导入用原有easyeda_pcb(action:"pcb.drc.rules.set",window,target,payload:{fromFile:"绝对JSON路径",module:"ruleConfig",dryRun:true})；已有batch可放入同一规则步骤，预览必须用step.payload.dryRun:true，不能用只列动作的batch顶层dryRun。MCP复用同包CLI离线解析后仍发原生action，一次原生请求返回before/requested，ruleImports给出JSON字段差异、未处理模块及previewed/verified/unconfirmed；实际apply显式传dryRun:false并要求verified:true，partial/unknown不重试。只需采用匹配MCP与CLI，无需新Connector协议或重启后台。模板来源与完整覆盖范围由工程师决定。独立CLI入口仍可用 `pcb drc-rules-set --from <文件> --module ruleConfig --dry-run`。外部easyeda-eda-rule-config-set/schemaVersion1只提取完整data.ruleConfig；多模块必须明确选择，其他模块列为未处理，不能连带写入网络类/网络规则。先检查before/requested和真实单位；这条入口是完整规则覆盖，不是与当前规则自动合并。原生覆盖可能把当前预设转为自定义配置；恢复规则内容不等于恢复配置名称，不能通过修改新建PCB全局默认来冒充当前板回退。仅在本次授权允许时移除dry-run实际写入并独立回读；模板来源或工程正确性仍由工程师判断。旧裸配置、{name,config}及本项目导出格式保留，配置集不能藏进旧包装绕过格式检查。文件存在不代表当前MCP/CLI已加载新能力；旧副本缺参数时报告需采用匹配候选，不绕过格式检查。
 
 PCB布线收尾须用当前快照重新检查规则绑定、原生DRC及转角，不能复用布局前DRC签收。现有`pcb check`报告普通90°/锐角中心线候选，多分支及线身T节点单列INFO；须审阅实际铜几何，不据此宣称电气失效或完整DFM通过。项目Compiler的`--review`只读执行这些检查并核对复查前后快照；缺规则或旧CLI缺覆盖返回unknown，不在复查时写规则。
 

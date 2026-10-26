@@ -535,6 +535,7 @@ func newPcbCmd(cfg *appConfig, stdout, stderr io.Writer) *cobra.Command {
 	pcb.AddCommand(newPcbNetPathCmd(cfg, &window, stdout, stderr))
 	route := newPcbRouteCmd(stdout, stderr)
 	route.AddCommand(newPcbRouteApplyCmd(cfg, &window, stdout, stderr))
+	route.AddCommand(newPcbRouteReplaceCmd(cfg, &window, stdout, stderr))
 	pcb.AddCommand(route)
 	pcb.AddCommand(newPcbLayoutCmd(stdout, stderr))
 
@@ -1625,7 +1626,7 @@ high-current 0.5mm (19.69mil) — not mil fragments like 10/15/20.`,
 	{
 		var pourClearance float64
 		var fromPath, module string
-		var dryRun bool
+		var dryRun, parseOnly bool
 		c := &cobra.Command{
 			Use:   "drc-rules-set",
 			Short: "Set full PCB rules from JSON, or raise only the pour clearance",
@@ -1642,6 +1643,9 @@ pours reflow under the new clearance.`,
 			Example: `  easyeda pcb drc-rules-set --pour-clearance 12   # 10→12mil margin, then:
   easyeda pcb pour-rebuild`,
 			RunE: func(cmd *cobra.Command, args []string) error {
+				if parseOnly && (fromPath == "" || dryRun) {
+					return fmt.Errorf("--parse-only requires --from and cannot be combined with --dry-run")
+				}
 				if cmd.Flags().Changed("module") && (fromPath == "" || module != "ruleConfig") {
 					return fmt.Errorf("--module requires --from and must be ruleConfig")
 				}
@@ -1659,6 +1663,9 @@ pours reflow under the new clearance.`,
 					}
 					if len(ignored) > 0 {
 						fmt.Fprintf(stderr, "rule-config-set: selected ruleConfig; not processed: %s\n", strings.Join(ignored, ", "))
+					}
+					if parseOnly {
+						return json.NewEncoder(stdout).Encode(map[string]any{"payload": spec, "unprocessedModules": ignored})
 					}
 					spec["dryRun"] = dryRun
 					return dispatch(cfg, "pcb.drc.rules.set", window, spec, stdout, stderr)
@@ -1681,6 +1688,7 @@ pours reflow under the new clearance.`,
 		c.Flags().StringVar(&fromPath, "from", "", "complete rules JSON: drc-rules output, {name,config}, bare config, ruleConfiguration/netRules spec, or external rule-config-set")
 		c.Flags().StringVar(&module, "module", "", "select ruleConfig in an external schemaVersion 1 rule-config-set (required for multi-module files; other modules are not processed)")
 		c.Flags().BoolVar(&dryRun, "dry-run", false, "show current/requested JSON without writing (with --from)")
+		c.Flags().BoolVar(&parseOnly, "parse-only", false, "normalize --from locally for MCP; return payload/unprocessedModules without contacting EDA")
 		pcb.AddCommand(c)
 	}
 
@@ -4852,6 +4860,7 @@ After a real import, follow reload → pcb.silk.list / pcb check → pcb save.`,
 
 	// ── length constraints (#176) — see cmd_pcb_constraints.go ────────────
 	addPcbConstraintCmds(pcb, cfg, &window, stdout, stderr)
+	pcb.AddCommand(newPcbPlaceBatchCmd(cfg, &window, stdout, stderr))
 
 	return pcb
 }

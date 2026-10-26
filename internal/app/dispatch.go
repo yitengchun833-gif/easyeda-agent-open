@@ -137,7 +137,7 @@ func dispatchTimed(cfg *appConfig, action, window string, payload any, timeout t
 		return errors.Join(errActionFailed, &actionError{Action: action, Code: parsed.Error.Code,
 			Message: parsed.Error.Message, Detail: parsed.Error.Detail})
 	}
-	if action == "pcb.silk.align" || action == "pcb.components.move" || action == "pcb.components.arrange" || action == "pcb.add_component" {
+	if action == "pcb.silk.align" || action == "pcb.components.place" || action == "pcb.components.move" || action == "pcb.components.arrange" || action == "pcb.add_component" {
 		var envelope struct {
 			Result map[string]any `json:"result"`
 		}
@@ -246,7 +246,7 @@ func pcbComponentPlacementError(action string, result map[string]any) error {
 		}
 		return nil
 	}
-	if action != "pcb.components.move" && action != "pcb.components.arrange" {
+	if action != "pcb.components.move" && action != "pcb.components.arrange" && action != "pcb.components.place" {
 		return nil
 	}
 	unverified := &unverifiedPCBComponentPlacementError{action: action, result: result}

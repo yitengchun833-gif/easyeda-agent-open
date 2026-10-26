@@ -9,7 +9,13 @@ export const ABANDON_GRACE_MS = 2_000;
 export const MAX_QUEUE_DEPTH = 64;
 export const ABANDONED_ID_RING = 32;
 export type ExecutionSignal = Pick<AbortSignal, 'aborted' | 'reason' | 'throwIfAborted'>;
-export interface Execution { signal: ExecutionSignal; progress: (value: Record<string, unknown>) => void; isPaused?: () => boolean }
+export interface Execution {
+ signal: ExecutionSignal;
+ progress: (value: Record<string, unknown>) => void;
+ isPaused?: () => boolean;
+ /** A native timeout does not settle the underlying call or release its FIFO ownership. */
+ trackPendingNative?: (pending: Promise<unknown>) => void;
+}
 // The extension sandbox can mask browser constructors. Cancellation must work
 // before the first EDA call even when AbortController is completely unavailable.
 function createCancellation() {
@@ -139,6 +145,7 @@ export class ActionQueue {
   this.entries.set(task.id, entry);
   if (!bypass) this.depth++;
   return new Promise(resolve => {
+   const nativeSettlements: Promise<unknown>[] = [];
    let answered = false;
    let release!: () => void;
    const released = new Promise<void>(r => { release = r; });
@@ -148,12 +155,13 @@ export class ActionQueue {
    entry.cancel = reason => {
     if (entry.settled || entry.controller.signal.aborted) return;
     entry.state = entry.started ? `${reason}_in_flight` : reason;
-    entry.controller.abort(new ActionError(reason === 'expired' ? 'ACTION_EXPIRED' : 'ACTION_CANCELLED', reason));
+    const code = reason === 'native_timeout' ? 'NATIVE_OPERATION_PENDING' : reason === 'expired' ? 'ACTION_EXPIRED' : 'ACTION_CANCELLED';
+    entry.controller.abort(new ActionError(code, reason));
     deadline.cancel();
     if (!entry.started) { if (!bypass) this.depth--; finish(); }
     else if (!bypass) { this.abandoned++; this.abandonedIds.push(task.id); this.abandonedIds = this.abandonedIds.slice(-ABANDONED_ID_RING); }
     if (reason === 'expired' && entry.started) answer({ status: 'abandoned', waitedMs: Date.now() - entry.arrivedAt, stamp: this.stamp(bypass) });
-    else answer({ status: 'error', error: new ActionError(reason === 'expired' ? 'ACTION_EXPIRED' : 'ACTION_CANCELLED', entry.started ? 'Cancellation requested; native operation may still complete. Query status.' : 'Request stopped before execution; no action executed.'), stamp: this.stamp(bypass) });
+    else answer({ status: 'error', error: new ActionError(code, entry.started ? 'Native operation may still complete; execution state is unknown. Query status before another write.' : 'Request stopped before execution; no action executed.'), stamp: this.stamp(bypass) });
     release();
    };
    const run = async () => {
@@ -169,12 +177,18 @@ export class ActionQueue {
     const isPaused = () => this.paused.has('*') || (!!task.clientId && this.paused.has(task.clientId));
     const running = Promise.resolve().then(() => {
      if (!bypass && isPaused()) throw new ActionError('ACTION_PAUSED', 'Action paused before execution; resume the queue first.');
-     return task.run({ signal: entry.controller.signal, progress: value => { entry.progress = value; }, isPaused });
-    }).then(value => {
+     return task.run({ signal: entry.controller.signal, progress: value => { entry.progress = value; }, isPaused,
+      trackPendingNative: pending => {
+       nativeSettlements.push(pending.then(() => undefined, () => undefined));
+       entry.cancel('native_timeout');
+      } });
+    }).then(async value => {
+     if (nativeSettlements.length) await Promise.all(nativeSettlements);
      entry.state = entry.controller.signal.aborted ? 'settled_after_cancel' : 'completed'; finish();
      if (!answered && !bypass) this.seq++;
      answer({ status: 'ok', value, stamp: this.stamp(bypass) });
-    }, error => {
+    }, async error => {
+     if (nativeSettlements.length) await Promise.all(nativeSettlements);
      entry.state = entry.controller.signal.aborted ? 'settled_after_cancel' : 'failed'; entry.error = error instanceof Error ? error.message : String(error); finish();
      if (!answered && !bypass) this.seq++;
      answer({ status: 'error', error, stamp: this.stamp(bypass) });

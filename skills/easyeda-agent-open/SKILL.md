@@ -2,7 +2,7 @@
 name: easyeda-agent-open
 description: 通过开放 MCP 读取、分析和修改嘉立创 EDA 专业版，支持局部原理图返工、规则回执、任务续接、原生 eda API、PCB 数据与图面查看。
 metadata:
-  version: "1.8.1-open.9.7-rc.2"
+  version: "1.8.1-open.9.7-rc.4"
 ---
 
 # 嘉立创 EDA Open
@@ -104,3 +104,7 @@ Connector kb.30：默认 JSON 网表生产导出返回空时，单页、无层�
 CLI/后台、MCP 与 Skill 使用配套完整包；Connector 的知识库增强版独立编号，具体版本以 easyeda_health 和当前项目交接为准。sources.open.json 的 connectorVersion 记录原分发包来源，不表示当前已安装 Connector，也不能据此降级覆盖知识库增强版。升级时核对后台、MCP、Skill、Connector及知识服务的实际加载版本；只有所需组件发生变更时才重启或重载。构建完成不代表当前宿主已经加载。
 
 后台由多个 MCP/Connector 共用，关闭或重载某个 MCP 不停止后台；只有明确 daemon stop/restart 才停止。启动日志在既有 runtime/daemon-stderr.log，启动错误不伪装连接成功。
+
+## PCB 指定对象批量纠错
+
+工程师给出多个器件的局部位置/角度修正时，用 `easyeda_pcb(action:"pcb.components.place", payload:{placements:[{primitiveId:"ID",x:300,y:500,rotation:180,expected:{uniqueId:"SOURCE_UID",x:100,y:500}}]}, window:"WINDOW")`，或同包 CLI `pcb place-batch --from placements.json`。坐标为 mil、角度为度，省略 rotation 保持原角度；expected 可只声明已知的 x/y/rotation/layer/uniqueId/designator。只修改清单对象，不依赖当前选择；锁定、缺失或陈旧对象报告 skipped/partial。写入失败、回读 unknown、取消或暂停后停止后续，保留已回读 moved 和未执行 remaining，不能整批重放。该动作不重布已有铜、不自动保存，也不以 DRC 全零阻断绘图；器件移动后的连通性与工程质量告警另交工程师。

@@ -12,7 +12,8 @@ const root = process.env.EASYEDA_TEST_PACKAGE_ROOT || fileURLToPath(new URL('../
 const launcher = pathToFileURL(process.env.EASYEDA_OPEN_LAUNCHER || path.join(root, 'mcp/src/launch.mjs')).href;
 const version = 'v' + JSON.parse(await readFile(path.join(root, 'mcp/package.json'), 'utf8')).version;
 
-async function connect(url, runtimeDir) {
+async function connect(url, runtimeDir, cliEnv = {}) {
+  const expectedBinary = cliEnv.EASYEDA_OPEN_BIN || cliEnv.EASYEDA_BIN;
   const bootstrap = `
     import childProcess from 'node:child_process';
     import { syncBuiltinESMExports } from 'node:module';
@@ -20,6 +21,9 @@ async function connect(url, runtimeDir) {
     process.kill = () => { throw new Error('forbidden service stop'); };
     childProcess.execFile = () => { throw new Error('forbidden CLI lifecycle call'); };
     childProcess.execFile[Symbol.for('nodejs.util.promisify.custom')] = async (_file, args) => {
+      if (${JSON.stringify(expectedBinary || null)} && _file !== ${JSON.stringify(expectedBinary || null)}) {
+        throw new Error('launcher selected a different CLI');
+      }
       if (args.length !== 1 || args[0] !== 'actions') throw new Error('forbidden CLI lifecycle call');
       return { stdout: '[]', stderr: '' };
     };
@@ -28,7 +32,7 @@ async function connect(url, runtimeDir) {
   `;
   const transport = new StdioClientTransport({ command: process.execPath,
     args: ['--input-type=module', '--eval', bootstrap], stderr: 'pipe',
-    env: { ...process.env, EASYEDA_DAEMON_URL: url, EASYEDA_RUNTIME_DIR: runtimeDir, EASYEDA_AUDIT_DIR: path.join(runtimeDir, 'audit') },
+    env: { ...process.env, ...cliEnv, EASYEDA_DAEMON_URL: url, EASYEDA_RUNTIME_DIR: runtimeDir, EASYEDA_AUDIT_DIR: path.join(runtimeDir, 'audit') },
   });
   let stderr = '';
   transport.stderr.on('data', data => { stderr += data; });
@@ -59,6 +63,23 @@ test('default MCP launch lists tools with no daemon and creates no runtime or kn
     await connected?.client.close();
     await rm(base, { recursive: true, force: true });
   }
+});
+
+test('MCP launch preserves the workflow CLI override and prefers the explicit Open override', async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'eda-launch-binary-'));
+  try {
+    for (const cliEnv of [
+      { EASYEDA_BIN: path.join(base, 'workflow-cli.exe'), EASYEDA_OPEN_BIN: '' },
+      { EASYEDA_BIN: path.join(base, 'old-cli.exe'), EASYEDA_OPEN_BIN: path.join(base, 'open-cli.exe') },
+    ]) {
+      const connected = await connect('http://127.0.0.1:1', path.join(base, 'runtime'), cliEnv);
+      try {
+        assert.ok((await connected.client.listTools()).tools.some(tool => tool.name === 'easyeda_actions'));
+      } finally { await connected.client.close(); }
+      assert.equal(connected.stderr(), '');
+    }
+    assert.deepEqual(await readdir(base), [], 'selecting the CLI must not create runtime state');
+  } finally { await rm(base, { recursive: true, force: true }); }
 });
 
 test('two default MCP clients borrow an existing service without lifecycle calls or replacing PID evidence', async () => {

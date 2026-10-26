@@ -1,4 +1,5 @@
 import type { Execution, ExecutionSignal } from './action-queue';
+import { failedActionResult } from './action-result';
 import { sceneObservation } from './scene-observation';
 import { displayOnlyAction, expectedIdentityIssue, includesNativeScript, localRules, localObservationKey, relatedWireIds, type RuleResult } from './local-rules';
 import { projectOpen, projectExport } from './project-transfer';
@@ -118,6 +119,7 @@ type PcbPad = NonNullable<Awaited<ReturnType<typeof eda.pcb_PrimitiveComponent.g
  * @returns an ActionError carrying EDA_CALL_FAILED and the original detail
  */
 function edaError(err: unknown, message: string): ActionError {
+	if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') return err;
 	const detail = describeThrown(err);
 	return new ActionError(ErrorCodes.EDA_CALL_FAILED, message, detail);
 }
@@ -1715,6 +1717,7 @@ async function backfillOtherProperty(
 async function backfillSupplierId(
 	component: SchComponent,
 	device: { libraryUuid: string; uuid: string },
+	beforeMutation?: () => void,
 ): Promise<{ component: SchComponent; backfilled?: string; warning?: string }> {
 	let current = '';
 	try { current = String(component.getState_SupplierId() ?? ''); }
@@ -1728,6 +1731,7 @@ async function backfillSupplierId(
 	}
 	catch { /* fall through */ }
 	if (!/^C\d+$/.test(real)) return { component };
+	beforeMutation?.();
 	try {
 		const m = await eda.sch_PrimitiveComponent.modify(component.getState_PrimitiveId(), { supplierId: real });
 		if (m) return { component: m, backfilled: real };
@@ -3044,6 +3048,7 @@ const schematicPageClear: Handler = async (payload) => {
  * the current selection is deleted (select first via `schematic.select`). No undo.
  */
 const schematicPrimitivesDelete: Handler = async (payload) => {
+	if (payload.requireDeleted !== undefined && payload.requireDeleted !== true) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'requireDeleted must be true when supplied.');
 	const raw = payload.primitiveIds;
 	let requested: Array<string> | null;
 	if (raw === undefined) {
@@ -3099,6 +3104,11 @@ const schematicPrimitivesDelete: Handler = async (payload) => {
 		const key = index.get(id);
 		if (!key) { (enumerationWarnings.length ? unlocated : notFound).push(id); continue; }
 		(idsByKey[key] ??= []).push(id);
+	}
+	// A prepared pin rewire must not continue to creation after a missing target.
+	// Keep this opt-in contract narrow: one explicit existing wire, never selection.
+	if (payload.requireDeleted === true && (requested === null || targets.length !== 1 || index.get(targets[0]) !== 'wires')) {
+		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Required isolated wire is unavailable; no primitives deleted.');
 	}
 
 	const warnings: Array<string> = [];
@@ -3161,6 +3171,10 @@ const schematicPrimitivesDelete: Handler = async (payload) => {
 			total,
 			requested: targets.length,
 			deletedIds,
+			...(payload.requireDeleted === true ? {
+				verified: total === targets.length && survivedTotal === 0 && Object.keys(verification.unverified).length === 0 && warnings.length === 0,
+				partial: total !== targets.length || survivedTotal > 0 || Object.keys(verification.unverified).length > 0 || warnings.length > 0,
+			} : {}),
 			...(survivedTotal ? { partial: true, survived, survivedTotal } : {}),
 			...(Object.keys(verification.unverified).length ? { partial: true, verified: false, unverified: verification.unverified } : {}),
 			...(notFound.length ? { notFound } : {}),
@@ -3455,7 +3469,7 @@ function matchingWireNameParent(wire: Awaited<ReturnType<typeof eda.sch_Primitiv
 
 // Web 4.1.60 creates a wire Name attribute but returns undefined. Recover only
 // a unique NEW attribute from a fresh inventory, never the requested input.
-async function createVerifiedNetLabel(x: number, y: number, net: string, expectedParentId?: string): Promise<ActionResult> {
+async function createVerifiedNetLabel(x: number, y: number, net: string, expectedParentId?: string, execution?: Execution): Promise<ActionResult> {
 	const identity = await readResponseContext();
 	if (!identity.projectUuid || !identity.documentUuid || !identity.tabId || identity.documentType !== 'schematic') {
 		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Schematic identity unavailable; net label was not dispatched.');
@@ -3469,10 +3483,13 @@ async function createVerifiedNetLabel(x: number, y: number, net: string, expecte
 	try {
 		const pending = Promise.resolve().then(() => eda.sch_PrimitiveAttribute.createNetLabel(x, y, net)).finally(() => { settled = true; });
 		const created = await withTimeout(pending,
-			CONNECT_PIN_OP_TIMEOUT_MS, 'Net label creation timed out; write state is unknown.');
+			CONNECT_PIN_OP_TIMEOUT_MS, 'Net label creation timed out; write state is unknown.', execution);
 		returnedId = created?.getState_PrimitiveId();
 	}
-	catch (err) { apiError = describeThrown(err); }
+	catch (err) {
+		if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') throw err;
+		apiError = describeThrown(err);
+	}
 	let addedIds: string[] = [];
 	try {
 		const after = await eda.sch_PrimitiveAttribute.getAll();
@@ -3505,13 +3522,13 @@ async function createVerifiedNetLabel(x: number, y: number, net: string, expecte
 	}
 }
 
-const schematicNetflagCreate: Handler = async (payload) => {
+const schematicNetflagCreate: Handler = async (payload, execution) => {
 	const kind = requireString(payload, 'kind');
 	const x = requireNumber(payload, 'x');
 	const y = requireNumber(payload, 'y');
 	const rotation = optionalNumber(payload, 'rotation');
 	const mirror = optionalBoolean(payload, 'mirror');
-	if (kind === NET_LABEL_KIND) return createVerifiedNetLabel(x, y, requireString(payload, 'net'));
+	if (kind === NET_LABEL_KIND) return createVerifiedNetLabel(x, y, requireString(payload, 'net'), undefined, execution);
 
 	let component;
 	try {
@@ -5054,9 +5071,12 @@ const schematicExportImage: Handler = async (payload) => {
  * 一直堵着」的根因(详见 deadlines.ts 头注释)。快路径仍是 setTimeout,保底路径
  * 是 transport 的 worker tick。
  */
-function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, message: string, execution?: Execution): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
-		const handle = armDeadline(ms, () => reject(new ActionError(ErrorCodes.EDA_CALL_FAILED, message)));
+		const handle = armDeadline(ms, () => {
+			execution?.trackPendingNative?.(p);
+			reject(new ActionError('NATIVE_OPERATION_PENDING', message));
+		});
 		p.then(
 			(v) => { handle.cancel(); resolve(v); },
 			(e) => { handle.cancel(); reject(e); },
@@ -7554,7 +7574,65 @@ const schematicComponentResolveLcsc: Handler = async (payload) => {
  * Any failure after the delete rolls back by re-creating the ORIGINAL device
  * with its full state (including part-identity fields).
  */
-const schematicComponentReplace: Handler = async (payload) => {
+// Replacement consumes a confirmed current instance link, not an inferred annotation.
+// Preserve raw SDK values; neither a historical snapshot nor an enet value may
+// silently fill an empty source Unique ID before deleting that source instance.
+export async function readReplacementNativeIdentity(primitiveId: string, expectedTarget?: Awaited<ReturnType<typeof readResponseContext>>, forbiddenId?: string) {
+	const target = await readResponseContext();
+	const refuse = (reason: string, evidence: Record<string, unknown> = {}): never => {
+		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `Replacement identity is unavailable or conflicting: ${reason}.`,
+			rebindFactsDetail({ primitiveId, target, ...evidence }));
+	};
+	if (!target.projectUuid || !target.documentUuid || !target.tabId || target.documentType !== 'schematic'
+		|| expectedTarget && ['projectUuid', 'documentUuid', 'tabId'].some(k => target[k as keyof typeof target] !== expectedTarget[k as keyof typeof expectedTarget])) refuse('target is unavailable or changed');
+	const component = await getComponentOrThrow(primitiveId), snapshot = serializeComponent(component);
+	const uid = snapshot.uniqueId;
+	if (snapshot.componentType !== 'part' || typeof uid !== 'string' || !uid.trim() || uid !== uid.trim()
+		|| typeof snapshot.designator !== 'string' || !snapshot.designator.trim()) refuse('source requires a non-empty native Unique ID and designator; no value was inferred', { rawUniqueId: uid });
+	const attributes = await eda.sch_PrimitiveAttribute.getAll(primitiveId);
+	if (!Array.isArray(attributes)) refuse('owned attribute inventory is unavailable', { rawUniqueId: uid });
+	const names = attributes.filter(a => a.getState_Key() === 'Unique ID');
+	const attrs = names.map(a => ({ primitiveId: a.getState_PrimitiveId(), parentId: a.getState_ParentPrimitiveId(), value: a.getState_Value() }));
+	if (attrs.length !== 1 || !attrs[0].primitiveId || attrs[0].parentId !== primitiveId || attrs[0].value !== uid) refuse('component and its single owned Unique ID attribute disagree', { rawUniqueId: uid, attributes: attrs });
+	const inventory = await eda.sch_PrimitiveComponent.getAll(undefined, true);
+	if (!Array.isArray(inventory) || !inventory.length) refuse('native schematic identity inventory is unavailable');
+	const parts = inventory.filter(c => c.getState_ComponentType() === 'part');
+	if (parts.some(c => !c.getState_PrimitiveId() || typeof c.getState_UniqueId() !== 'string')) refuse('native schematic identity inventory is incomplete');
+	const owners = parts.filter(c => c.getState_UniqueId() === uid);
+	if (owners.length !== 1 || owners[0].getState_PrimitiveId() !== primitiveId || owners[0].getState_Designator() !== snapshot.designator
+		|| forbiddenId && inventory.some(c => c.getState_PrimitiveId() === forbiddenId)) refuse('identity is duplicated, stale, or the old instance remains', { rawUniqueId: uid, owners: owners.map(c => c.getState_PrimitiveId()), forbiddenId });
+	const after = await readResponseContext();
+	if (['projectUuid', 'documentUuid', 'tabId'].some(k => target[k as keyof typeof target] !== after[k as keyof typeof after])) refuse('target changed during native identity read');
+	return { component, snapshot, proof: { source: 'official-sdk-component+owned-attribute+schematic-inventory', target,
+		primitiveId, rawUniqueId: uid, designator: snapshot.designator, attribute: attrs[0], uniqueOwners: owners.length } };
+}
+
+export async function proveReplacementManufacturingIdentity(source: Awaited<ReturnType<typeof readReplacementNativeIdentity>>, pins: Awaited<ReturnType<typeof readPinSnapshots>>) {
+	const refuse = (reason: string, evidence: Record<string, unknown> = {}): never => {
+		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `Replacement manufacturing identity could not be proven: ${reason}. No replacement write executed.`,
+			rebindFactsDetail({ source: source.proof, ...evidence }));
+	};
+	const file = await getSchematicNetlistFile(undefined, 'JLCEDA' as ESYS_NetlistType);
+	if (!file || file.netlistProvenance) refuse('a current official JLCEDA manufacturing netlist is required; analysis fallback is not identity proof');
+	let netlist: Record<string, any>;
+	try { netlist = JSON.parse(await file!.text()); } catch { refuse('official netlist is unreadable'); }
+	if (!netlist! || netlist!.projectId !== source.proof.target.projectUuid || !netlist!.components || typeof netlist!.components !== 'object' || Array.isArray(netlist!.components)) refuse('netlist project or component map differs from the native target');
+	const uid = source.proof.rawUniqueId;
+	const matches = Object.entries(netlist!.components as Record<string, any>).filter(([key, row]) => key === uid || row?.props?.['Unique ID'] === uid);
+	if (matches.length !== 1 || matches[0][0] !== uid || matches[0][1]?.props?.['Unique ID'] !== uid) refuse('native link has no single matching netlist key/value', { rawUniqueId: uid });
+	const row = matches[0][1], props = row.props;
+	const refs = { Device: (source.snapshot.component as DeviceRef | undefined)?.uuid, Symbol: (source.snapshot.symbol as DeviceRef | undefined)?.uuid, Footprint: (source.snapshot.footprint as DeviceRef | undefined)?.uuid };
+	if (props.Designator !== source.snapshot.designator || Object.entries(refs).some(([key, value]) => !value || props[key] !== value)) refuse('UID-keyed netlist row conflicts with the source designator/device/symbol/footprint', { rawUniqueId: uid, expectedRefs: refs });
+	const nativePins = pins?.map(p => p.pinNumber).sort(), netPins = row.pinInfoMap && typeof row.pinInfoMap === 'object' && !Array.isArray(row.pinInfoMap)
+		? Object.values(row.pinInfoMap as Record<string, any>).map(p => p?.number).sort() : [];
+	if (!nativePins?.length || nativePins.some(n => !n) || new Set(nativePins).size !== nativePins.length || exactJSON(nativePins) !== exactJSON(netPins)) refuse('complete source pin numbers do not match the UID-keyed row');
+	const after = await readResponseContext();
+	if (['projectUuid', 'documentUuid', 'tabId'].some(k => source.proof.target[k as keyof typeof after] !== after[k as keyof typeof after])) refuse('target changed during official netlist read');
+	return { source: 'current-official-JLCEDA-manufacturing-netlist', target: source.proof.target, projectId: netlist!.projectId,
+		mapKey: uid, uniqueId: props['Unique ID'], channelId: props['Channel ID'] ?? null, designator: props.Designator, ...refs, pinNumbers: nativePins };
+}
+
+const schematicComponentReplace: Handler = async (payload, execution) => {
 	const primitiveId = requireString(payload, 'primitiveId');
 	const lcsc = optionalString(payload, 'lcsc');
 	const explicitUuid = optionalString(payload, 'deviceUuid');
@@ -7569,15 +7647,25 @@ const schematicComponentReplace: Handler = async (payload) => {
 		);
 	}
 
-	const component = await getComponentOrThrow(primitiveId);
-	const snapshot = serializeComponent(component);
+	const stopped = () => execution?.signal.aborted === true || execution?.isPaused?.() === true;
+	const checkActive = () => {
+		execution?.signal.throwIfAborted();
+		if (execution?.isPaused?.()) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Replacement is paused; no further writes executed.');
+	};
+	const identity = await readReplacementNativeIdentity(primitiveId);
+	checkActive();
+	const snapshot = identity.snapshot;
 	const oldName = typeof snapshot.name === 'string' ? snapshot.name : undefined;
 	// Resolve the OLD device's REAL 32-char library identity up front — it is the
 	// rollback target AND the same-device guard; getState_Component() only carries
 	// a 16-char placed-symbol id, so an unresolvable identity aborts here, before
 	// any canvas change.
 	const oldDevice = await resolvePlacedDeviceIdentity(snapshot);
+	checkActive();
 	const oldPins = await readPinSnapshots(primitiveId);
+	checkActive();
+	const manufacturingIdentity = await proveReplacementManufacturingIdentity(identity, oldPins);
+	checkActive();
 
 	// Resolve the NEW device identity.
 	let target: { uuid: string; libraryUuid: string; name?: string };
@@ -7669,57 +7757,131 @@ const schematicComponentReplace: Handler = async (payload) => {
 			: {}),
 	};
 
-	const place = async (dev: DeviceRef, props: Record<string, unknown>): Promise<SchComponent | undefined> => {
+	const errorFacts = (error: unknown, fallback = 'Native operation returned no primitive.') => ({
+		code: error instanceof ActionError ? error.code : ErrorCodes.EDA_CALL_FAILED,
+		message: error === undefined ? fallback : error instanceof Error ? error.message : describeThrown(error),
+		...(error instanceof ActionError && error.detail ? { detail: error.detail } : {}),
+	});
+	let attemptedReplacementId: string | undefined;
+	const observeInstance = async (id: string) => {
+		try {
+			const before = await readResponseContext();
+			if (['projectUuid', 'documentUuid', 'tabId'].some(k => before[k as keyof typeof before] !== identity.proof.target[k as keyof typeof before])) throw new Error('Target changed before failure readback.');
+			const fresh = await readRebindComponent(id), after = await readResponseContext();
+			if (['projectUuid', 'documentUuid', 'tabId'].some(k => before[k as keyof typeof before] !== after[k as keyof typeof after])) throw new Error('Target changed during failure readback.');
+			return { primitiveId: id, present: fresh.present, ...(fresh.component ? { component: serializeComponent(fresh.component) } : {}), ...(fresh.error ? { error: fresh.error } : {}) };
+		} catch (error) { return { primitiveId: id, present: null, error: describeThrown(error) }; }
+	};
+	const failedAfterWrite = async (phase: string, error: unknown, restoreError?: unknown, freshOriginal?: Awaited<ReturnType<typeof observeInstance>>) => {
+		const original = freshOriginal ?? await observeInstance(primitiveId), replacement = attemptedReplacementId ? await observeInstance(attemptedReplacementId) : null;
+		return { result: {
+			ok: false, partial: true, verified: false, phase, cancelled: execution?.signal.aborted === true, paused: execution?.isPaused?.() === true,
+			executionState: original.present === null || replacement?.present === null ? 'unknown' : 'partial',
+			previousPrimitiveId: primitiveId, attemptedReplacementId: attemptedReplacementId ?? null, error: errorFacts(error),
+			identityEvidence: { before: identity.proof, manufacturing: manufacturingIdentity },
+			...(restoreError ? { restoreError: errorFacts(restoreError) } : {}),
+			observations: { original, replacement },
+			rollback: { attempted: false, status: 'not-attempted', verified: false },
+			reason: 'Replacement stopped after a write attempt; use fresh instance observations, never assume unchanged or automatically replay.',
+		} };
+	};
+	const place = async (dev: DeviceRef, props: Record<string, unknown>, onCreatedId?: (id: string) => void, onRestoreError?: (error: unknown) => void): Promise<SchComponent | undefined> => {
+		checkActive();
 		let c = await eda.sch_PrimitiveComponent.create(
 			{ libraryUuid: dev.libraryUuid, uuid: dev.uuid },
 			x, y, undefined, rotation, mirror, addIntoBom, addIntoPcb,
 		);
+		if (c) onCreatedId?.(c.getState_PrimitiveId());
+		checkActive();
 		if (c && Object.keys(props).length) {
 			// Prefer modify's returned primitive: serializing the create-time object
 			// echoes PRE-restore state (live-verified: designator read back "C?"
 			// while the canvas already showed the restored value).
 			try {
+				checkActive();
 				const m = await eda.sch_PrimitiveComponent.modify(c.getState_PrimitiveId(), props);
 				if (m) c = m;
 			}
-			catch { /* best-effort restore */ }
+			catch (error) { onRestoreError?.(error); return c; }
 		}
+		checkActive();
 		// #157: carry the device's real LCSC C-number onto the instance.
-		if (c) c = (await backfillSupplierId(c, dev)).component;
+		if (c) c = (await backfillSupplierId(c, dev, checkActive)).component;
+		checkActive();
 		return c ?? undefined;
 	};
 
 	// Step 3: delete the old instance.
+	const beforeDelete = await readReplacementNativeIdentity(primitiveId, identity.proof.target);
+	if (exactJSON(beforeDelete.snapshot) !== exactJSON(snapshot)) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED,
+		'Source component changed during replacement preparation; no replacement write executed.', rebindFactsDetail({ before: identity.proof, current: beforeDelete.proof }));
+	checkActive();
+	let deleteReturned: boolean | undefined;
 	try {
-		await eda.sch_PrimitiveComponent.delete(primitiveId);
+		deleteReturned = await eda.sch_PrimitiveComponent.delete(primitiveId);
 	}
 	catch (err) {
-		throw edaError(err, `Failed to delete the old instance "${primitiveId}" (canvas unchanged).`);
+		return failedAfterWrite('delete-original', err);
+	}
+	const sourceAfterDelete = await observeInstance(primitiveId);
+	const deletion = { returned: deleteReturned === undefined ? { type: 'void' } : { type: 'boolean', value: deleteReturned }, source: sourceAfterDelete };
+	if (deleteReturned === false || sourceAfterDelete.present !== false) {
+		const failure = await failedAfterWrite('delete-verification', new ActionError(ErrorCodes.EDA_CALL_FAILED,
+			deleteReturned === false ? 'Native deletion explicitly returned false; replacement creation was refused.' : 'Source absence was not confirmed; replacement creation was refused.'), undefined, sourceAfterDelete);
+		return { result: { ...failure.result, deletion } };
 	}
 
 	// Step 4 + 5: place the new device and carry identity over.
 	let created: SchComponent | undefined;
 	let placeError: unknown;
+	let restoreError: unknown;
 	try {
-		created = await place({ libraryUuid: target.libraryUuid, uuid: target.uuid }, carryProps);
+		created = await place({ libraryUuid: target.libraryUuid, uuid: target.uuid }, carryProps, id => { attemptedReplacementId = id; }, error => { restoreError = error; });
+		checkActive();
 	}
 	catch (err) { placeError = err; }
+	if (stopped()) return failedAfterWrite('replacement-placement', placeError, restoreError);
 	if (!created) {
-		// Roll back: re-create the ORIGINAL device with its full state.
-		let restored = false;
-		try { restored = Boolean(await place(oldDevice, rollbackProps)); }
-		catch { /* fall through to the structured error */ }
-		const rollbackNote = restored
-			? 'rolled back — the original component was re-created (with a NEW primitiveId; verify wires)'
-			: 'ROLLBACK FAILED — the original component is GONE; re-place it manually';
-		if (placeError) throw edaError(placeError, `Failed to place the replacement device (${rollbackNote}).`);
-		throw new ActionError(
-			ErrorCodes.EDA_CALL_FAILED,
-			`Placing the replacement device returned no primitive (${rollbackNote}).`,
-		);
+		// An SDK return proves only an attempted recovery. Confirm publication,
+		// identity, original properties/geometry and device before calling it restored.
+		let rollbackId: string | undefined, rollbackError: unknown, rollbackRestoreError: unknown, readbackError: unknown;
+		let rollbackRead: Awaited<ReturnType<typeof readReplacementNativeIdentity>> | undefined;
+		let rollbackStatus: 'verified' | 'failed' | 'unknown' = 'unknown';
+		const differences: string[] = [];
+		try { await place(oldDevice, rollbackProps, id => { rollbackId = id; }, error => { rollbackRestoreError = error; }); }
+		catch (error) { rollbackError = error; }
+		if (rollbackId) {
+			try {
+				rollbackRead = await readReplacementNativeIdentity(rollbackId, identity.proof.target, primitiveId);
+				differences.push(...rebindInstanceDifferences(snapshot, rollbackRead.snapshot));
+				if (exactJSON(snapshot.name) !== exactJSON(rollbackRead.snapshot.name)) differences.push('name');
+				const device = await resolvePlacedDeviceIdentity(rollbackRead.snapshot);
+				if (!sameDeviceRef(device, oldDevice)) differences.push('device');
+				rollbackStatus = stopped() ? 'unknown' : differences.length ? 'failed' : rollbackError || rollbackRestoreError ? 'unknown' : 'verified';
+			} catch (error) { readbackError = error; }
+		}
+		return { result: { ok: false, partial: true, verified: false, phase: 'replacement-create', executionState: rollbackStatus === 'unknown' ? 'unknown' : 'partial',
+			deletion,
+			previousPrimitiveId: primitiveId, attemptedReplacementId: attemptedReplacementId ?? null,
+			identityEvidence: { before: identity.proof, manufacturing: manufacturingIdentity },
+			cancelled: execution?.signal.aborted === true, paused: execution?.isPaused?.() === true,
+			error: errorFacts(placeError, 'Placing the replacement device returned no primitive.'),
+			rollback: { attempted: true, primitiveId: rollbackId ?? null, status: rollbackStatus, verified: rollbackStatus === 'verified',
+				differences, component: rollbackRead?.snapshot ?? null, identityEvidence: rollbackRead?.proof ?? null,
+				...(rollbackError ? { attemptError: errorFacts(rollbackError) } : {}),
+				...(rollbackRestoreError ? { restoreError: errorFacts(rollbackRestoreError) } : {}),
+				...(readbackError ? { readbackError: errorFacts(readbackError) } : {}) },
+			reason: `Replacement creation failed; rollback ${rollbackStatus}. Inspect actual instance IDs and wires; never replay the replacement.`,
+		} };
 	}
 
 	const newId = created.getState_PrimitiveId();
+	let finalIdentity: Awaited<ReturnType<typeof readReplacementNativeIdentity>> | undefined;
+	let identityError: string | undefined;
+	try {
+		finalIdentity = await readReplacementNativeIdentity(newId, identity.proof.target, primitiveId);
+		if (finalIdentity.proof.rawUniqueId !== identity.proof.rawUniqueId || finalIdentity.proof.designator !== identity.proof.designator) throw new Error('Fresh replacement identity differs from the proven source link/designator.');
+	} catch (error) { identityError = describeThrown(error); }
 	const newPins = await readPinSnapshots(newId);
 	const pinDiff = oldPins && newPins
 		? (() => {
@@ -7754,7 +7916,15 @@ const schematicComponentReplace: Handler = async (payload) => {
 			previousDevice: { uuid: oldDevice.uuid, libraryUuid: oldDevice.libraryUuid, resolvedVia: oldDevice.via, ...(oldName ? { name: oldName } : {}) },
 			device: { uuid: target.uuid, libraryUuid: target.libraryUuid, ...(target.name ? { name: target.name } : {}) },
 			pinDiff,
-			component: serializeComponent(created),
+			deletion,
+			component: finalIdentity?.snapshot ?? serializeComponent(created),
+			componentObservation: finalIdentity ? 'fresh-native-readback' : 'last-write-return-unverified',
+			identityVerified: !identityError,
+			identityEvidence: { before: identity.proof, manufacturing: manufacturingIdentity, beforeDelete: beforeDelete.proof,
+				after: finalIdentity?.proof ?? null, ...(identityError ? { error: identityError } : {}) },
+			...(restoreError ? { restoreError: errorFacts(restoreError) } : {}),
+			...(identityError || restoreError || stopped() ? { partial: true, verified: false, cancelled: execution?.signal.aborted === true, paused: execution?.isPaused?.() === true,
+				reason: 'Replacement has an unverified identity, native restore error, or cancellation after a write; inspect actual facts, never replay.' } : {}),
 		},
 		warnings,
 	};
@@ -7947,14 +8117,13 @@ async function appliedRotation(desired: number): Promise<number> {
 // REQUEST at its ~18s dispatch budget with "connector did not respond", so a
 // batch (block-apply autoconnect) freezes ~18s on that one pin → the user sees
 // the layout progress stall at ~99% (observed ≈<1/400 connect_pin calls). Racing
-// each mutation against this timeout converts the rare indefinite hang into a
-// fast, clean rejection that flows into the existing wire-retry / rollback path,
-// so the batch keeps moving and no half-built stub lands late. Kept well under
-// the daemon's dispatch budget so the caller gets a structured error, not a raw
-// dispatch timeout: worst realistic case (one wire retry + flag) ≈ 3×7s < 18s.
+// each mutation against this timeout reports unknown promptly. It cannot cancel
+// the native operation: do not retry or roll back a pending write, and retain
+// FIFO ownership until the original Promise settles. Only settled failures may
+// use the existing retry/rollback path.
 const CONNECT_PIN_OP_TIMEOUT_MS = 7000;
 
-const schematicPowerConnectPin: Handler = async (payload) => {
+const schematicPowerConnectPin: Handler = async (payload, execution) => {
 	const pinX = requireNumber(payload, 'pinX');
 	const pinY = requireNumber(payload, 'pinY');
 	const kind = requireString(payload, 'kind');
@@ -8035,11 +8204,12 @@ const schematicPowerConnectPin: Handler = async (payload) => {
 			wire = await withTimeout(
 				eda.sch_PrimitiveWire.create([pinGX, pinGY, endX, endY]),
 				CONNECT_PIN_OP_TIMEOUT_MS,
-				`Stub-wire create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms — the platform dropped the request without rejecting (the stuck-at-99% hang). Failing this attempt so the retry/caller can re-issue instead of hanging until the dispatch timeout.`,
+				`Stub-wire create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms; its outcome is unknown. Do not retry while the native call is pending.`, execution,
 			);
 			wireErr = undefined;
 		}
 		catch (err) {
+			if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') throw err;
 			wireErr = err;
 		}
 	}
@@ -8066,18 +8236,18 @@ const schematicPowerConnectPin: Handler = async (payload) => {
 			flag = await withTimeout(
 				Promise.resolve(eda.sch_PrimitiveComponent.createNetFlag(NET_FLAG_KINDS[kind], net, endX, endY, applied)),
 				CONNECT_PIN_OP_TIMEOUT_MS,
-				`Netflag create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms — the platform dropped the request without rejecting (the stuck-at-99% hang). Rolling back the stub wire and failing fast so the caller can retry this pin.`,
+				`Netflag create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms; its outcome is unknown. No rollback or retry is safe while it is pending.`, execution,
 			);
 		}
 		else if (kind in NET_PORT_KINDS) {
 			flag = await withTimeout(
 				Promise.resolve(eda.sch_PrimitiveComponent.createNetPort(NET_PORT_KINDS[kind], net, endX, endY, applied)),
 				CONNECT_PIN_OP_TIMEOUT_MS,
-				`Netport create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms — the platform dropped the request without rejecting (the stuck-at-99% hang). Rolling back the stub wire and failing fast so the caller can retry this pin.`,
+				`Netport create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms; its outcome is unknown. No rollback or retry is safe while it is pending.`, execution,
 			);
 		}
 		else if (kind === NET_LABEL_KIND) {
-			const label = await createVerifiedNetLabel(endX, endY, net, wire.getState_PrimitiveId());
+			const label = await createVerifiedNetLabel(endX, endY, net, wire.getState_PrimitiveId(), execution);
 			return { ...label, result: { ...label.result,
 				wirePrimitiveId: wire.getState_PrimitiveId(), flagPrimitiveId: label.result?.primitiveId,
 				endPoint: { x: endX, y: endY }, direction, offset, rotation, appliedRotation: applied } };
@@ -8090,6 +8260,9 @@ const schematicPowerConnectPin: Handler = async (payload) => {
 		}
 	}
 	catch (err) {
+		if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') {
+			throw new ActionError(err.code, err.message, `Created stub wire ${wire.getState_PrimitiveId()}; marker outcome unknown, no rollback attempted.`);
+		}
 		await rollbackWire();
 		if (err instanceof ActionError) throw err;
 		throw edaError(err, 'Failed to create netflag/netport at wire end (stub wire rolled back).');
@@ -12250,10 +12423,10 @@ const pcbGridSnap: Handler = async (payload) => {
 	return { result: { grid, snapped, count: snapped.length } };
 };
 
-type PcbCoordinateMove = { primitiveId: string; designator?: string; uniqueId?: string; x: number; y: number; rotation: number; layer: number; to: { x: number; y: number } };
+type PcbCoordinateMove = { primitiveId: string; designator?: string; uniqueId?: string; x: number; y: number; rotation: number; layer: number; to: { x: number; y: number; rotation?: number } };
 type PcbMoveSkipped = { primitiveId: string; reason: string };
 
-function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number }): PcbCoordinateMove {
+function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number; rotation?: number }): PcbCoordinateMove {
 	const move = { primitiveId: component.getState_PrimitiveId(), designator: component.getState_Designator(), uniqueId: component.getState_UniqueId(),
 		x: component.getState_X(), y: component.getState_Y(), rotation: component.getState_Rotation(), layer: Number(component.getState_Layer()), to };
 	if (![move.x, move.y, move.rotation, to.x, to.y].every(Number.isFinite) || ![1, 2].includes(move.layer) || typeof component.getState_PrimitiveLock() !== 'boolean') {
@@ -12262,15 +12435,16 @@ function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number }
 	return move;
 }
 
-async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbMoveSkipped[]) {
+async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbMoveSkipped[], execution?: Execution) {
 	const moved: Array<Record<string, unknown>> = [];
 	const attempted: string[] = [];
 	const notApplied: Array<Record<string, unknown>> = [];
 	const unverified: Array<Record<string, unknown>> = [];
 	let next = 0;
 	for (; next < plans.length; next++) {
+		if (execution?.signal.aborted || execution?.isPaused?.()) break;
 		const plan = plans[next];
-		if (![plan.to.x, plan.to.y].every(Number.isFinite)) {
+		if (![plan.to.x, plan.to.y, plan.to.rotation ?? plan.rotation].every(Number.isFinite)) {
 			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Planned coordinates are non-finite; no write dispatched.' });
 			break;
 		}
@@ -12283,10 +12457,12 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 		}
 		catch (error) { skipped.push({ primitiveId: plan.primitiveId, reason: describeThrown(error) }); break; }
 		const unchanged = verifyPcbComponentPatch({ x: plan.x, y: plan.y, rotation: plan.rotation, layer: plan.layer, primitiveLock: false }, before);
-		if (before.primitiveId !== plan.primitiveId || before.uniqueId !== plan.uniqueId || unchanged.notApplied.length || unchanged.unverified.length) {
+		if (before.primitiveId !== plan.primitiveId || before.uniqueId !== plan.uniqueId || before.designator !== plan.designator || unchanged.notApplied.length || unchanged.unverified.length) {
 			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Component changed after planning; no write dispatched.', actual: before });
 			break;
 		}
+		// Cancellation/pause may arrive during the awaited fresh pre-write read.
+		if (execution?.signal.aborted || execution?.isPaused?.()) break;
 		attempted.push(plan.primitiveId);
 		let writeError: string | undefined;
 		try { await eda.pcb_PrimitiveComponent.modify(plan.primitiveId, plan.to); }
@@ -12297,18 +12473,18 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 			if (fresh) after = serializePcbComponent(fresh);
 		}
 		catch { /* a dispatched write without readback remains unknown */ }
-		if (!after || after.primitiveId !== plan.primitiveId || after.uniqueId !== plan.uniqueId) {
+		if (!after || after.primitiveId !== plan.primitiveId || after.uniqueId !== plan.uniqueId || after.designator !== plan.designator) {
 			unverified.push({ primitiveId: plan.primitiveId, expected: plan.to, actual: after, ...(writeError ? { error: writeError } : {}) });
 			next++;
 			break;
 		}
-		const verification = verifyPcbComponentPatch({ ...plan.to, rotation: plan.rotation, layer: plan.layer, primitiveLock: false }, after);
+		const verification = verifyPcbComponentPatch({ ...plan.to, rotation: plan.to.rotation ?? plan.rotation, layer: plan.layer, primitiveLock: false }, after);
 		if (verification.notApplied.length || verification.unverified.length) {
 			notApplied.push({ primitiveId: plan.primitiveId, expected: plan.to, actual: after, ...verification, ...(writeError ? { error: writeError } : {}) });
 			next++;
 			break;
 		}
-		moved.push({ primitiveId: plan.primitiveId, designator: plan.designator, from: { x: plan.x, y: plan.y }, to: { x: after.x, y: after.y }, verified: true });
+		moved.push({ primitiveId: plan.primitiveId, designator: plan.designator, from: { x: plan.x, y: plan.y, ...(plan.to.rotation === undefined ? {} : { rotation: plan.rotation }) }, to: { x: after.x, y: after.y, ...(plan.to.rotation === undefined ? {} : { rotation: after.rotation }) }, verified: true });
 		if (writeError) {
 			unverified.push({ primitiveId: plan.primitiveId, error: writeError, reason: 'Target coordinates were read back, but the write threw; no further writes dispatched.' });
 			next++;
@@ -12316,13 +12492,79 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 		}
 	}
 	const remaining = plans.slice(next).map(plan => plan.primitiveId);
-	const partial = skipped.length > 0 || notApplied.length > 0 || unverified.length > 0 || remaining.length > 0;
+	const cancelled = execution?.signal.aborted === true, paused = execution?.isPaused?.() === true;
+	const partial = cancelled || paused || skipped.length > 0 || notApplied.length > 0 || unverified.length > 0 || remaining.length > 0;
 	return { moved, count: moved.length, attempted, skipped, notApplied, unverified, remaining, partial, verified: !partial,
+		...(cancelled ? { cancelled: true } : {}), ...(paused ? { paused: true } : {}),
 		...(unverified.length ? { executionState: 'unknown' } : {}) };
 }
 
+type PcbAbsolutePlacement = {
+	primitiveId: string; x: number; y: number; rotation?: number;
+	expected?: Record<string, unknown>;
+};
+
+/** Explicit absolute poses: one transport request for an engineer's local corrections. */
+const pcbComponentsPlace: Handler = async (payload, execution) => {
+	if (payload.dryRun !== undefined) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'pcb.components.place does not accept dryRun; no write dispatched.');
+	if (!Array.isArray(payload.placements) || payload.placements.length === 0) {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'placements must be a nonempty array of explicit primitiveId/x/y poses (mil).');
+	}
+	const ids = new Set<string>();
+	// Validate the entire list before dispatching any write. Never fall back to selection.
+	const placements = payload.placements.map((value: unknown): PcbAbsolutePlacement => {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Each placement must be an object.');
+		}
+		const p = value as Record<string, unknown>;
+		if (Object.keys(p).some(k => !['primitiveId', 'x', 'y', 'rotation', 'expected'].includes(k))
+			|| typeof p.primitiveId !== 'string' || !p.primitiveId.trim() || p.primitiveId.trim() !== p.primitiveId
+			|| ids.has(p.primitiveId) || typeof p.x !== 'number' || !Number.isFinite(p.x)
+			|| typeof p.y !== 'number' || !Number.isFinite(p.y)
+			|| p.rotation !== undefined && (typeof p.rotation !== 'number' || !Number.isFinite(p.rotation))) {
+			throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'placements require distinct primitiveIds, finite x/y and optional rotation; only pose/expected fields are accepted.');
+		}
+		ids.add(p.primitiveId);
+		if (p.expected !== undefined) {
+			if (!p.expected || typeof p.expected !== 'object' || Array.isArray(p.expected)) {
+				throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'expected must be an object of source pose/identity fields.');
+			}
+			for (const [key, v] of Object.entries(p.expected)) {
+				const valid = ['x', 'y', 'rotation'].includes(key) ? typeof v === 'number' && Number.isFinite(v)
+					: key === 'layer' ? v === 1 || v === 2
+						: ['uniqueId', 'designator'].includes(key) && typeof v === 'string';
+				if (!valid) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, `Unsupported or invalid expected field: ${key}.`);
+			}
+		}
+		return p as PcbAbsolutePlacement;
+	});
+	const plans: PcbCoordinateMove[] = [], skipped: PcbMoveSkipped[] = [];
+	for (const placement of placements) {
+		const id = placement.primitiveId;
+		try {
+			const component = await eda.pcb_PrimitiveComponent.get(id);
+			if (!component) { skipped.push({ primitiveId: id, reason: 'Component not found.' }); continue; }
+			if (component.getState_PrimitiveLock() === true) { skipped.push({ primitiveId: id, reason: 'locked' }); continue; }
+			const actual = serializePcbComponent(component);
+			if (actual.primitiveId !== id) { skipped.push({ primitiveId: id, reason: 'Component lookup returned a different identity; no write dispatched.' }); continue; }
+			const expected = placement.expected ?? {};
+			const pose = Object.fromEntries(Object.entries(expected).filter(([key]) => !['uniqueId', 'designator'].includes(key)));
+			const check = verifyPcbComponentPatch(pose, actual);
+			if (check.notApplied.length || check.unverified.length
+				|| ['uniqueId', 'designator'].some(key => expected[key] !== undefined && expected[key] !== actual[key])) {
+				skipped.push({ primitiveId: id, reason: 'Expected source pose/identity changed; no write dispatched.' }); continue;
+			}
+			plans.push(pcbCoordinateMove(component, { x: placement.x, y: placement.y,
+				...(placement.rotation === undefined ? {} : { rotation: normDeg(placement.rotation) }) }));
+		}
+		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); }
+	}
+	return { result: { units: 'mil', mode: 'absolute', requestedCount: placements.length,
+		...await applyPcbCoordinateMoves(plans, skipped, execution) } };
+};
+
 /** Translate the selected/explicit components while preserving locked objects. */
-const pcbComponentsMove: Handler = async (payload) => {
+const pcbComponentsMove: Handler = async (payload, execution) => {
 	const dx = requireNumber(payload, 'dx');
 	const dy = requireNumber(payload, 'dy');
 	if (![dx, dy].every(Number.isFinite)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'dx and dy must be finite.');
@@ -12341,7 +12583,7 @@ const pcbComponentsMove: Handler = async (payload) => {
 		}
 		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); }
 	}
-	return { result: { dx, dy, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped) } };
+	return { result: { dx, dy, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped, execution) } };
 };
 
 // ─── PCB auto-layout seed: cluster by shared local nets + grid-pack (P6) ──
@@ -12399,7 +12641,7 @@ function clusterByLocalNets(items: Array<ArrangeItem>): Array<Array<ArrangeItem>
 	return [...groups.values()].sort((a, b) => b.length - a.length);
 }
 
-const pcbComponentsArrange: Handler = async (payload) => {
+const pcbComponentsArrange: Handler = async (payload, execution) => {
 	const mode = optionalString(payload, 'mode') ?? 'cluster';
 	const pitch = optionalNumber(payload, 'pitch') ?? 50;    // gap between cells (mil)
 	const gutter = optionalNumber(payload, 'gutter') ?? 150;  // gap between cluster blocks (mil)
@@ -12448,7 +12690,7 @@ const pcbComponentsArrange: Handler = async (payload) => {
 
 	const movable = items.filter(i => !i.locked);
 	if (movable.length === 0) {
-		return { result: { mode, groups: 0, requestedCount: ids.length, ...await applyPcbCoordinateMoves([], skipped) } };
+		return { result: { mode, groups: 0, requestedCount: ids.length, ...await applyPcbCoordinateMoves([], skipped, execution) } };
 	}
 
 	// Anchor at the top-left of the current movable region (y-up: top = max y).
@@ -12482,7 +12724,7 @@ const pcbComponentsArrange: Handler = async (payload) => {
 		blockX += usedCols * cellW + gutter;
 	}
 
-	return { result: { mode, groups: groups.length, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped) } };
+	return { result: { mode, groups: groups.length, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped, execution) } };
 };
 
 // ─── PCB DRC ─────────────────────────────────────────────────────────
@@ -13851,6 +14093,7 @@ const pcbRouteDelete: Handler = async (payload) => {
 	else if (Array.isArray(raw) && raw.every(id => typeof id === 'string') && raw.length > 0) ids = raw as Array<string>;
 	else throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Missing required field "primitiveIds" (string or non-empty string[]).');
 	const kindGuard = optionalString(payload, 'kind'); // 'via' | 'track' — refuse ids of another kind
+	const strictExpected = Object.prototype.hasOwnProperty.call(payload, 'expectedTracks');
 
 	let lines, arcs, vias;
 	try {
@@ -13891,9 +14134,11 @@ const pcbRouteDelete: Handler = async (payload) => {
 	// the next save/reload re-materializes it from the footprint definition.
 	// So refuse UPFRONT — post-delete readback provably cannot catch this.
 	let componentIds: Array<string> = [];
+	let componentReadAvailable = false;
 	try {
 		const comps = await eda.pcb_PrimitiveComponent.getAll();
 		componentIds = (comps ?? []).map(c => c.getState_PrimitiveId()).filter(Boolean);
+		componentReadAvailable = comps != null;
 	}
 	catch { /* best-effort: without component ids the readback below still reports honestly */ }
 	const embeddedParent = (id: string): string | undefined =>
@@ -13920,6 +14165,34 @@ const pcbRouteDelete: Handler = async (payload) => {
 	}
 	if (wrongKind.length) {
 		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, `kind=${kindGuard} refused mismatched ids: ${wrongKind.join('; ')}. Drop the kind guard or fix the id list.`);
+	}
+	if (strictExpected) {
+		const expectedRows = payload.expectedTracks;
+		if (kindGuard !== 'track' || !Array.isArray(expectedRows) || expectedRows.length !== ids.length || !componentReadAvailable) {
+			throw new ActionError(ErrorCodes.EDA_CALL_FAILED, 'Strict track deletion requires kind=track, one expectedTracks record per id, and a complete component inventory. No tracks deleted.');
+		}
+		const expectedById = new Map<string, Record<string, unknown>>();
+		const numericFields = ['layer', 'startX', 'startY', 'endX', 'endY', 'lineWidth'] as const;
+		for (const rawExpected of expectedRows) {
+			if (!rawExpected || typeof rawExpected !== 'object' || Array.isArray(rawExpected)) {
+				throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Invalid expectedTracks record. No tracks deleted.');
+			}
+			const expected = rawExpected as Record<string, unknown>;
+			if (typeof expected.primitiveId !== 'string' || !expected.primitiveId || typeof expected.net !== 'string' || !expected.net || expected.locked !== false || numericFields.some(field => typeof expected[field] !== 'number' || !Number.isFinite(expected[field])) || Number(expected.lineWidth) <= 0 || expectedById.has(expected.primitiveId)) {
+				throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Invalid or repeated expectedTracks identity/geometry. No tracks deleted.');
+			}
+			expectedById.set(expected.primitiveId, expected);
+		}
+		if (expectedById.size !== ids.length || ids.some(id => !expectedById.has(id) || !byId.has(id))) {
+			throw new ActionError(ErrorCodes.EDA_CALL_FAILED, 'Selected track IDs differ from expectedTracks or the live board. No tracks deleted.');
+		}
+		for (const id of ids) {
+			const entry = byId.get(id)!;
+			const expected = expectedById.get(id)!;
+			if (entry.kind !== 'track' || entry.locked !== false || embeddedParent(id) || entry.before.net !== expected.net || numericFields.some(field => entry.before[field] !== expected[field])) {
+				throw new ActionError(ErrorCodes.EDA_CALL_FAILED, `Selected track ${id} changed, is locked, or belongs to a footprint. No tracks deleted.`);
+			}
+		}
 	}
 	if (!removed.length) {
 		if (notDeletable.length) {
@@ -14922,13 +15195,20 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
 	if (!Array.isArray(steps) || steps.length === 0 || steps.length > 500) {
 		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'steps must contain 1–500 actions.');
 	}
-	// Validate the whole batch before the first side effect.
+	// Validate the whole batch before the first side effect, including target overrides.
 	for (const step of steps) {
 		if (!step || typeof step.action !== 'string' || !HANDLERS[step.action] || step.action === 'debug.batch') {
 			throw new ActionError(ErrorCodes.UNKNOWN_ACTION, 'Batch contains an unknown or nested batch action.');
 		}
 		if (step.payload !== undefined && (!step.payload || typeof step.payload !== 'object' || Array.isArray(step.payload))) {
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Batch payload must be an object.');
+		}
+		if (helperTarget && step.payload?._target !== undefined) {
+			const requested = step.payload._target;
+			if (!requested || typeof requested !== 'object' || Array.isArray(requested)
+				|| ['projectUuid', 'documentUuid'].some(key => requested[key] !== undefined && requested[key] !== helperTarget[key as keyof typeof helperTarget])) {
+				throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Batch step _target cannot replace the enclosing batch target; no steps executed.');
+			}
 		}
 	}
 	if (payload.dryRun === true) return { result: { dryRun: true, count: steps.length, actions: steps.map(s => s.action) } };
@@ -14955,9 +15235,12 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
         const step = steps[index];
         execution?.progress({ completed: results.length, total: steps.length, currentIndex: index, currentAction: step.action });
         try {
-			const response = await runAction(step.action, step.payload, false, execution, helperTarget);
+			const stepPayload = helperTarget && step.action !== 'debug.exec_js'
+				? { ...step.payload, _target: { projectUuid: helperTarget.projectUuid, documentUuid: helperTarget.documentUuid } }
+				: step.payload;
+			const response = await runAction(step.action, stepPayload, false, execution, helperTarget);
 			const r = response.result as Record<string, unknown> | undefined;
-			const ok = r?.ok !== false && r?.partial !== true && r?.verified !== false;
+			const ok = !failedActionResult(r);
 			const { artifacts: stepArtifacts, ...stepResponse } = response;
 			results.push({ index, action: step.action, ok, ...stepResponse,
 				...(stepArtifacts?.length ? { artifactIds: stepArtifacts.map(a => a.id) } : {}) });
@@ -14967,6 +15250,7 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
 			results.push({ index, action: step.action, ok: false, error: error instanceof ActionError
 				? { code: error.code, message: error.message, detail: error.detail }
 				: { message: describeThrown(error) } });
+			if (error instanceof ActionError && error.code === 'NATIVE_OPERATION_PENDING') break;
 			if (payload.stopOnError !== false) break;
 		}
 	}
@@ -15258,6 +15542,7 @@ const HANDLERS: Record<string, Handler> = {
 	'pcb.distribute': pcbDistribute,
 	'pcb.grid_snap': pcbGridSnap,
 	'pcb.components.move': pcbComponentsMove,
+	'pcb.components.place': pcbComponentsPlace,
 	'pcb.components.arrange': pcbComponentsArrange,
 	'pcb.drc.check': pcbDrcCheck,
 	'pcb.drc.rules': pcbDrcRules,
