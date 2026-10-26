@@ -12273,13 +12273,14 @@ function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number; 
 	return move;
 }
 
-async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbMoveSkipped[]) {
+async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbMoveSkipped[], execution?: Execution) {
 	const moved: Array<Record<string, unknown>> = [];
 	const attempted: string[] = [];
 	const notApplied: Array<Record<string, unknown>> = [];
 	const unverified: Array<Record<string, unknown>> = [];
 	let next = 0;
 	for (; next < plans.length; next++) {
+		if (execution?.signal.aborted || execution?.isPaused?.()) break;
 		const plan = plans[next];
 		if (![plan.to.x, plan.to.y, plan.to.rotation ?? plan.rotation].every(Number.isFinite)) {
 			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Planned coordinates are non-finite; no write dispatched.' });
@@ -12298,6 +12299,8 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Component changed after planning; no write dispatched.', actual: before });
 			break;
 		}
+		// Cancellation/pause may arrive during the awaited fresh pre-write read.
+		if (execution?.signal.aborted || execution?.isPaused?.()) break;
 		attempted.push(plan.primitiveId);
 		let writeError: string | undefined;
 		try { await eda.pcb_PrimitiveComponent.modify(plan.primitiveId, plan.to); }
@@ -12327,8 +12330,10 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 		}
 	}
 	const remaining = plans.slice(next).map(plan => plan.primitiveId);
-	const partial = skipped.length > 0 || notApplied.length > 0 || unverified.length > 0 || remaining.length > 0;
+	const cancelled = execution?.signal.aborted === true, paused = execution?.isPaused?.() === true;
+	const partial = cancelled || paused || skipped.length > 0 || notApplied.length > 0 || unverified.length > 0 || remaining.length > 0;
 	return { moved, count: moved.length, attempted, skipped, notApplied, unverified, remaining, partial, verified: !partial,
+		...(cancelled ? { cancelled: true } : {}), ...(paused ? { paused: true } : {}),
 		...(unverified.length ? { executionState: 'unknown' } : {}) };
 }
 
@@ -12338,7 +12343,7 @@ type PcbAbsolutePlacement = {
 };
 
 /** Explicit absolute poses: one transport request for an engineer's local corrections. */
-const pcbComponentsPlace: Handler = async (payload) => {
+const pcbComponentsPlace: Handler = async (payload, execution) => {
 	if (payload.dryRun !== undefined) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'pcb.components.place does not accept dryRun; no write dispatched.');
 	if (!Array.isArray(payload.placements) || payload.placements.length === 0) {
 		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'placements must be a nonempty array of explicit primitiveId/x/y poses (mil).');
@@ -12393,11 +12398,11 @@ const pcbComponentsPlace: Handler = async (payload) => {
 		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); }
 	}
 	return { result: { units: 'mil', mode: 'absolute', requestedCount: placements.length,
-		...await applyPcbCoordinateMoves(plans, skipped) } };
+		...await applyPcbCoordinateMoves(plans, skipped, execution) } };
 };
 
 /** Translate the selected/explicit components while preserving locked objects. */
-const pcbComponentsMove: Handler = async (payload) => {
+const pcbComponentsMove: Handler = async (payload, execution) => {
 	const dx = requireNumber(payload, 'dx');
 	const dy = requireNumber(payload, 'dy');
 	if (![dx, dy].every(Number.isFinite)) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'dx and dy must be finite.');
@@ -12416,7 +12421,7 @@ const pcbComponentsMove: Handler = async (payload) => {
 		}
 		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); }
 	}
-	return { result: { dx, dy, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped) } };
+	return { result: { dx, dy, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped, execution) } };
 };
 
 // ─── PCB auto-layout seed: cluster by shared local nets + grid-pack (P6) ──
@@ -12474,7 +12479,7 @@ function clusterByLocalNets(items: Array<ArrangeItem>): Array<Array<ArrangeItem>
 	return [...groups.values()].sort((a, b) => b.length - a.length);
 }
 
-const pcbComponentsArrange: Handler = async (payload) => {
+const pcbComponentsArrange: Handler = async (payload, execution) => {
 	const mode = optionalString(payload, 'mode') ?? 'cluster';
 	const pitch = optionalNumber(payload, 'pitch') ?? 50;    // gap between cells (mil)
 	const gutter = optionalNumber(payload, 'gutter') ?? 150;  // gap between cluster blocks (mil)
@@ -12523,7 +12528,7 @@ const pcbComponentsArrange: Handler = async (payload) => {
 
 	const movable = items.filter(i => !i.locked);
 	if (movable.length === 0) {
-		return { result: { mode, groups: 0, requestedCount: ids.length, ...await applyPcbCoordinateMoves([], skipped) } };
+		return { result: { mode, groups: 0, requestedCount: ids.length, ...await applyPcbCoordinateMoves([], skipped, execution) } };
 	}
 
 	// Anchor at the top-left of the current movable region (y-up: top = max y).
@@ -12557,7 +12562,7 @@ const pcbComponentsArrange: Handler = async (payload) => {
 		blockX += usedCols * cellW + gutter;
 	}
 
-	return { result: { mode, groups: groups.length, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped) } };
+	return { result: { mode, groups: groups.length, requestedCount: ids.length, ...await applyPcbCoordinateMoves(plans, skipped, execution) } };
 };
 
 // ─── PCB DRC ─────────────────────────────────────────────────────────

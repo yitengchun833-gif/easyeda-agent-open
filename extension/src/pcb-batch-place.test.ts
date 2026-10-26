@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { runAction } from './actions';
 
-function fixture(t: TestContext, options: { dropRotation?: string; failRead?: string; race?: string; throwsAfterWrite?: string; wrongIdentity?: string } = {}) {
+function fixture(t: TestContext, options: { dropRotation?: string; failRead?: string; race?: string; throwsAfterWrite?: string; wrongIdentity?: string;
+	onWrite?: (id: string) => void; onRead?: (id: string, count: number) => void } = {}) {
 	const g = globalThis as any, previous = g.eda;
 	const state = new Map<string, any>(['a', 'b', 'c', 'locked', 'outside'].map((id, i) => [id, {
 		PrimitiveId: id, Designator: `U${i}`, UniqueId: `source-${id}`, X: i * 100, Y: 50,
@@ -13,6 +14,7 @@ function fixture(t: TestContext, options: { dropRotation?: string; failRead?: st
 	g.eda = { pcb_PrimitiveComponent: {
 		get: async (id: string) => {
 			reads.set(id, (reads.get(id) ?? 0) + 1);
+			options.onRead?.(id, reads.get(id)!);
 			if (id === options.failRead && calls.some(call => call.id === id)) throw new Error('readback unavailable');
 			const s = state.get(id);
 			if (s && id === options.race && reads.get(id) === 2) s.Designator = 'CHANGED';
@@ -27,9 +29,14 @@ function fixture(t: TestContext, options: { dropRotation?: string; failRead?: st
 				state.get(id)[key === 'rotation' ? 'Rotation' : key.toUpperCase()] = value;
 			}
 			if (id === options.throwsAfterWrite) throw new Error('response failed after mutation');
+			options.onWrite?.(id);
 			return {}; // Deliberately unusable: the executor must read fresh state.
 		},
-	} };
+		getAllPinsByPrimitiveId: async () => [],
+	}, pcb_Primitive: { getPrimitivesBBox: async ([id]: string[]) => {
+		const part = state.get(id);
+		return { minX: part.X - 10, minY: part.Y - 5, maxX: part.X + 10, maxY: part.Y + 5 };
+	} } };
 	t.after(() => { g.eda = previous; });
 	return { state, calls };
 }
@@ -99,5 +106,40 @@ for (const failure of ['dropRotation', 'failRead', 'throwsAfterWrite', 'race'] a
 		assert.equal(state.get('c').X, 200);
 		if (failure === 'failRead' || failure === 'throwsAfterWrite') assert.equal(result.executionState, 'unknown');
 		if (failure === 'dropRotation') assert.ok(result.notApplied[0].notApplied.some((p: any) => p.field === 'rotation'));
+	});
+}
+
+for (const action of ['pcb.components.place', 'pcb.components.move', 'pcb.components.arrange']) {
+	test(`${action} retains the finished pose and stops following writes after cancellation`, async t => {
+		const controller = new AbortController();
+		const { calls } = fixture(t, { onWrite: id => { if (id === 'a') controller.abort(); } });
+		const payload = action === 'pcb.components.place'
+			? { placements: ['a', 'b', 'c'].map(primitiveId => ({ primitiveId, x: 25, y: 30 })) }
+			: { primitiveIds: ['a', 'b', 'c'], dx: 25, dy: 30, mode: 'grid' };
+		const { result }: any = await runAction(action, payload, false, { signal: controller.signal, progress: () => {} });
+		assert.deepEqual(calls.map(c => c.id), ['a']);
+		assert.deepEqual(result.moved.map((c: any) => c.primitiveId), ['a']);
+		assert.deepEqual(result.attempted, ['a']);
+		assert.deepEqual(result.remaining, ['b', 'c']);
+		assert.equal(result.cancelled, true);
+		assert.equal(result.partial, true);
+		assert.equal(result.verified, false);
+	});
+}
+
+for (const interruption of ['cancel', 'pause']) {
+	test(`absolute PCB batch rechecks ${interruption} after the awaited pre-write read`, async t => {
+		const controller = new AbortController(); let paused = false;
+		const { calls } = fixture(t, { onRead: (id, count) => {
+			if (id === 'b' && count === 2) { if (interruption === 'cancel') controller.abort(); else paused = true; }
+		} });
+		const { result }: any = await runAction('pcb.components.place', { placements: ['a', 'b', 'c'].map(primitiveId => ({ primitiveId, x: 25, y: 30 })) }, false,
+			{ signal: controller.signal, isPaused: () => paused, progress: () => {} });
+		assert.deepEqual(calls.map(c => c.id), ['a']);
+		assert.deepEqual(result.moved.map((c: any) => c.primitiveId), ['a']);
+		assert.deepEqual(result.remaining, ['b', 'c']);
+		assert.equal(result[interruption === 'cancel' ? 'cancelled' : 'paused'], true);
+		assert.equal(result.partial, true);
+		assert.equal(result.verified, false);
 	});
 }

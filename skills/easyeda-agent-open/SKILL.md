@@ -107,4 +107,4 @@ CLI/后台、MCP 与 Skill 使用配套完整包；Connector 的知识库增强�
 
 ## PCB 指定对象批量纠错
 
-工程师给出多个器件的局部位置/角度修正时，用 `easyeda_pcb(action:"pcb.components.place", payload:{placements:[{primitiveId:"ID",x:300,y:500,rotation:180,expected:{uniqueId:"SOURCE_UID",x:100,y:500}}]}, window:"WINDOW")`，或同包 CLI `pcb place-batch --from placements.json`。坐标为 mil、角度为度，省略 rotation 保持原角度；expected 可只声明已知的 x/y/rotation/layer/uniqueId/designator。只修改清单对象，不依赖当前选择；锁定、缺失或陈旧对象报告 skipped/partial。写入失败或回读 unknown 后停止后续，按 moved/remaining 处理，不能整批重放。该动作不重布已有铜、不自动保存，也不以 DRC 全零阻断绘图；器件移动后的连通性与工程质量告警另交工程师。
+工程师给出多个器件的局部位置/角度修正时，用 `easyeda_pcb(action:"pcb.components.place", payload:{placements:[{primitiveId:"ID",x:300,y:500,rotation:180,expected:{uniqueId:"SOURCE_UID",x:100,y:500}}]}, window:"WINDOW")`，或同包 CLI `pcb place-batch --from placements.json`。坐标为 mil、角度为度，省略 rotation 保持原角度；expected 可只声明已知的 x/y/rotation/layer/uniqueId/designator。只修改清单对象，不依赖当前选择；锁定、缺失或陈旧对象报告 skipped/partial。写入失败、回读 unknown、取消或暂停后停止后续，保留已回读 moved 和未执行 remaining，不能整批重放。该动作不重布已有铜、不自动保存，也不以 DRC 全零阻断绘图；器件移动后的连通性与工程质量告警另交工程师。

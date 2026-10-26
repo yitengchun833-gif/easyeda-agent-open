@@ -1246,7 +1246,7 @@ func AllActions() []ActionSpec {
 			NeedsWindow: true,
 			Description: "Translate components by a relative (dx, dy) offset — nudge a group without recomputing absolute coordinates. Operates on the current selection unless primitiveIds is given.",
 			Inputs:      []string{"dx", "dy", "primitiveIds optional"},
-			Outputs:     []string{"moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)"},
+			Outputs:     []string{"moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)", "cancelled/paused optional"},
 			VerifyWith:  []string{"pcb.components.list"},
 		},
 		{
@@ -1257,7 +1257,7 @@ func AllActions() []ActionSpec {
 			NeedsWindow: true,
 			Description: "Batch absolute PCB component poses (mil, degrees) for explicitly named primitiveIds. Each placement requires x/y and may include rotation and expected source x/y/rotation/layer/uniqueId/designator. Validates the entire list before writes, skips locked/missing/stale targets, preserves layer and identity, fresh-verifies each pose, and stops after failed/unknown writes without replay. Does not reroute copper, save, or gate on DRC. No selection fallback.",
 			Inputs:      []string{"placements[] {primitiveId,x,y,rotation optional,expected optional}"},
-			Outputs:     []string{"units", "mode", "moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)"},
+			Outputs:     []string{"units", "mode", "moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)", "cancelled/paused optional"},
 			VerifyWith:  []string{"pcb.components.list"},
 		},
 		{
@@ -1268,7 +1268,7 @@ func AllActions() []ActionSpec {
 			NeedsWindow: true,
 			Description: "Coarse auto-layout SEED: cluster by shared local nets (mode=cluster) or pack a flat grid (mode=grid), grid-packing each cluster into a tidy block with gutters; skips locked components. Mechanical first pass only — apply the placement priorities in pcb-layout-conventions.md afterward.",
 			Inputs:      []string{"mode optional (cluster|grid, default cluster)", "primitiveIds optional", "pitch optional", "gutter optional", "cols optional"},
-			Outputs:     []string{"mode", "groups", "moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)"},
+			Outputs:     []string{"mode", "groups", "moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)", "cancelled/paused optional"},
 			VerifyWith:  []string{"pcb.components.list"},
 		},
 		{
