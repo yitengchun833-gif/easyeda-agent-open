@@ -22,6 +22,12 @@ const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
 const touches=([a,b],[c,d])=>on(a,[c,d])||on(b,[c,d])||on(c,[a,b])||on(d,[a,b])
   ||cross(a,b,c)*cross(a,b,d)<0&&cross(c,d,a)*cross(c,d,b)<0;
 const refuse=reason=>{throw new Error(`Unsupported pin rewire: ${reason}; no EDA write sent`);};
+function ownedWireName(attributes, net) {
+  const names=attributes.filter(attr=>attr.Key==='Name');
+  const relevance=attributes.filter(attr=>attr.Key==='Relevance');
+  return names.length===1&&names[0].Value===net&&relevance.length<=1
+    &&relevance.every(attr=>attr.Value==='[]')&&attributes.length===names.length+relevance.length;
+}
 
 // A deliberately small topology slice: replacing one isolated named pin stub
 // with identical geometry. A wire primitive is never split or partly deleted.
@@ -68,7 +74,8 @@ export function planPinRewire(snapshot,input){
       [[box.maxX,box.maxY],[box.minX,box.maxY]],[[box.minX,box.maxY],[box.minX,box.minY]]].some(edge=>touches(points,edge)))refuse('wire touches a marker or its measured extent');
   }
   const attributes=snapshot.pagePrimitives.attributes.filter(attr=>attr.ParentPrimitiveId===input.wireId);
-  if(!attributes.length||attributes.some(attr=>!attr.primitiveId||attr.Key!=='Name'||attr.Value!==pin.net))refuse('wire must have explicit native Name ownership/value');
+  if(attributes.some(attr=>!attr.primitiveId)||!ownedWireName(attributes,pin.net))
+    refuse('wire must have native Name and only empty Relevance metadata');
   const metadata={primitiveId:input.primitiveId,pinNumber:input.pinNumber,wireId:input.wireId,oldNet:pin.net,targetNet:input.targetNet,
     points:[anchor,tip],attributeIds:attributes.map(attr=>attr.primitiveId)};
   const payload={points:metadata.points,net:input.targetNet};
@@ -104,11 +111,11 @@ export function rewirePreservation(before,after,metadata,execution){
   const original=before.pagePrimitives.wires.find(wire=>wire.primitiveId===metadata.wireId);
   const native=after.pagePrimitives.wires.filter(wire=>wire.primitiveId===newId);
   const nativePoints=native.length===1?singleObservedSegment(native[0].Line):null;
-  const names=after.pagePrimitives.attributes.filter(attr=>attr.ParentPrimitiveId===newId);
+  const attributes=after.pagePrimitives.attributes.filter(attr=>attr.ParentPrimitiveId===newId);
   if(rows.length!==1||rows[0].net!==metadata.targetNet||points.length!==2
     ||!sameSegment(points,metadata.points)||!nativePoints||!sameSegment(nativePoints,metadata.points)||!sameSegment(nativePoints,points)
     ||native.length!==1||native[0].Net!==metadata.targetNet||['Color','LineWidth','LineType'].some(key=>!isDeepStrictEqual(original[key],native[0][key]))
-    ||!names.length||names.some(attr=>attr.Key!=='Name'||attr.Value!==metadata.targetNet))preserved.changed.push(newId);
+    ||attributes.some(attr=>!attr.primitiveId)||!ownedWireName(attributes,metadata.targetNet))preserved.changed.push(newId);
   preserved.changed=[...new Set(preserved.changed)];preserved.status=preserved.changed.length?'fail':'pass';
   return {...preserved,replacedWireId:metadata.wireId,newWireId:newId,targetPin:{primitiveId:metadata.primitiveId,pinNumber:metadata.pinNumber,net:metadata.targetNet}};
 }

@@ -55,8 +55,9 @@ test('branch, crossing, second pin, marker, polyline and unknown target are unsu
   assert.throws(()=>planPinRewire(s,selection),/multi-segment/);
 });
 
-async function apply(t,{stale=false,deletedFalse=false,unknown=false,outside=false,wrongNet=false,wrongLabel=false,nativeLine}={}){
-  const fx=await prepared(t),live=structuredClone(fx.snapshot),calls=[];
+async function apply(t,{stale=false,deletedFalse=false,unknown=false,outside=false,wrongNet=false,wrongLabel=false,nativeLine,nativeRelevance}={}){
+  const fx=await prepared(t,nativeRelevance===undefined?undefined:s=>s.pagePrimitives.attributes.push(
+    {primitiveId:'old-relevance',ParentPrimitiveId:'wrong',Key:'Relevance',Value:'[]'})),live=structuredClone(fx.snapshot),calls=[];
   if(stale)live.wires.push({primitiveId:'branch',x0:10,y0:0,x1:10,y1:5,net:'OLD'});
   const invoke=async(action,args)=>{
     calls.push({action,args});
@@ -74,7 +75,8 @@ async function apply(t,{stale=false,deletedFalse=false,unknown=false,outside=fal
     const points=args.payload.steps[1].payload.points;
     live.wires=[{primitiveId:'replacement',segmentIndex:0,x0:points[0][0],y0:points[0][1],x1:points[1][0],y1:points[1][1],net:'NEW'}];
     live.pagePrimitives.wires=[{primitiveId:'replacement',Line:nativeLine===undefined?points:nativeLine,Net:'NEW',Color:null,LineWidth:1,LineType:0}];
-    live.pagePrimitives.attributes=[{primitiveId:'new-name',ParentPrimitiveId:'replacement',Key:'Name',Value:wrongLabel?'WRONG':'NEW'}];
+    live.pagePrimitives.attributes=[{primitiveId:'new-name',ParentPrimitiveId:'replacement',Key:'Name',Value:wrongLabel?'WRONG':'NEW'},
+      ...(nativeRelevance===undefined?[]:[{primitiveId:'new-relevance',ParentPrimitiveId:'replacement',Key:'Relevance',Value:nativeRelevance}])];
     live.components[0].pins[0].net=wrongNet?'WRONG':'NEW';
     if(outside)live.components[1].pins[0].net='WRONG';
     return reply({ok:true,partial:false,completed:2,total:2,results:[
@@ -94,6 +96,24 @@ test('one scoped write batch corrects the target pin and preserves all outside c
   assert.equal(fx.calls.length,4);
   await assert.rejects(fx.run(),/receipt|replay/);
   assert.equal(fx.calls.filter(c=>c.action==='debug.batch').length,1);
+});
+
+test('native empty Relevance metadata is included in old deletion and accepted on new wire',async t=>{
+  const fx=await apply(t,{nativeRelevance:'[]'}),{plan}=await loadPlan(fx.outputFile);
+  assert.deepEqual(plan.localRewire.attributeIds,['old-name','old-relevance']);
+  const result=await fx.run();
+  assert.equal(result.structuredContent.ok,true,JSON.stringify(result));
+  assert.equal(result.structuredContent.preservedOutsideScope.status,'pass');
+});
+
+test('nonempty or unexpected wire metadata refuses prepare, and nonempty final Relevance fails verification',async t=>{
+  for(const key of ['Relevance','Other']){
+    const snapshot=scene();snapshot.pagePrimitives.attributes.push({primitiveId:'unexpected',ParentPrimitiveId:'wrong',Key:key,Value:'[1]'});
+    assert.throws(()=>planPinRewire(snapshot,selection),/native Name and only empty Relevance/);
+  }
+  const fx=await apply(t,{nativeRelevance:'[1]'}),result=await fx.run();
+  assert.equal(result.structuredContent.ok,false);
+  assert.equal(result.structuredContent.preservedOutsideScope.status,'fail');
 });
 
 test('preview and final native readback accept all three existing single-segment encodings',async t=>{
