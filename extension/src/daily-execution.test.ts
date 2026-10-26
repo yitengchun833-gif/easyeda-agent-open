@@ -158,3 +158,19 @@ test('result classification recognizes explicit failures without requiring posit
   assert.equal(failedActionResult(result), false, JSON.stringify(result));
  }
 });
+
+test('verified absent constraints remain idempotent and do not stop a following batch step', async t => {
+ let writes = 0;
+ mockEda(t, {
+  pcb_Drc: { getAllDifferentialPairs: async () => [], getAllEqualLengthNetGroups: async () => [] },
+  pcb_PrimitiveLine: { create: async () => { writes++; return wire('line'); } },
+ });
+ for (const action of ['pcb.differential_pair.delete', 'pcb.equal_length_group.delete']) {
+  const response = await runAction('debug.batch', { steps: [{ action, payload: { name: 'absent' } }, lineStep] });
+  const result = response.result!;
+  assert.equal(result.ok, true);
+  assert.equal(result.completed, 2);
+  assert.deepEqual((result.results as any[])[0].result, { name: 'absent', deleted: false, notFound: true, verified: true });
+ }
+ assert.equal(writes, 2);
+});

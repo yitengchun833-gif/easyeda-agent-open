@@ -185,7 +185,7 @@ export function failedResult(value) {
     : item && typeof item === 'object' ? Object.values(item).some(nonempty) : !!item;
   return value.ok === false || value.partial === true || value.verified === false
     || (value.error != null && value.ok !== true)
-    || value.deleted === false || value.disconnected === false
+    || (value.deleted === false && !(value.notFound === true && value.verified === true)) || value.disconnected === false
     || typeof value.survivedTotal === 'number' && value.survivedTotal > 0
     || ['notApplied', 'survived', 'survivedIds', 'failures'].some(key => nonempty(value[key]))
     || failedResult(value.result);

@@ -12,6 +12,15 @@ import {
   toMcpResult,
 } from '../src/core.mjs';
 
+test('verified absent deletes stay successful while failed or unverified deletes remain errors', () => {
+  const absent = { name: 'absent', deleted: false, notFound: true, verified: true };
+  assert.equal(toMcpResult({ ok: true, result: { ok: true, result: absent } }).isError, false);
+  for (const failed of [
+    { deleted: false, notFound: true }, { deleted: false, verified: true },
+    { ...absent, partial: true }, { ...absent, survivedIds: ['still-present'] },
+  ]) assert.equal(toMcpResult({ ok: true, result: { ok: true, result: failed } }).isError, true);
+});
+
 test('buildCallArgs pins project/doc and keeps payload structured', () => {
   assert.deepEqual(
     buildCallArgs('pcb.drc.run', {
