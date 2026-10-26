@@ -23,6 +23,7 @@ import { requirementsSchema, expressionSchema } from './project-files.mjs';
 import { compileRoutes } from './route-tools.mjs';
 import { compileLabels } from './label-tools.mjs';
 import { knowledgeTool, knowledgeTools } from './knowledge-tools.mjs';
+import { callWithRuleFiles, hasRuleFile } from './pcb-rule-tools.mjs';
 
 const catalogExecution = await runEasyeda(['actions'], 30_000);
 if (!catalogExecution.ok || !Array.isArray(catalogExecution.result)) {
@@ -79,7 +80,7 @@ function domainTool(domain) {
   return {
     name: `easyeda_${domain}`,
     title: `EasyEDA ${domain}`,
-    description: `Run one typed ${domain} action through easyeda-agent. Use easyeda_actions for input guidance.`,
+    description: `Run one typed ${domain} action through easyeda-agent. Use easyeda_actions for input guidance.${domain === 'pcb' ? ' pcb.drc.rules.set accepts payload {fromFile:absolutePath,module:ruleConfig,dryRun:true|false} through the companion CLI parser; use window/target. Returns ruleImports with JSON changes and unprocessed modules; apply requires verified:true.' : ''}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -220,7 +221,7 @@ const tools = [
   },
   {
     name: 'easyeda_batch',
-    description: 'Execute ordered typed actions in one Connector request. Not atomic. edit declares a complete local modification unit for automatic scoped checks, with no intermediate DRC. Legacy verifyPreservedSchematic does a whole-page comparison; use one comparison path to avoid duplicate reads.',
+    description: 'Execute ordered typed actions in one Connector request. Not atomic. Rule file steps use pcb.drc.rules.set payload.fromFile/module/dryRun; step payload.dryRun:true reads rule differences, while top-level dryRun only lists actions. All rule files are parsed before dispatch. edit declares a complete local modification unit for automatic scoped checks, with no intermediate DRC. Legacy verifyPreservedSchematic does a whole-page comparison; use one comparison path to avoid duplicate reads.',
     inputSchema: { type: 'object', properties: { window: commonRouteProperties.window, target: commonRouteProperties.target, timeoutMs: commonRouteProperties.timeoutMs, edit:commonRouteProperties.edit, steps: { type: 'array', minItems: 1, maxItems: 500, items: { type: 'object', properties: { action: { type: 'string' }, payload: { type: 'object', additionalProperties: true } }, required: ['action'], additionalProperties: false } }, dryRun: { type: 'boolean' }, stopOnError: { type: 'boolean' }, verifyPreservedSchematic: { type: 'boolean', description: 'Use only when this batch contains the complete layout edit and original part identities/pin nets must be preserved. Reads the active page before and after; unavailable evidence is unknown, not pass.' } }, required: ['steps'], additionalProperties: false },
   },
   {
@@ -320,7 +321,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     if (name === 'easyeda_batch') {
       const steps = input.steps;
       for (const step of steps || []) if (!byName.has(step.action)) throw new Error(`Unknown action: ${step.action}`);
-      return callAction('debug.batch', { ...input, payload: { steps, dryRun: input.dryRun, stopOnError: input.stopOnError, verifyPreservedSchematic: input.verifyPreservedSchematic } });
+      return await callWithRuleFiles('debug.batch', { ...input, payload: { steps, dryRun: input.dryRun, stopOnError: input.stopOnError, verifyPreservedSchematic: input.verifyPreservedSchematic } });
     }
     if (name === 'easyeda_screenshot') {
       return imageResult(await callAction('view.capture', { ...input, payload: { fit: input.fit } }));
@@ -419,6 +420,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       if (!action || action.domain !== domain) {
         throw new Error(`action ${input.action || '(missing)'} does not belong to domain ${domain}`);
       }
+      if (hasRuleFile(action.name, input.payload)) return await callWithRuleFiles(action.name, input);
       if (input.project || input.doc) {
         if (input.target || input.timeoutMs) throw new Error('Use window without project/doc navigation for target assertions or custom timeout.');
         return toMcpResult(await runEasyeda(buildActionCallArgs(action, input)));

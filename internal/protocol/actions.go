@@ -1284,8 +1284,8 @@ func AllActions() []ActionSpec {
 			Mutates:     true,
 			NeedsWindow: true,
 			Description: "Overwrite the active PCB's complete opaque EasyEDA rule configuration, plus optional net-rule records, from an explicitly supplied JSON export. Reads the actual values back and reports exact verification; dryRun returns before/requested without writing.",
-			Inputs:      []string{"ruleConfiguration (complete object)", "netRules optional (array)", "dryRun optional"},
-			Outputs:     []string{"rulesWritten", "netRulesWritten", "ruleConfigurationVerified", "netRulesVerified", "verified", "actual", "partial/writeFailed/writeError/readbackError optional", "rollbackAttempted/rollbackRulesWritten/rollbackNetRulesWritten/rolledBack optional"},
+			Inputs:      []string{"ruleConfiguration (complete object), or MCP payload.fromFile (absolute local JSON path; not combined with inline fields)", "netRules optional (array, inline only)", "dryRun optional (required boolean with MCP fromFile)", "module optional (MCP fromFile only: ruleConfig; required for multi-module config sets)"},
+			Outputs:     []string{"dryRun/before/requested (preview)", "ruleImports[].status/changes/unprocessedModules (MCP file import)", "rulesWritten", "netRulesWritten", "ruleConfigurationVerified", "netRulesVerified", "verified", "actual", "partial/writeFailed/writeError/readbackError optional", "rollbackAttempted/rollbackRulesWritten/rollbackNetRulesWritten/rolledBack optional"},
 			VerifyWith:  []string{"pcb.drc.rules", "pcb.net_class.list", "pcb.drc.check"},
 		},
 		{

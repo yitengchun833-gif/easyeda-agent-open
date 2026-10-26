@@ -31,6 +31,8 @@ fields for every Open mutation. Use `easyeda_actions(exact: ...)` when an action
 payload is unknown. Native JavaScript is available through `easyeda_execute`;
 errors and unknown writes still require scoped readback before another write.
 
+Rule files use the existing PCB tool: `easyeda_pcb({action:"pcb.drc.rules.set",window:"<window>",target:{documentUuid:"<pcb>"},payload:{fromFile:"<absolute JSON path>",module:"ruleConfig",dryRun:true}})`. The companion CLI normalizes the file locally, then the same native action reads `before/requested`; `ruleImports` adds JSON pointer changes and explicitly lists unprocessed modules. Set `dryRun:false` for an authorized apply; success requires independent `verified:true`. This replaces complete rules, with no automatic merge or save. The same payload works in `easyeda_batch.steps`; use step `payload.dryRun:true`, not top-level batch `dryRun`, for rule previews. Unknown/partial results keep their native receipts and are never retried automatically. Inline payloads remain supported. This needs matching MCP/CLI source adoption, with no new Connector protocol or daemon replacement.
+
 Reload the corresponding MCP client after an update to discover its tools. Use
 the current Open Skill at `skills/easyeda-agent-open` relative to the plugin root.
 Plans and `runtime finish/resume` support reviewed execution and acceptance;

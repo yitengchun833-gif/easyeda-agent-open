@@ -10,6 +10,31 @@ import (
 	"testing"
 )
 
+func TestPcbDrcRulesSetParseOnlyDoesNotDispatch(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "rules.json")
+	if err := os.WriteFile(file, []byte(`{"schema":"easyeda-eda-rule-config-set","schemaVersion":1,"modules":["ruleConfig","netRules"],"data":{"ruleConfig":{"Physics":{}},"netRules":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, captured, cleanup := newCapturingDaemon(t)
+	defer cleanup()
+	var out, warnings bytes.Buffer
+	cmd := newPcbCmd(cfg, &out, &warnings)
+	cmd.SetArgs([]string{"drc-rules-set", "--from", file, "--module", "ruleConfig", "--parse-only"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Payload     map[string]any `json:"payload"`
+		Unprocessed []string       `json:"unprocessedModules"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if captured.action != "" || len(result.Payload) != 1 || result.Payload["ruleConfiguration"] == nil || !reflect.DeepEqual(result.Unprocessed, []string{"netRules"}) {
+		t.Fatalf("action=%s result=%+v", captured.action, result)
+	}
+}
+
 func TestPcbDrcRulesSetConfigSetSelectsOnlyRuleConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name, modules, module string

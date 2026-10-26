@@ -32,7 +32,7 @@ PCB 路径候选可使用同包 Go `pcb route apply` 原生执行；以同包 CL
 
 ## 器件、同步及恢复的条件规则（L01–L05、C03、C05、C07–C09）
 
-规则模板导入复用同包CLI `pcb drc-rules-set --from <文件> --module ruleConfig --dry-run`。外部easyeda-eda-rule-config-set/schemaVersion1只提取完整data.ruleConfig；多模块必须明确选择，其他模块列为未处理，不能连带写入网络类/网络规则。先检查before/requested和真实单位；这条入口是完整规则覆盖，不是与当前规则自动合并。原生覆盖可能把当前预设转为自定义配置；恢复规则内容不等于恢复配置名称，不能通过修改新建PCB全局默认来冒充当前板回退。仅在本次授权允许时移除dry-run实际写入并独立回读；模板来源或工程正确性仍由工程师判断。旧裸配置、{name,config}及本项目导出格式保留，配置集不能藏进旧包装绕过格式检查。此解析在CLI，不要求更换Connector或重启后台；旧CLI不支持时使用已核实的新候选CLI，不把文件存在当当前工具已加载。
+日常AI规则模板导入用原有easyeda_pcb(action:"pcb.drc.rules.set",window,target,payload:{fromFile:"绝对JSON路径",module:"ruleConfig",dryRun:true})；已有batch可放入同一规则步骤，预览必须用step.payload.dryRun:true，不能用只列动作的batch顶层dryRun。MCP复用同包CLI离线解析后仍发原生action，一次原生请求返回before/requested，ruleImports给出JSON字段差异、未处理模块及previewed/verified/unconfirmed；实际apply显式传dryRun:false并要求verified:true，partial/unknown不重试。只需采用匹配MCP与CLI，无需新Connector协议或重启后台。模板来源与完整覆盖范围由工程师决定。独立CLI入口仍可用 `pcb drc-rules-set --from <文件> --module ruleConfig --dry-run`。外部easyeda-eda-rule-config-set/schemaVersion1只提取完整data.ruleConfig；多模块必须明确选择，其他模块列为未处理，不能连带写入网络类/网络规则。先检查before/requested和真实单位；这条入口是完整规则覆盖，不是与当前规则自动合并。原生覆盖可能把当前预设转为自定义配置；恢复规则内容不等于恢复配置名称，不能通过修改新建PCB全局默认来冒充当前板回退。仅在本次授权允许时移除dry-run实际写入并独立回读；模板来源或工程正确性仍由工程师判断。旧裸配置、{name,config}及本项目导出格式保留，配置集不能藏进旧包装绕过格式检查。文件存在不代表当前MCP/CLI已加载新能力；旧副本缺参数时报告需采用匹配候选，不绕过格式检查。
 
 PCB布线收尾须用当前快照重新检查规则绑定、原生DRC及转角，不能复用布局前DRC签收。现有`pcb check`报告普通90°/锐角中心线候选，多分支及线身T节点单列INFO；须审阅实际铜几何，不据此宣称电气失效或完整DFM通过。项目Compiler的`--review`只读执行这些检查并核对复查前后快照；缺规则或旧CLI缺覆盖返回unknown，不在复查时写规则。
 
