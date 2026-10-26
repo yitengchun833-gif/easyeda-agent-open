@@ -100,7 +100,7 @@ func TestPcbConfigReadbackVerdict(t *testing.T) {
 }
 
 func TestPcbConfigExportCanRestoreRules(t *testing.T) {
-	spec, err := parsePcbDrcRulesSetSpec([]byte(`{"ok":true,"result":{"ruleConfiguration":{"Physics":{}},"netRules":[],"classes":[],"configurationName":"custom"}}`))
+	spec, _, err := parsePcbDrcRulesSetSpec([]byte(`{"ok":true,"result":{"ruleConfiguration":{"Physics":{}},"netRules":[],"classes":[],"configurationName":"custom"}}`), "")
 	if err != nil {
 		t.Fatal(err)
 	}

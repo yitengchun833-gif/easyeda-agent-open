@@ -353,37 +353,51 @@ var pcbClearScopes = map[string]bool{
 // manually strip two wrapper levels breaks the intended export/edit/import
 // loop.  The connector performs the final {name,config} → bare config
 // normalization because that shape differs across EasyEDA host versions.
-func parsePcbDrcRulesSetSpec(data []byte) (map[string]any, error) {
+// Versioned external config sets select ruleConfig and report unprocessed modules.
+func parsePcbDrcRulesSetSpec(data []byte, module string) (map[string]any, []string, error) {
 	var raw any
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	root, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("top-level JSON must be an object")
+		return nil, nil, fmt.Errorf("top-level JSON must be an object")
+	}
+	if looksLikePcbRuleConfigSet(root) {
+		schema, declared := root["schema"]
+		if !declared {
+			return nil, nil, fmt.Errorf("rule-config-set requires schema easyeda-eda-rule-config-set")
+		}
+		if schema != "easyeda-eda-rule-config-set" {
+			return nil, nil, fmt.Errorf("unsupported rule file schema %v; expected easyeda-eda-rule-config-set", schema)
+		}
+		return parsePcbRuleConfigSet(root, module)
+	}
+	if module != "" {
+		return nil, nil, fmt.Errorf("--module applies only to easyeda-eda-rule-config-set files")
 	}
 
 	if resultValue, hasResult := root["result"]; hasResult {
 		result, ok := resultValue.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("result must be an object")
+			return nil, nil, fmt.Errorf("result must be an object")
 		}
 		rules, ok := result["rules"]
 		if !ok {
 			rules, ok = result["ruleConfiguration"] // pcb config get export
 		}
 		if !ok {
-			return nil, fmt.Errorf("action envelope result requires rules")
+			return nil, nil, fmt.Errorf("action envelope result requires rules")
 		}
 		spec := map[string]any{"ruleConfiguration": rules}
 		if netRules, present := result["netRules"]; present {
 			spec["netRules"] = netRules
 		}
-		return spec, nil
+		return finishPcbDrcRulesSetSpec(spec, nil)
 	}
 
 	if _, explicit := root["ruleConfiguration"]; explicit {
-		return root, nil
+		return finishPcbDrcRulesSetSpec(root, nil)
 	}
 	if rules, legacy := root["rules"]; legacy {
 		spec := make(map[string]any, len(root))
@@ -392,11 +406,81 @@ func parsePcbDrcRulesSetSpec(data []byte) (map[string]any, error) {
 		}
 		spec["ruleConfiguration"] = rules
 		delete(spec, "rules")
-		return spec, nil
+		return finishPcbDrcRulesSetSpec(spec, nil)
 	}
 	// A top-level {name,config} export or a bare host configuration is itself
 	// the complete opaque ruleConfiguration.
-	return map[string]any{"ruleConfiguration": root}, nil
+	return finishPcbDrcRulesSetSpec(map[string]any{"ruleConfiguration": root}, nil)
+}
+
+// Host rule metadata is opaque. Only the external tag or its wrapper fields
+// identify a config set, including incomplete wrappers that must not be written.
+func looksLikePcbRuleConfigSet(value map[string]any) bool {
+	schema, _ := value["schema"].(string)
+	_, versioned := value["schemaVersion"]
+	_, modules := value["modules"]
+	_, data := value["data"]
+	return schema == "easyeda-eda-rule-config-set" || (modules && data) || (versioned && (modules || data))
+}
+
+func finishPcbDrcRulesSetSpec(spec map[string]any, ignored []string) (map[string]any, []string, error) {
+	rules, _ := spec["ruleConfiguration"].(map[string]any)
+	// Native normalization unwraps config without requiring a name. Inspect that
+	// wrapper chain without changing any opaque host fields or their casing.
+	for rules != nil {
+		if looksLikePcbRuleConfigSet(rules) {
+			return nil, nil, fmt.Errorf("embedded rule-config-set is not a native rule configuration; import the external file directly")
+		}
+		rules, _ = rules["config"].(map[string]any)
+	}
+	return spec, ignored, nil
+}
+
+// Only the explicitly selected ruleConfig is passed to the existing overwrite
+// action; class membership and network assignments require separate operations.
+func parsePcbRuleConfigSet(root map[string]any, module string) (map[string]any, []string, error) {
+	if root["schemaVersion"] != float64(1) {
+		return nil, nil, fmt.Errorf("unsupported rule-config-set schemaVersion %v; only 1 is supported", root["schemaVersion"])
+	}
+	if module != "" && module != "ruleConfig" {
+		return nil, nil, fmt.Errorf("unsupported --module %q; only ruleConfig is supported", module)
+	}
+	modules, ok := root["modules"].([]any)
+	if !ok || len(modules) == 0 {
+		return nil, nil, fmt.Errorf("rule-config-set modules must be a non-empty array declaring ruleConfig")
+	}
+	declared := map[string]bool{}
+	var ignored []string
+	for _, value := range modules {
+		name, ok := value.(string)
+		if !ok || strings.TrimSpace(name) == "" || declared[name] {
+			return nil, nil, fmt.Errorf("rule-config-set modules must contain unique non-empty names")
+		}
+		declared[name] = true
+		if name != "ruleConfig" {
+			ignored = append(ignored, name)
+		}
+	}
+	if !declared["ruleConfig"] {
+		return nil, nil, fmt.Errorf("rule-config-set does not declare ruleConfig; other modules are not supported")
+	}
+	if len(ignored) > 0 && module == "" {
+		return nil, nil, fmt.Errorf("multi-module rule-config-set requires --module ruleConfig; other modules will not be processed: %s", strings.Join(ignored, ", "))
+	}
+	data, ok := root["data"].(map[string]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("rule-config-set data must be an object")
+	}
+	for name := range data {
+		if !declared[name] {
+			return nil, nil, fmt.Errorf("rule-config-set data.%s is not declared in modules", name)
+		}
+	}
+	rules, ok := data["ruleConfig"].(map[string]any)
+	if !ok || len(rules) == 0 {
+		return nil, nil, fmt.Errorf("rule-config-set data.ruleConfig must be a non-empty complete rule configuration object")
+	}
+	return finishPcbDrcRulesSetSpec(map[string]any{"ruleConfiguration": rules}, ignored)
 }
 
 // buildPcbClearPayload turns the `pcb clear` flags into the pcb.page.clear action
@@ -1540,7 +1624,7 @@ high-current 0.5mm (19.69mil) — not mil fragments like 10/15/20.`,
 	// custom copy) also restores thermal-spoke generation.
 	{
 		var pourClearance float64
-		var fromPath string
+		var fromPath, module string
 		var dryRun bool
 		c := &cobra.Command{
 			Use:   "drc-rules-set",
@@ -1558,6 +1642,9 @@ pours reflow under the new clearance.`,
 			Example: `  easyeda pcb drc-rules-set --pour-clearance 12   # 10→12mil margin, then:
   easyeda pcb pour-rebuild`,
 			RunE: func(cmd *cobra.Command, args []string) error {
+				if cmd.Flags().Changed("module") && (fromPath == "" || module != "ruleConfig") {
+					return fmt.Errorf("--module requires --from and must be ruleConfig")
+				}
 				if fromPath != "" {
 					if cmd.Flags().Changed("pour-clearance") {
 						return fmt.Errorf("--from and --pour-clearance are mutually exclusive")
@@ -1566,9 +1653,12 @@ pours reflow under the new clearance.`,
 					if err != nil {
 						return fmt.Errorf("read --from: %w", err)
 					}
-					spec, err := parsePcbDrcRulesSetSpec(data)
+					spec, ignored, err := parsePcbDrcRulesSetSpec(data, module)
 					if err != nil {
 						return fmt.Errorf("parse --from: %w", err)
+					}
+					if len(ignored) > 0 {
+						fmt.Fprintf(stderr, "rule-config-set: selected ruleConfig; not processed: %s\n", strings.Join(ignored, ", "))
 					}
 					spec["dryRun"] = dryRun
 					return dispatch(cfg, "pcb.drc.rules.set", window, spec, stdout, stderr)
@@ -1588,7 +1678,8 @@ pours reflow under the new clearance.`,
 			},
 		}
 		c.Flags().Float64Var(&pourClearance, "pour-clearance", 0, "minimum pour/plane copper clearance in mil (raise-only; required)")
-		c.Flags().StringVar(&fromPath, "from", "", "complete rules JSON: drc-rules output, {name,config}, bare config, or ruleConfiguration/netRules spec")
+		c.Flags().StringVar(&fromPath, "from", "", "complete rules JSON: drc-rules output, {name,config}, bare config, ruleConfiguration/netRules spec, or external rule-config-set")
+		c.Flags().StringVar(&module, "module", "", "select ruleConfig in an external schemaVersion 1 rule-config-set (required for multi-module files; other modules are not processed)")
 		c.Flags().BoolVar(&dryRun, "dry-run", false, "show current/requested JSON without writing (with --from)")
 		pcb.AddCommand(c)
 	}
