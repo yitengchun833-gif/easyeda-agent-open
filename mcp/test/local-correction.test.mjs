@@ -6,7 +6,7 @@ import path from 'node:path';
 import { planTool } from '../src/plan-tools.mjs';
 import { loadPlan,verifyStagePrefix } from '../src/project-files.mjs';
 import { toMcpResult } from '../src/core.mjs';
-import { correctionScope } from '../src/local-correction.mjs';
+import { correctionScope,correctionPreservation } from '../src/local-correction.mjs';
 
 const target={projectUuid:'p',documentUuid:'d'};
 const catalog=new Map(['schematic.components.list','schematic.attribute.modify'].map(name=>[name,{name,mutates:name!=='schematic.components.list'}]));
@@ -56,10 +56,11 @@ test('region selection excludes partially intersecting components and rejects ou
   }
 });
 
-async function apply(t,{stale=false,outside=false,partial=false,collateral=false,unknown=false}={}){
+async function apply(t,{stale=false,outside=false,partial=false,collateral=false,unknown=false,finalY}={}){
   const {input,snapshot}=await fixture(t);
   const prepared=(await planTool(input,catalog)).structuredContent;
   const live=structuredClone(snapshot),calls=[];
+  let fullReads=0;
   if(stale)live.components[1].x+=5;
   const invoke=async(action,args)=>{
     calls.push({action,args});
@@ -69,6 +70,7 @@ async function apply(t,{stale=false,outside=false,partial=false,collateral=false
       return toMcpResult({ok:true,result:{ok:true,id:'image',context:target,result:{artifactPath}}});
     }
     if(action==='schematic.components.list'){
+      if(!args.payload.primitiveIds && ++fullReads===2 && finalY!==undefined)live.pagePrimitives.attributes[0].Y=finalY;
       const value=structuredClone(live),ids=args.payload.primitiveIds;
       if(ids){value.components=value.components.filter(part=>ids.includes(part.primitiveId));value.readScope={...value.readScope,complete:false,primitiveIds:ids};}
       return reply(value);
@@ -107,6 +109,32 @@ test('stale baseline stops before sending any attribute write',async t=>{
   const run=await apply(t,{stale:true});
   await assert.rejects(run.result(),/baseline changed/);
   assert.equal(run.calls.some(call=>call.action==='debug.batch'),false);
+});
+
+test('a correct step receipt cannot certify a requested field that drifted by the final readback',async t=>{
+  const run=await apply(t,{finalY:999}),result=await run.result(),report=result.structuredContent;
+  assert.equal(report.execution.structuredContent.result.results[0].result.attribute.Y,60);
+  assert.equal(report.execution.structuredContent.result.results[0].result.verified,true);
+  assert.equal(report.ok,false);assert.equal(report.stage.completed,false);
+  assert.equal(report.preservedOutsideScope.status,'fail');
+  assert.deepEqual(report.preservedOutsideScope.requestedFieldMismatches,
+    [{primitiveId:'r1-Designator',field:'Y',expected:60,actual:999}]);
+  assert.equal(run.calls.length,4,'final field verification must reuse the existing complete readback');
+  assert.equal(run.calls.filter(call=>call.action==='debug.batch').length,1);
+});
+
+test('final requested-field verification covers missing fields, style/visibility and display font tolerance',()=>{
+  const before=scene(),after=structuredClone(before),attribute=after.pagePrimitives.attributes[0];
+  const edits=[{primitiveId:attribute.primitiveId,props:{fontName:'Arial',valueVisible:true,fontSize:8},fontSizeUnit:'display'}];
+  Object.assign(attribute,{FontName:'Arial',ValueVisible:true,FontSize:8+5e-7});
+  assert.equal(correctionPreservation(before,after,edits).status,'pass');
+  for(const [field,value] of [['FontName','wrong'],['ValueVisible',false],['FontSize',8.01],['FontName',undefined]]){
+    const changed=structuredClone(after);
+    changed.pagePrimitives.attributes[0][field]=value;
+    const checked=correctionPreservation(before,changed,edits);
+    assert.equal(checked.status,'fail');
+    assert.equal(checked.requestedFieldMismatches[0].field,field);
+  }
 });
 
 test('a completed correction cannot lose its protection metadata and inherit the old receipt',async t=>{

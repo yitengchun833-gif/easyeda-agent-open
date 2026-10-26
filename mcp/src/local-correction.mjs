@@ -49,6 +49,7 @@ export function validateLocalCorrection(plan, snapshot) {
 export function correctionPreservation(before, after, edits = []) {
   const attributeIds = edits.map(edit => edit.primitiveId);
   const preserved = preservationDiff(before, after, null, {attributes:attributeIds});
+  const requestedFieldMismatches = [];
   // Even on an edited attribute, every field other than the explicitly requested
   // display properties stays protected, including owner, Key and electrical Value.
   for (const edit of edits) {
@@ -57,8 +58,20 @@ export function correctionPreservation(before, after, edits = []) {
     const actual = after.pagePrimitives.attributes.filter(attr => attr.primitiveId === id);
     const unchanged = attr => Object.fromEntries(Object.entries(attr).filter(([key]) => !requested.has(key)));
     if (!original || actual.length !== 1 || !isDeepStrictEqual(unchanged(original),unchanged(actual[0]))) preserved.changed.push(id);
+    // Step receipts describe the state immediately after each individual write.
+    // Every requested field must also survive until this final native inventory.
+    for (const [key,expected] of Object.entries(edit.props)) {
+      const field = key[0].toUpperCase()+key.slice(1), observed = actual.length === 1 ? actual[0][field] : undefined;
+      const matches = key === 'fontSize' && edit.fontSizeUnit === 'display' && typeof expected === 'number'
+        ? typeof observed === 'number' && Number.isFinite(observed) && Math.abs(observed-expected) <= 1e-6
+        : observed !== undefined && isDeepStrictEqual(observed,expected);
+      if (!matches) {
+        preserved.changed.push(id);
+        requestedFieldMismatches.push({primitiveId:id,field,expected,...(observed===undefined?{unavailable:true}:{actual:observed})});
+      }
+    }
   }
   preserved.changed = [...new Set(preserved.changed)];
   preserved.status = preserved.changed.length ? 'fail' : 'pass';
-  return preserved;
+  return {...preserved,requestedFieldMismatches};
 }
