@@ -148,6 +148,29 @@ test('explicit native delete failure stops the default batch and is never report
  assert.equal(writes, 1, 'explicit continuation may proceed after a settled failure');
 });
 
+test('verified absent diff pairs and equal-length groups do not block later batch steps', async t => {
+ let writes = 0;
+ mockEda(t, {
+  pcb_Drc: { getAllDifferentialPairs: async () => [], getAllEqualLengthNetGroups: async () => [] },
+  pcb_PrimitiveLine: { create: async () => { writes++; return wire('line'); } },
+ });
+ for (const action of ['pcb.differential_pair.delete', 'pcb.equal_length_group.delete']) {
+  const response = await runAction('debug.batch', { steps: [{ action, payload: { name: 'already-absent' } }, lineStep] }, false);
+  assert.equal(response.result!.ok, true, action);
+  assert.equal(response.result!.completed, 2);
+  const absent = (response.result!.results as any[])[0].result;
+  assert.deepEqual(absent, { name: 'already-absent', deleted: false, notFound: true, verified: true });
+  assert.equal(failedActionResult(absent), false);
+ }
+ assert.equal(writes, 2);
+ for (const result of [{ deleted: false, notFound: true }, { deleted: false, verified: true },
+  { deleted: false, notFound: true, verified: false },
+  { deleted: false, notFound: true, verified: true, partial: true },
+  { deleted: false, notFound: true, verified: true, notApplied: ['other'] }]) {
+  assert.equal(failedActionResult(result), true, JSON.stringify(result));
+ }
+});
+
 test('result classification recognizes explicit failures without requiring positive proof', () => {
  for (const result of [{ deleted: false }, { disconnected: false }, { failures: ['t'] }, { notApplied: ['t'] },
   { survived: { wires: ['w'] } }, { survivedIds: ['w'] }, { survivedTotal: 1 }, { partial: true, writeState: 'unknown' }]) {
@@ -157,20 +180,4 @@ test('result classification recognizes explicit failures without requiring posit
   { survived: { components: [], wires: [] } }, { survivedTotal: 0 }, { primitiveId: 'new' }]) {
   assert.equal(failedActionResult(result), false, JSON.stringify(result));
  }
-});
-
-test('verified absent constraints remain idempotent and do not stop a following batch step', async t => {
- let writes = 0;
- mockEda(t, {
-  pcb_Drc: { getAllDifferentialPairs: async () => [], getAllEqualLengthNetGroups: async () => [] },
-  pcb_PrimitiveLine: { create: async () => { writes++; return wire('line'); } },
- });
- for (const action of ['pcb.differential_pair.delete', 'pcb.equal_length_group.delete']) {
-  const response = await runAction('debug.batch', { steps: [{ action, payload: { name: 'absent' } }, lineStep] });
-  const result = response.result!;
-  assert.equal(result.ok, true);
-  assert.equal(result.completed, 2);
-  assert.deepEqual((result.results as any[])[0].result, { name: 'absent', deleted: false, notFound: true, verified: true });
- }
- assert.equal(writes, 2);
 });

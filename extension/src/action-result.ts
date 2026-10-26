@@ -6,7 +6,8 @@ export function failedActionResult(value: unknown): boolean {
   : item && typeof item === 'object' ? Object.values(item).some(nonempty) : !!item;
  return result.ok === false || result.partial === true || result.verified === false
   || (result.error != null && result.ok !== true)
-  || (result.deleted === false && !(result.notFound === true && result.verified === true)) || result.disconnected === false
+  || result.deleted === false && !(result.notFound === true && result.verified === true)
+  || result.disconnected === false
   || typeof result.survivedTotal === 'number' && result.survivedTotal > 0
   || ['notApplied', 'survived', 'survivedIds', 'failures'].some(key => nonempty(result[key]))
   || failedActionResult(result.result);

@@ -12,15 +12,6 @@ import {
   toMcpResult,
 } from '../src/core.mjs';
 
-test('verified absent deletes stay successful while failed or unverified deletes remain errors', () => {
-  const absent = { name: 'absent', deleted: false, notFound: true, verified: true };
-  assert.equal(toMcpResult({ ok: true, result: { ok: true, result: absent } }).isError, false);
-  for (const failed of [
-    { deleted: false, notFound: true }, { deleted: false, verified: true },
-    { ...absent, partial: true }, { ...absent, survivedIds: ['still-present'] },
-  ]) assert.equal(toMcpResult({ ok: true, result: { ok: true, result: failed } }).isError, true);
-});
-
 test('buildCallArgs pins project/doc and keeps payload structured', () => {
   assert.deepEqual(
     buildCallArgs('pcb.drc.run', {
@@ -75,6 +66,21 @@ test('single-action receipts expose explicit native failures and retain unknown 
   for (const data of [{ deleted: true }, { failures: [] }, { notApplied: [] }, { survived: {} },
     { survived: { components: [], wires: [] } }, { survivedTotal: 0 }, { primitiveId: 'new' }]) {
     assert.equal(toMcpResult({ ok: true, result: { ok: true, result: data } }).isError, false);
+  }
+});
+
+test('only verified not-found deletion is an idempotent single-action success', () => {
+  for (const action of ['pcb.differential_pair.delete', 'pcb.equal_length_group.delete']) {
+    const receipt = { ok: true, action, result: { deleted: false, notFound: true, verified: true } };
+    const response = toMcpResult({ ok: true, result: receipt });
+    assert.equal(response.isError, false);
+    assert.deepEqual(response.structuredContent, receipt);
+  }
+  for (const result of [{ deleted: false, notFound: true }, { deleted: false, verified: true },
+    { deleted: false, notFound: true, verified: false },
+    { deleted: false, notFound: true, verified: true, partial: true },
+    { deleted: false, notFound: true, verified: true, failures: ['other'] }]) {
+    assert.equal(toMcpResult({ ok: true, result: { ok: true, result } }).isError, true, JSON.stringify(result));
   }
 });
 
