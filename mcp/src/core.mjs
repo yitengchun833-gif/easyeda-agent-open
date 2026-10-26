@@ -181,8 +181,13 @@ export function toMcpResult(execution) {
 
 export function failedResult(value) {
   if (!value || typeof value !== 'object') return false;
+  const nonempty = item => Array.isArray(item) ? item.length > 0
+    : item && typeof item === 'object' ? Object.values(item).some(nonempty) : !!item;
   return value.ok === false || value.partial === true || value.verified === false
     || (value.error != null && value.ok !== true)
+    || value.deleted === false || value.disconnected === false
+    || typeof value.survivedTotal === 'number' && value.survivedTotal > 0
+    || ['notApplied', 'survived', 'survivedIds', 'failures'].some(key => nonempty(value[key]))
     || failedResult(value.result);
 }
 

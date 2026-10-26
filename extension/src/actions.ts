@@ -1,4 +1,5 @@
 import type { Execution, ExecutionSignal } from './action-queue';
+import { failedActionResult } from './action-result';
 import { sceneObservation } from './scene-observation';
 import { displayOnlyAction, expectedIdentityIssue, includesNativeScript, localRules, localObservationKey, relatedWireIds, type RuleResult } from './local-rules';
 import { projectOpen, projectExport } from './project-transfer';
@@ -118,6 +119,7 @@ type PcbPad = NonNullable<Awaited<ReturnType<typeof eda.pcb_PrimitiveComponent.g
  * @returns an ActionError carrying EDA_CALL_FAILED and the original detail
  */
 function edaError(err: unknown, message: string): ActionError {
+	if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') return err;
 	const detail = describeThrown(err);
 	return new ActionError(ErrorCodes.EDA_CALL_FAILED, message, detail);
 }
@@ -3455,7 +3457,7 @@ function matchingWireNameParent(wire: Awaited<ReturnType<typeof eda.sch_Primitiv
 
 // Web 4.1.60 creates a wire Name attribute but returns undefined. Recover only
 // a unique NEW attribute from a fresh inventory, never the requested input.
-async function createVerifiedNetLabel(x: number, y: number, net: string, expectedParentId?: string): Promise<ActionResult> {
+async function createVerifiedNetLabel(x: number, y: number, net: string, expectedParentId?: string, execution?: Execution): Promise<ActionResult> {
 	const identity = await readResponseContext();
 	if (!identity.projectUuid || !identity.documentUuid || !identity.tabId || identity.documentType !== 'schematic') {
 		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Schematic identity unavailable; net label was not dispatched.');
@@ -3469,10 +3471,13 @@ async function createVerifiedNetLabel(x: number, y: number, net: string, expecte
 	try {
 		const pending = Promise.resolve().then(() => eda.sch_PrimitiveAttribute.createNetLabel(x, y, net)).finally(() => { settled = true; });
 		const created = await withTimeout(pending,
-			CONNECT_PIN_OP_TIMEOUT_MS, 'Net label creation timed out; write state is unknown.');
+			CONNECT_PIN_OP_TIMEOUT_MS, 'Net label creation timed out; write state is unknown.', execution);
 		returnedId = created?.getState_PrimitiveId();
 	}
-	catch (err) { apiError = describeThrown(err); }
+	catch (err) {
+		if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') throw err;
+		apiError = describeThrown(err);
+	}
 	let addedIds: string[] = [];
 	try {
 		const after = await eda.sch_PrimitiveAttribute.getAll();
@@ -3505,13 +3510,13 @@ async function createVerifiedNetLabel(x: number, y: number, net: string, expecte
 	}
 }
 
-const schematicNetflagCreate: Handler = async (payload) => {
+const schematicNetflagCreate: Handler = async (payload, execution) => {
 	const kind = requireString(payload, 'kind');
 	const x = requireNumber(payload, 'x');
 	const y = requireNumber(payload, 'y');
 	const rotation = optionalNumber(payload, 'rotation');
 	const mirror = optionalBoolean(payload, 'mirror');
-	if (kind === NET_LABEL_KIND) return createVerifiedNetLabel(x, y, requireString(payload, 'net'));
+	if (kind === NET_LABEL_KIND) return createVerifiedNetLabel(x, y, requireString(payload, 'net'), undefined, execution);
 
 	let component;
 	try {
@@ -5054,9 +5059,12 @@ const schematicExportImage: Handler = async (payload) => {
  * 一直堵着」的根因(详见 deadlines.ts 头注释)。快路径仍是 setTimeout,保底路径
  * 是 transport 的 worker tick。
  */
-function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, message: string, execution?: Execution): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
-		const handle = armDeadline(ms, () => reject(new ActionError(ErrorCodes.EDA_CALL_FAILED, message)));
+		const handle = armDeadline(ms, () => {
+			execution?.trackPendingNative?.(p);
+			reject(new ActionError('NATIVE_OPERATION_PENDING', message));
+		});
 		p.then(
 			(v) => { handle.cancel(); resolve(v); },
 			(e) => { handle.cancel(); reject(e); },
@@ -7947,14 +7955,13 @@ async function appliedRotation(desired: number): Promise<number> {
 // REQUEST at its ~18s dispatch budget with "connector did not respond", so a
 // batch (block-apply autoconnect) freezes ~18s on that one pin → the user sees
 // the layout progress stall at ~99% (observed ≈<1/400 connect_pin calls). Racing
-// each mutation against this timeout converts the rare indefinite hang into a
-// fast, clean rejection that flows into the existing wire-retry / rollback path,
-// so the batch keeps moving and no half-built stub lands late. Kept well under
-// the daemon's dispatch budget so the caller gets a structured error, not a raw
-// dispatch timeout: worst realistic case (one wire retry + flag) ≈ 3×7s < 18s.
+// each mutation against this timeout reports unknown promptly. It cannot cancel
+// the native operation: do not retry or roll back a pending write, and retain
+// FIFO ownership until the original Promise settles. Only settled failures may
+// use the existing retry/rollback path.
 const CONNECT_PIN_OP_TIMEOUT_MS = 7000;
 
-const schematicPowerConnectPin: Handler = async (payload) => {
+const schematicPowerConnectPin: Handler = async (payload, execution) => {
 	const pinX = requireNumber(payload, 'pinX');
 	const pinY = requireNumber(payload, 'pinY');
 	const kind = requireString(payload, 'kind');
@@ -8035,11 +8042,12 @@ const schematicPowerConnectPin: Handler = async (payload) => {
 			wire = await withTimeout(
 				eda.sch_PrimitiveWire.create([pinGX, pinGY, endX, endY]),
 				CONNECT_PIN_OP_TIMEOUT_MS,
-				`Stub-wire create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms — the platform dropped the request without rejecting (the stuck-at-99% hang). Failing this attempt so the retry/caller can re-issue instead of hanging until the dispatch timeout.`,
+				`Stub-wire create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms; its outcome is unknown. Do not retry while the native call is pending.`, execution,
 			);
 			wireErr = undefined;
 		}
 		catch (err) {
+			if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') throw err;
 			wireErr = err;
 		}
 	}
@@ -8066,18 +8074,18 @@ const schematicPowerConnectPin: Handler = async (payload) => {
 			flag = await withTimeout(
 				Promise.resolve(eda.sch_PrimitiveComponent.createNetFlag(NET_FLAG_KINDS[kind], net, endX, endY, applied)),
 				CONNECT_PIN_OP_TIMEOUT_MS,
-				`Netflag create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms — the platform dropped the request without rejecting (the stuck-at-99% hang). Rolling back the stub wire and failing fast so the caller can retry this pin.`,
+				`Netflag create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms; its outcome is unknown. No rollback or retry is safe while it is pending.`, execution,
 			);
 		}
 		else if (kind in NET_PORT_KINDS) {
 			flag = await withTimeout(
 				Promise.resolve(eda.sch_PrimitiveComponent.createNetPort(NET_PORT_KINDS[kind], net, endX, endY, applied)),
 				CONNECT_PIN_OP_TIMEOUT_MS,
-				`Netport create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms — the platform dropped the request without rejecting (the stuck-at-99% hang). Rolling back the stub wire and failing fast so the caller can retry this pin.`,
+				`Netport create did not settle within ${CONNECT_PIN_OP_TIMEOUT_MS}ms; its outcome is unknown. No rollback or retry is safe while it is pending.`, execution,
 			);
 		}
 		else if (kind === NET_LABEL_KIND) {
-			const label = await createVerifiedNetLabel(endX, endY, net, wire.getState_PrimitiveId());
+			const label = await createVerifiedNetLabel(endX, endY, net, wire.getState_PrimitiveId(), execution);
 			return { ...label, result: { ...label.result,
 				wirePrimitiveId: wire.getState_PrimitiveId(), flagPrimitiveId: label.result?.primitiveId,
 				endPoint: { x: endX, y: endY }, direction, offset, rotation, appliedRotation: applied } };
@@ -8090,6 +8098,9 @@ const schematicPowerConnectPin: Handler = async (payload) => {
 		}
 	}
 	catch (err) {
+		if (err instanceof ActionError && err.code === 'NATIVE_OPERATION_PENDING') {
+			throw new ActionError(err.code, err.message, `Created stub wire ${wire.getState_PrimitiveId()}; marker outcome unknown, no rollback attempted.`);
+		}
 		await rollbackWire();
 		if (err instanceof ActionError) throw err;
 		throw edaError(err, 'Failed to create netflag/netport at wire end (stub wire rolled back).');
@@ -14986,13 +14997,20 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
 	if (!Array.isArray(steps) || steps.length === 0 || steps.length > 500) {
 		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'steps must contain 1–500 actions.');
 	}
-	// Validate the whole batch before the first side effect.
+	// Validate the whole batch before the first side effect, including target overrides.
 	for (const step of steps) {
 		if (!step || typeof step.action !== 'string' || !HANDLERS[step.action] || step.action === 'debug.batch') {
 			throw new ActionError(ErrorCodes.UNKNOWN_ACTION, 'Batch contains an unknown or nested batch action.');
 		}
 		if (step.payload !== undefined && (!step.payload || typeof step.payload !== 'object' || Array.isArray(step.payload))) {
 			throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Batch payload must be an object.');
+		}
+		if (helperTarget && step.payload?._target !== undefined) {
+			const requested = step.payload._target;
+			if (!requested || typeof requested !== 'object' || Array.isArray(requested)
+				|| ['projectUuid', 'documentUuid'].some(key => requested[key] !== undefined && requested[key] !== helperTarget[key as keyof typeof helperTarget])) {
+				throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Batch step _target cannot replace the enclosing batch target; no steps executed.');
+			}
 		}
 	}
 	if (payload.dryRun === true) return { result: { dryRun: true, count: steps.length, actions: steps.map(s => s.action) } };
@@ -15019,9 +15037,12 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
         const step = steps[index];
         execution?.progress({ completed: results.length, total: steps.length, currentIndex: index, currentAction: step.action });
         try {
-			const response = await runAction(step.action, step.payload, false, execution, helperTarget);
+			const stepPayload = helperTarget && step.action !== 'debug.exec_js'
+				? { ...step.payload, _target: { projectUuid: helperTarget.projectUuid, documentUuid: helperTarget.documentUuid } }
+				: step.payload;
+			const response = await runAction(step.action, stepPayload, false, execution, helperTarget);
 			const r = response.result as Record<string, unknown> | undefined;
-			const ok = r?.ok !== false && r?.partial !== true && r?.verified !== false;
+			const ok = !failedActionResult(r);
 			const { artifacts: stepArtifacts, ...stepResponse } = response;
 			results.push({ index, action: step.action, ok, ...stepResponse,
 				...(stepArtifacts?.length ? { artifactIds: stepArtifacts.map(a => a.id) } : {}) });
@@ -15031,6 +15052,7 @@ const debugBatch = async (payload: Payload, execution?: Execution, reads?: {befo
 			results.push({ index, action: step.action, ok: false, error: error instanceof ActionError
 				? { code: error.code, message: error.message, detail: error.detail }
 				: { message: describeThrown(error) } });
+			if (error instanceof ActionError && error.code === 'NATIVE_OPERATION_PENDING') break;
 			if (payload.stopOnError !== false) break;
 		}
 	}

@@ -7,6 +7,7 @@ import {
   buildActionCallArgs,
   buildWorkflowArgs,
   filterActions,
+  failedResult,
   parseOutput,
   toMcpResult,
 } from '../src/core.mjs';
@@ -50,6 +51,22 @@ test('parseOutput and MCP result preserve structured JSON', () => {
 
   const warned = toMcpResult({ ok: true, result: { passed: true }, stderr: 'staleRisk' });
   assert.deepEqual(warned.structuredContent, { result: { passed: true }, warnings: 'staleRisk' });
+});
+
+test('single-action receipts expose explicit native failures and retain unknown evidence', () => {
+  for (const data of [{ deleted: false }, { disconnected: false }, { failures: ['t'] }, { notApplied: ['t'] },
+    { survived: { wires: ['w'] } }, { survivedIds: ['w'] }, { survivedTotal: 1 },
+    { partial: true, verified: false, writeState: 'unknown' }]) {
+    const receipt = { ok: true, result: data };
+    assert.equal(failedResult(receipt), true);
+    const response = toMcpResult({ ok: true, result: receipt });
+    assert.equal(response.isError, true);
+    assert.deepEqual(response.structuredContent, receipt, 'classification must preserve actual evidence');
+  }
+  for (const data of [{ deleted: true }, { failures: [] }, { notApplied: [] }, { survived: {} },
+    { survived: { components: [], wires: [] } }, { survivedTotal: 0 }, { primitiveId: 'new' }]) {
+    assert.equal(toMcpResult({ ok: true, result: { ok: true, result: data } }).isError, false);
+  }
 });
 
 test('project creation routes to a window without an existing project or document', () => {
