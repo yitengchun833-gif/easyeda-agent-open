@@ -1250,6 +1250,17 @@ func AllActions() []ActionSpec {
 			VerifyWith:  []string{"pcb.components.list"},
 		},
 		{
+			Name:        "pcb.components.place",
+			Domain:      DomainPcb,
+			Phase:       2,
+			Mutates:     true,
+			NeedsWindow: true,
+			Description: "Batch absolute PCB component poses (mil, degrees) for explicitly named primitiveIds. Each placement requires x/y and may include rotation and expected source x/y/rotation/layer/uniqueId/designator. Validates the entire list before writes, skips locked/missing/stale targets, preserves layer and identity, fresh-verifies each pose, and stops after failed/unknown writes without replay. Does not reroute copper, save, or gate on DRC. No selection fallback.",
+			Inputs:      []string{"placements[] {primitiveId,x,y,rotation optional,expected optional}"},
+			Outputs:     []string{"units", "mode", "moved[].primitiveId", "moved[].from", "moved[].to", "moved[].verified", "count", "requestedCount", "attempted[]", "skipped[]", "notApplied[]", "unverified[]", "remaining[]", "partial", "verified", "executionState optional (unknown)"},
+			VerifyWith:  []string{"pcb.components.list"},
+		},
+		{
 			Name:        "pcb.components.arrange",
 			Domain:      DomainPcb,
 			Phase:       2,

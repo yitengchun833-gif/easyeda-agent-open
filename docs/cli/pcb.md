@@ -31,7 +31,22 @@
 | 二层协同求解 | `pcb layout solve/check/render` | 纯离线：从完整 board dump 与参数请求生成/独立复验/渲染布局+共同路由候选；solve 输出基线、失败尝试、候选的整板与自动聚焦局部 SVG；固定装配面，支持 TOP/BOTTOM 与最多两个过孔；可用 `--apply-project/--apply-doc` 输出绑定目标工程/文档的 layout-only playbook，执行前仍须 fresh dump 核对候选来源哈希；本命令本身不写 EDA |
 | 布局质量分 | `pcb layout-score` | 九维 0-100+逐器件归因(partition/flow-order/edge-io/protection/tidy/compact/rf/routable/clearance),blocking 一票否决;`--part` 器件聚焦视角;金标准五真板校准(`make layout-calibrate`) |
 | 打分驱动精修 | `pcb refine` | 读归因对最弱维做确定性变换,每步复核可回滚;锁定件不动，历史签字档仅作提示 |
+| 指定对象批量纠错 | `pcb place-batch --from placements.json` | 一次请求按显式 primitiveId 清单设置不同绝对坐标（mil）及可选角度；可附 expected 位姿/身份拒绝陈旧目标。锁定件不动，逐件 fresh 回读，失败/unknown 停止后续并保留 partial；不改层/网络，不重布旧铜，不自动保存或要求 DRC 全零 |
 | 编组式移动 | `pcb components move` 类 | 无状态刚体移动(持久编组见路线 §1) |
+
+局部纠错输入示例（`placements.json`）：
+
+```json
+{"placements":[
+  {"primitiveId":"component-id-1","x":300,"y":500,"rotation":180,"expected":{"uniqueId":"source-uid-1"}},
+  {"primitiveId":"component-id-2","x":1050,"y":500,"expected":{"x":1000,"y":500}}
+]}
+```
+
+执行 `easyeda pcb place-batch --from placements.json --window WINDOW --doc PCB_UUID`。
+仅接受位置和可选角度；省略角度保持原值。回执保留已验证 `moved`、`skipped` 与未执行
+`remaining`；部分完成的 CLI 返回失败并保留原 JSON，先读实际状态再准备剩余目标，不能整批重放。
+动作不支持 `dryRun`（显式拒绝该字段），不自动调整已有铜、保存或检查工程质量。
 
 ### 3. 布线
 

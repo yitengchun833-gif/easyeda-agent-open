@@ -50,7 +50,7 @@ func TestPCBComponentPlacementResultRequiresCompleteReadback(t *testing.T) {
 }
 
 func TestPCBComponentPlacementVerifiedAcrossEntryPoints(t *testing.T) {
-	for _, action := range []string{"pcb.components.move", "pcb.components.arrange"} {
+	for _, action := range []string{"pcb.components.move", "pcb.components.arrange", "pcb.components.place"} {
 		for _, result := range []string{
 			verifiedPCBPlacementResult,
 			`{"count":1,"moved":[{"primitiveId":"kept-component"}]}`,

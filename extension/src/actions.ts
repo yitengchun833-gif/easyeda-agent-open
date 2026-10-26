@@ -12250,10 +12250,10 @@ const pcbGridSnap: Handler = async (payload) => {
 	return { result: { grid, snapped, count: snapped.length } };
 };
 
-type PcbCoordinateMove = { primitiveId: string; designator?: string; uniqueId?: string; x: number; y: number; rotation: number; layer: number; to: { x: number; y: number } };
+type PcbCoordinateMove = { primitiveId: string; designator?: string; uniqueId?: string; x: number; y: number; rotation: number; layer: number; to: { x: number; y: number; rotation?: number } };
 type PcbMoveSkipped = { primitiveId: string; reason: string };
 
-function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number }): PcbCoordinateMove {
+function pcbCoordinateMove(component: PcbComponent, to: { x: number; y: number; rotation?: number }): PcbCoordinateMove {
 	const move = { primitiveId: component.getState_PrimitiveId(), designator: component.getState_Designator(), uniqueId: component.getState_UniqueId(),
 		x: component.getState_X(), y: component.getState_Y(), rotation: component.getState_Rotation(), layer: Number(component.getState_Layer()), to };
 	if (![move.x, move.y, move.rotation, to.x, to.y].every(Number.isFinite) || ![1, 2].includes(move.layer) || typeof component.getState_PrimitiveLock() !== 'boolean') {
@@ -12270,7 +12270,7 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 	let next = 0;
 	for (; next < plans.length; next++) {
 		const plan = plans[next];
-		if (![plan.to.x, plan.to.y].every(Number.isFinite)) {
+		if (![plan.to.x, plan.to.y, plan.to.rotation ?? plan.rotation].every(Number.isFinite)) {
 			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Planned coordinates are non-finite; no write dispatched.' });
 			break;
 		}
@@ -12283,7 +12283,7 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 		}
 		catch (error) { skipped.push({ primitiveId: plan.primitiveId, reason: describeThrown(error) }); break; }
 		const unchanged = verifyPcbComponentPatch({ x: plan.x, y: plan.y, rotation: plan.rotation, layer: plan.layer, primitiveLock: false }, before);
-		if (before.primitiveId !== plan.primitiveId || before.uniqueId !== plan.uniqueId || unchanged.notApplied.length || unchanged.unverified.length) {
+		if (before.primitiveId !== plan.primitiveId || before.uniqueId !== plan.uniqueId || before.designator !== plan.designator || unchanged.notApplied.length || unchanged.unverified.length) {
 			notApplied.push({ primitiveId: plan.primitiveId, reason: 'Component changed after planning; no write dispatched.', actual: before });
 			break;
 		}
@@ -12297,18 +12297,18 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 			if (fresh) after = serializePcbComponent(fresh);
 		}
 		catch { /* a dispatched write without readback remains unknown */ }
-		if (!after || after.primitiveId !== plan.primitiveId || after.uniqueId !== plan.uniqueId) {
+		if (!after || after.primitiveId !== plan.primitiveId || after.uniqueId !== plan.uniqueId || after.designator !== plan.designator) {
 			unverified.push({ primitiveId: plan.primitiveId, expected: plan.to, actual: after, ...(writeError ? { error: writeError } : {}) });
 			next++;
 			break;
 		}
-		const verification = verifyPcbComponentPatch({ ...plan.to, rotation: plan.rotation, layer: plan.layer, primitiveLock: false }, after);
+		const verification = verifyPcbComponentPatch({ ...plan.to, rotation: plan.to.rotation ?? plan.rotation, layer: plan.layer, primitiveLock: false }, after);
 		if (verification.notApplied.length || verification.unverified.length) {
 			notApplied.push({ primitiveId: plan.primitiveId, expected: plan.to, actual: after, ...verification, ...(writeError ? { error: writeError } : {}) });
 			next++;
 			break;
 		}
-		moved.push({ primitiveId: plan.primitiveId, designator: plan.designator, from: { x: plan.x, y: plan.y }, to: { x: after.x, y: after.y }, verified: true });
+		moved.push({ primitiveId: plan.primitiveId, designator: plan.designator, from: { x: plan.x, y: plan.y, ...(plan.to.rotation === undefined ? {} : { rotation: plan.rotation }) }, to: { x: after.x, y: after.y, ...(plan.to.rotation === undefined ? {} : { rotation: after.rotation }) }, verified: true });
 		if (writeError) {
 			unverified.push({ primitiveId: plan.primitiveId, error: writeError, reason: 'Target coordinates were read back, but the write threw; no further writes dispatched.' });
 			next++;
@@ -12320,6 +12320,70 @@ async function applyPcbCoordinateMoves(plans: PcbCoordinateMove[], skipped: PcbM
 	return { moved, count: moved.length, attempted, skipped, notApplied, unverified, remaining, partial, verified: !partial,
 		...(unverified.length ? { executionState: 'unknown' } : {}) };
 }
+
+type PcbAbsolutePlacement = {
+	primitiveId: string; x: number; y: number; rotation?: number;
+	expected?: Record<string, unknown>;
+};
+
+/** Explicit absolute poses: one transport request for an engineer's local corrections. */
+const pcbComponentsPlace: Handler = async (payload) => {
+	if (payload.dryRun !== undefined) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'pcb.components.place does not accept dryRun; no write dispatched.');
+	if (!Array.isArray(payload.placements) || payload.placements.length === 0) {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'placements must be a nonempty array of explicit primitiveId/x/y poses (mil).');
+	}
+	const ids = new Set<string>();
+	// Validate the entire list before dispatching any write. Never fall back to selection.
+	const placements = payload.placements.map((value: unknown): PcbAbsolutePlacement => {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Each placement must be an object.');
+		}
+		const p = value as Record<string, unknown>;
+		if (Object.keys(p).some(k => !['primitiveId', 'x', 'y', 'rotation', 'expected'].includes(k))
+			|| typeof p.primitiveId !== 'string' || !p.primitiveId.trim() || p.primitiveId.trim() !== p.primitiveId
+			|| ids.has(p.primitiveId) || typeof p.x !== 'number' || !Number.isFinite(p.x)
+			|| typeof p.y !== 'number' || !Number.isFinite(p.y)
+			|| p.rotation !== undefined && (typeof p.rotation !== 'number' || !Number.isFinite(p.rotation))) {
+			throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'placements require distinct primitiveIds, finite x/y and optional rotation; only pose/expected fields are accepted.');
+		}
+		ids.add(p.primitiveId);
+		if (p.expected !== undefined) {
+			if (!p.expected || typeof p.expected !== 'object' || Array.isArray(p.expected)) {
+				throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'expected must be an object of source pose/identity fields.');
+			}
+			for (const [key, v] of Object.entries(p.expected)) {
+				const valid = ['x', 'y', 'rotation'].includes(key) ? typeof v === 'number' && Number.isFinite(v)
+					: key === 'layer' ? v === 1 || v === 2
+						: ['uniqueId', 'designator'].includes(key) && typeof v === 'string';
+				if (!valid) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, `Unsupported or invalid expected field: ${key}.`);
+			}
+		}
+		return p as PcbAbsolutePlacement;
+	});
+	const plans: PcbCoordinateMove[] = [], skipped: PcbMoveSkipped[] = [];
+	for (const placement of placements) {
+		const id = placement.primitiveId;
+		try {
+			const component = await eda.pcb_PrimitiveComponent.get(id);
+			if (!component) { skipped.push({ primitiveId: id, reason: 'Component not found.' }); continue; }
+			if (component.getState_PrimitiveLock() === true) { skipped.push({ primitiveId: id, reason: 'locked' }); continue; }
+			const actual = serializePcbComponent(component);
+			if (actual.primitiveId !== id) { skipped.push({ primitiveId: id, reason: 'Component lookup returned a different identity; no write dispatched.' }); continue; }
+			const expected = placement.expected ?? {};
+			const pose = Object.fromEntries(Object.entries(expected).filter(([key]) => !['uniqueId', 'designator'].includes(key)));
+			const check = verifyPcbComponentPatch(pose, actual);
+			if (check.notApplied.length || check.unverified.length
+				|| ['uniqueId', 'designator'].some(key => expected[key] !== undefined && expected[key] !== actual[key])) {
+				skipped.push({ primitiveId: id, reason: 'Expected source pose/identity changed; no write dispatched.' }); continue;
+			}
+			plans.push(pcbCoordinateMove(component, { x: placement.x, y: placement.y,
+				...(placement.rotation === undefined ? {} : { rotation: normDeg(placement.rotation) }) }));
+		}
+		catch (error) { skipped.push({ primitiveId: id, reason: describeThrown(error) }); }
+	}
+	return { result: { units: 'mil', mode: 'absolute', requestedCount: placements.length,
+		...await applyPcbCoordinateMoves(plans, skipped) } };
+};
 
 /** Translate the selected/explicit components while preserving locked objects. */
 const pcbComponentsMove: Handler = async (payload) => {
@@ -15258,6 +15322,7 @@ const HANDLERS: Record<string, Handler> = {
 	'pcb.distribute': pcbDistribute,
 	'pcb.grid_snap': pcbGridSnap,
 	'pcb.components.move': pcbComponentsMove,
+	'pcb.components.place': pcbComponentsPlace,
 	'pcb.components.arrange': pcbComponentsArrange,
 	'pcb.drc.check': pcbDrcCheck,
 	'pcb.drc.rules': pcbDrcRules,

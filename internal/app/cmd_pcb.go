@@ -4859,6 +4859,7 @@ After a real import, follow reload → pcb.silk.list / pcb check → pcb save.`,
 
 	// ── length constraints (#176) — see cmd_pcb_constraints.go ────────────
 	addPcbConstraintCmds(pcb, cfg, &window, stdout, stderr)
+	pcb.AddCommand(newPcbPlaceBatchCmd(cfg, &window, stdout, stderr))
 
 	return pcb
 }
