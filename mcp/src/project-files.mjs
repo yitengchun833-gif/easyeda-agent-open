@@ -5,6 +5,7 @@ import path from 'node:path';
 import { knowledgeRequest } from '../../knowledge/src/client.mjs';
 import { canonical } from '../../knowledge/src/evidence.mjs';
 import { continuousInputs, taskRequirements } from './plan-rules.mjs';
+import { correctionScope } from './local-correction.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -183,6 +184,41 @@ export async function preparePlan(snapshotFile, outputFile, options = {}) {
   await protectSources(outputFile, plan.sources.map(source => source.path), 'Plan output cannot overwrite a source reference');
   validatePlan(plan);
   return { ok: true, ...(await writePair(outputFile, plan, planMarkdown(plan), overwrite)), summary: planSummary(plan) };
+}
+
+export async function prepareCorrection(input) {
+  if (!text(input.window).trim() || input.overwrite) throw new Error('Correction prepare requires window and new output files');
+  const original = await readJSON(input.snapshotFile), {snapshot,context} = snapshotData(original.value);
+  const scope = scopeOf(snapshot,context);
+  if (!scope.complete || snapshot.readScope.concurrentChange !== false || !scope.projectUuid || !scope.documentUuid
+    || snapshot.components.some(part => part.componentType === 'part' && (part.netlistAvailable !== true || part.pinsAvailable !== true)))
+    throw new Error('Correction needs a complete identified geometry/netlist baseline');
+  if (input.target && ['projectUuid','documentUuid'].some(key=>input.target[key]!==scope[key])) throw new Error('Correction target differs from its source snapshot');
+  const localCorrection = correctionScope(snapshot,input), {components,nets} = snapshotSemantics(snapshot);
+  if (components.some(part=>!part.pins.length||part.pins.some(pin=>pin.state==='unknown'))) throw new Error('Correction preservation requires known pin/net states');
+  const {file,markdownFile} = outputPaths(input.outputFile), stem = file.slice(0,-5), jobFile = stem+'.job.json';
+  const plan = {schemaVersion:'easyeda.plan/1',revision:1,taskKind:'local_edit',acceptanceScope:'local_display',
+    goal:text(input.goal),target:{projectUuid:scope.projectUuid,documentUuid:scope.documentUuid},
+    sources:[{id:'snapshot',path:original.file,sha256:original.sha256}],
+    semanticTarget:{schemaVersion:1,scope,components,nets:[...nets.values()],idMap:Object.fromEntries(components.map(part=>[part.key,part.sourcePrimitiveId]))},
+    layoutHints:{mode:'preserve',parts:[]},confirmation:{status:'unconfirmed',authoredBy:'caller',evidence:null},
+    steps:[],missing:missingData(snapshot),localCorrection,executionReceipts:{directory:stem+'.execution'},
+    stages:[{id:'correct',check:'geometry',primitiveIds:localCorrection.componentIds,
+      steps:input.corrections.map(payload=>({action:'schematic.attribute.modify',payload:copy(payload)}))}],
+    limits:['Local display correction only; not electrical redesign, whole-page completion or engineer acceptance',
+      'Execution stops on a stale baseline, partial/unknown write or changed outside primitive/net; no automatic rollback or replay']};
+  validatePlan(plan);
+  await protectFiles([file,markdownFile,jobFile], [original.file], 'Correction outputs cannot overwrite their snapshot');
+  for (const candidate of [file,markdownFile,jobFile,plan.executionReceipts.directory]) {
+    try {await access(candidate);throw new Error(`Refusing to reuse correction output: ${candidate}`);}
+    catch(error){if(error.code!=='ENOENT')throw error;}
+  }
+  const written = await writePair(file,plan,planMarkdown(plan));
+  const job = {operation:'run',planFile:file,expectedHash:written.sha256,window:input.window,target:plan.target,
+    runStages:[{stage:'correct',edit:{mode:'layout',primitiveIds:localCorrection.componentIds}}]};
+  try {await writeFile(jobFile,JSON.stringify(job,null,2)+'\n',{flag:'wx'});}
+  catch(error){error.message+=`; plan remains at ${file}; no EDA action sent`;throw error;}
+  return {ok:true,...written,jobFile,job,scope:localCorrection,executionState:'not_executed'};
 }
 
 // Compile existing plan declarations, not a second design IR or an inferred approval.
@@ -485,7 +521,7 @@ export function stageReceiptBinding(plan, stage) {
   return { receiptDirectory: path.normalize(plan.executionReceipts.directory), semanticTargetSha256: fingerprint(semanticTarget), sourcesSha256: fingerprint(receiptSources(plan)), stageSha256: fingerprint(stage), idMap: copy(idMap),
     ...(requirements.length ? { requirementsSha256: fingerprint(requirements) } : {}),
     ...(plan.taskKind?{acceptanceSha256:fingerprint({acceptanceScope:plan.acceptanceScope??'page',taskKind:plan.taskKind})}:{}),
-    ...(plan.acceptanceScope === 'local_display' ? { acceptanceSha256: fingerprint({ acceptanceScope: plan.acceptanceScope, stages: plan.stages.map(({ id, primitiveIds }) => ({ id, primitiveIds })) }) } : {}),
+    ...(plan.acceptanceScope === 'local_display' ? { acceptanceSha256: fingerprint({ acceptanceScope: plan.acceptanceScope, stages: plan.stages.map(({ id, primitiveIds }) => ({ id, primitiveIds })), ...(plan.localCorrection?{localCorrection:plan.localCorrection}:{}) }) } : {}),
     ...(plan.preservation ? {preservationSha256:fingerprint(plan.preservation)} : {}),
     ...(plan.layoutHints ? { expressionSha256: fingerprint(plan.layoutHints) } : {}) };
 }

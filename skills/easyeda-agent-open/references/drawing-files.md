@@ -73,6 +73,18 @@ Compiler 将同网、共享端点且无分支的连续段合并为完整 polylin
 
 ### 局部显示任务的明确验收范围
 
+#### 工程师审图后的批量文字纠错
+
+需要同时修正多处位号/参数排版，并证明范围外图元及逐脚网络保持时，使用 `easyeda_plan(operation:"prepare_correction")`。准备阶段只读取本地快照，输出原有 `easyeda.plan/1`、Markdown 和 `.job.json`，不调用 EDA。输入示例（路径与 ID 使用本次实际值）：
+
+```json
+{"operation":"prepare_correction","window":"实际窗口ID","snapshotFile":"绝对路径/snapshot.json","outputFile":"绝对路径/correction.json","primitiveIds":["器件ID"],"corrections":[{"primitiveId":"位号属性ID","props":{"x":100,"y":120}},{"primitiveId":"参数属性ID","props":{"rotation":0,"fontSize":8},"fontSizeUnit":"display"}]}
+```
+
+`primitiveIds` 与 `region:{minX,minY,maxX,maxY}` 二选一；区域仅选择边界完全在矩形内的现有器件。每项 correction 必须属于所选器件的原生属性，只支持位置、旋转、字体/样式和可见性，禁止修改 Key/Value、器件位置和接线。该入口的基线需单页完整 `full` 快照、`includeTexts:true`，含已知引脚网络及页面图元；普通局部档案不能冒充完整保留依据。
+
+审阅返回的 plan 和 job 后，将原样 job 交同包 `easyeda_plan` 或 `plan-cli.mjs` 执行。所有属性修改在一个原生批次内，批前核基线，批后复用现有比较器核范围外图元、全部器件/网表以及被改属性的其他字段。一个批次固定进行前后完整保留读取与一次局部显示回读，不逐属性往返。返回现有图面审阅入口，不自动保存、不声明整页或工程师验收。旧基线、partial/unknown、范围外变化或已有执行回执均停止；按实际回读重新准备剩余修正，禁止重放整批。新入口须由采用该源码的新 MCP/CLI 进程提供。
+
 仅修改文字位置/可见性的任务可在同一方案明确`acceptanceScope:"local_display"`，默认仍为page。该路径只允许非空scoped、纯官方attribute.modify显示阶段；禁止final及delivery requirements。原始阶段回执仍核属性owner/Key/Value/字段、器件身份/姿态与范围，末端阶段代表局部验收，不执行整页target.check；完整语义资料仅作引用。当前局部读回包含必要texts，不取引脚、网表、BBox或导线。业务层再用当前图面、受保护finish和固定原始保存/关闭/打开/局部回读证明持久化；原生缺少的样式字段不能宣称保存重开通过。局部范围及stage绑定acceptanceSha256，改成page或改scope不能继承旧通过；page、电气/几何及接线任务保持完整原契约。
 
 局部图面证据须保存runtime的原始修改/截图记录和实际导图回执，绑定本次target、scope、generation与PNG哈希；单独的visual_review成功响应不含这些事实。业务文件字段只维护在资料到交付的structured-workflow.md；程序核图像归属，AI/工程师负责图面判断。

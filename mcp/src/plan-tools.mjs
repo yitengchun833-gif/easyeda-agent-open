@@ -4,7 +4,7 @@ import { mkdir, open, readFile, rename, unlink, mkdtemp, writeFile, rm } from 'n
 import path from 'node:path';
 import os from 'node:os';
 import nativeIdentity from './native-identity.cjs';
-import { exportSnapshot, preparePlan, loadPlan, managedStageReceiptFile, snapshotData, renderPlan, stageReceiptBinding, verifyStagePrefix, executionSteps, bindPlacedComponents, finalRecheckBinding, readJSON, protectFiles, writePair } from './project-files.mjs';
+import { exportSnapshot, preparePlan, prepareCorrection, loadPlan, managedStageReceiptFile, snapshotData, renderPlan, stageReceiptBinding, verifyStagePrefix, executionSteps, bindPlacedComponents, finalRecheckBinding, readJSON, protectFiles, writePair } from './project-files.mjs';
 import { compileRoutes } from './route-tools.mjs';
 import { compileLabels } from './label-tools.mjs';
 import { summarizeDelivery } from './delivery-summary.mjs';
@@ -13,6 +13,7 @@ import { nativeObservation, nativeDesignDiff, reopenProof } from './delivery-ver
 import { callAction, snapshotSteps, runtimeRequest } from './open.mjs';
 import { toMcpResult, runEasyeda } from './core.mjs';
 import { needsDrc, receiptFacts, localRuleFacts, requiredEdit, requirementResults, displayOnlyStage, displayAttributesVerified, designPins, continuousInputs } from './plan-rules.mjs';
+import { validateLocalCorrection, correctionPreservation } from './local-correction.mjs';
 
 // Files hold full observations; MCP returns only the paths/counts needed for the next step.
 export async function captureSnapshot(input, invoke = callAction) {
@@ -33,6 +34,7 @@ export async function captureSnapshot(input, invoke = callAction) {
 }
 
 export async function planTool(input, catalog, invoke = callAction, run = runEasyeda) {
+  if (input.operation === 'prepare_correction') return toMcpResult({ok:true,result:await prepareCorrection(input)});
   if (input.continuous !== undefined && (!['run','resume','reconcile'].includes(input.operation) || typeof input.continuous !== 'boolean')) throw new Error('continuous is a boolean for run only');
   if (input.recheckFinal !== undefined && (!['run','apply'].includes(input.operation)||input.recheckFinal!==true||input.continuous)) throw new Error('recheckFinal:true is only for an explicit read-only final apply/run');
   if (input.operation === 'summary') return toMcpResult({ ok: true, result: await summarizeDelivery(input) });
@@ -193,8 +195,35 @@ export async function planTool(input, catalog, invoke = callAction, run = runEas
     const preserved = await checkPreservation(plan, route, invoke);
     if (preserved.status !== 'pass') throw new Error('Preserved page changed or is unavailable before writing: '+JSON.stringify(preserved));
   }
+  let correctionBefore;
+  if (plan.localCorrection) {
+    if (!managedReceiptFile) throw new Error('Correction requires its managed execution receipt');
+    try {await readFile(managedReceiptFile);throw new Error('Correction already has a receipt; inspect it, never replay');}
+    catch(error){if(error.code!=='ENOENT')throw error;}
+    const source = plan.sources.find(source => source.id === 'snapshot');
+    const baseline = snapshotData(JSON.parse(await readFile(source.path,'utf8'))).snapshot;
+    validateLocalCorrection(plan,baseline);
+    if (edit?.mode !== 'layout' || edit.complete === false || !isDeepStrictEqual(edit.primitiveIds,plan.localCorrection.componentIds))
+      throw new Error('Correction needs its exact complete layout edit scope');
+    if (!input.dryRun) {
+      correctionBefore = nativeObservation(await nativePageReadback(plan,route,invoke),plan.target);
+      const preserved = correctionPreservation(baseline,correctionBefore);
+      if (preserved.status !== 'pass') throw new Error('Correction baseline changed; no write sent: '+JSON.stringify(preserved.changed));
+    }
+  }
   const receipt = !input.dryRun && (managedReceiptFile || input.receiptFile) ? await beginReceipt(managedReceiptFile ?? input.receiptFile, loaded, declaredStage, managedReceiptFile ? stageReceiptBinding(plan, declaredStage) : null,recheckOf) : null;
   const finish = async result => {
+    if (correctionBefore && result.structuredContent) {
+      const report = result.structuredContent;
+      try {
+        report.correctionReadback = await nativePageReadback(plan,route,invoke);
+        report.preservedOutsideScope = correctionPreservation(correctionBefore,nativeObservation(report.correctionReadback,plan.target),steps.map(step=>step.payload));
+      } catch(error) {report.preservedOutsideScope={status:'unknown',reason:error.message};}
+      if (report.preservedOutsideScope.status !== 'pass') {
+        report.ok=false;report.partial=true;
+        if(report.stage)report.stage.completed=false;
+      }
+    }
     if (plan.preservation && !input.dryRun && result.structuredContent) {
       const preserved = await checkPreservation(plan, route, invoke);
       result.structuredContent.preservation = preserved;
