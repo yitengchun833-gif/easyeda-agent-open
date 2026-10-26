@@ -1717,6 +1717,7 @@ async function backfillOtherProperty(
 async function backfillSupplierId(
 	component: SchComponent,
 	device: { libraryUuid: string; uuid: string },
+	beforeMutation?: () => void,
 ): Promise<{ component: SchComponent; backfilled?: string; warning?: string }> {
 	let current = '';
 	try { current = String(component.getState_SupplierId() ?? ''); }
@@ -1730,6 +1731,7 @@ async function backfillSupplierId(
 	}
 	catch { /* fall through */ }
 	if (!/^C\d+$/.test(real)) return { component };
+	beforeMutation?.();
 	try {
 		const m = await eda.sch_PrimitiveComponent.modify(component.getState_PrimitiveId(), { supplierId: real });
 		if (m) return { component: m, backfilled: real };
@@ -7572,7 +7574,65 @@ const schematicComponentResolveLcsc: Handler = async (payload) => {
  * Any failure after the delete rolls back by re-creating the ORIGINAL device
  * with its full state (including part-identity fields).
  */
-const schematicComponentReplace: Handler = async (payload) => {
+// Replacement consumes a confirmed current instance link, not an inferred annotation.
+// Preserve raw SDK values; neither a historical snapshot nor an enet value may
+// silently fill an empty source Unique ID before deleting that source instance.
+export async function readReplacementNativeIdentity(primitiveId: string, expectedTarget?: Awaited<ReturnType<typeof readResponseContext>>, forbiddenId?: string) {
+	const target = await readResponseContext();
+	const refuse = (reason: string, evidence: Record<string, unknown> = {}): never => {
+		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `Replacement identity is unavailable or conflicting: ${reason}.`,
+			rebindFactsDetail({ primitiveId, target, ...evidence }));
+	};
+	if (!target.projectUuid || !target.documentUuid || !target.tabId || target.documentType !== 'schematic'
+		|| expectedTarget && ['projectUuid', 'documentUuid', 'tabId'].some(k => target[k as keyof typeof target] !== expectedTarget[k as keyof typeof expectedTarget])) refuse('target is unavailable or changed');
+	const component = await getComponentOrThrow(primitiveId), snapshot = serializeComponent(component);
+	const uid = snapshot.uniqueId;
+	if (snapshot.componentType !== 'part' || typeof uid !== 'string' || !uid.trim() || uid !== uid.trim()
+		|| typeof snapshot.designator !== 'string' || !snapshot.designator.trim()) refuse('source requires a non-empty native Unique ID and designator; no value was inferred', { rawUniqueId: uid });
+	const attributes = await eda.sch_PrimitiveAttribute.getAll(primitiveId);
+	if (!Array.isArray(attributes)) refuse('owned attribute inventory is unavailable', { rawUniqueId: uid });
+	const names = attributes.filter(a => a.getState_Key() === 'Unique ID');
+	const attrs = names.map(a => ({ primitiveId: a.getState_PrimitiveId(), parentId: a.getState_ParentPrimitiveId(), value: a.getState_Value() }));
+	if (attrs.length !== 1 || !attrs[0].primitiveId || attrs[0].parentId !== primitiveId || attrs[0].value !== uid) refuse('component and its single owned Unique ID attribute disagree', { rawUniqueId: uid, attributes: attrs });
+	const inventory = await eda.sch_PrimitiveComponent.getAll(undefined, true);
+	if (!Array.isArray(inventory) || !inventory.length) refuse('native schematic identity inventory is unavailable');
+	const parts = inventory.filter(c => c.getState_ComponentType() === 'part');
+	if (parts.some(c => !c.getState_PrimitiveId() || typeof c.getState_UniqueId() !== 'string')) refuse('native schematic identity inventory is incomplete');
+	const owners = parts.filter(c => c.getState_UniqueId() === uid);
+	if (owners.length !== 1 || owners[0].getState_PrimitiveId() !== primitiveId || owners[0].getState_Designator() !== snapshot.designator
+		|| forbiddenId && inventory.some(c => c.getState_PrimitiveId() === forbiddenId)) refuse('identity is duplicated, stale, or the old instance remains', { rawUniqueId: uid, owners: owners.map(c => c.getState_PrimitiveId()), forbiddenId });
+	const after = await readResponseContext();
+	if (['projectUuid', 'documentUuid', 'tabId'].some(k => target[k as keyof typeof target] !== after[k as keyof typeof after])) refuse('target changed during native identity read');
+	return { component, snapshot, proof: { source: 'official-sdk-component+owned-attribute+schematic-inventory', target,
+		primitiveId, rawUniqueId: uid, designator: snapshot.designator, attribute: attrs[0], uniqueOwners: owners.length } };
+}
+
+export async function proveReplacementManufacturingIdentity(source: Awaited<ReturnType<typeof readReplacementNativeIdentity>>, pins: Awaited<ReturnType<typeof readPinSnapshots>>) {
+	const refuse = (reason: string, evidence: Record<string, unknown> = {}): never => {
+		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, `Replacement manufacturing identity could not be proven: ${reason}. No replacement write executed.`,
+			rebindFactsDetail({ source: source.proof, ...evidence }));
+	};
+	const file = await getSchematicNetlistFile(undefined, 'JLCEDA' as ESYS_NetlistType);
+	if (!file || file.netlistProvenance) refuse('a current official JLCEDA manufacturing netlist is required; analysis fallback is not identity proof');
+	let netlist: Record<string, any>;
+	try { netlist = JSON.parse(await file!.text()); } catch { refuse('official netlist is unreadable'); }
+	if (!netlist! || netlist!.projectId !== source.proof.target.projectUuid || !netlist!.components || typeof netlist!.components !== 'object' || Array.isArray(netlist!.components)) refuse('netlist project or component map differs from the native target');
+	const uid = source.proof.rawUniqueId;
+	const matches = Object.entries(netlist!.components as Record<string, any>).filter(([key, row]) => key === uid || row?.props?.['Unique ID'] === uid);
+	if (matches.length !== 1 || matches[0][0] !== uid || matches[0][1]?.props?.['Unique ID'] !== uid) refuse('native link has no single matching netlist key/value', { rawUniqueId: uid });
+	const row = matches[0][1], props = row.props;
+	const refs = { Device: (source.snapshot.component as DeviceRef | undefined)?.uuid, Symbol: (source.snapshot.symbol as DeviceRef | undefined)?.uuid, Footprint: (source.snapshot.footprint as DeviceRef | undefined)?.uuid };
+	if (props.Designator !== source.snapshot.designator || Object.entries(refs).some(([key, value]) => !value || props[key] !== value)) refuse('UID-keyed netlist row conflicts with the source designator/device/symbol/footprint', { rawUniqueId: uid, expectedRefs: refs });
+	const nativePins = pins?.map(p => p.pinNumber).sort(), netPins = row.pinInfoMap && typeof row.pinInfoMap === 'object' && !Array.isArray(row.pinInfoMap)
+		? Object.values(row.pinInfoMap as Record<string, any>).map(p => p?.number).sort() : [];
+	if (!nativePins?.length || nativePins.some(n => !n) || new Set(nativePins).size !== nativePins.length || exactJSON(nativePins) !== exactJSON(netPins)) refuse('complete source pin numbers do not match the UID-keyed row');
+	const after = await readResponseContext();
+	if (['projectUuid', 'documentUuid', 'tabId'].some(k => source.proof.target[k as keyof typeof after] !== after[k as keyof typeof after])) refuse('target changed during official netlist read');
+	return { source: 'current-official-JLCEDA-manufacturing-netlist', target: source.proof.target, projectId: netlist!.projectId,
+		mapKey: uid, uniqueId: props['Unique ID'], channelId: props['Channel ID'] ?? null, designator: props.Designator, ...refs, pinNumbers: nativePins };
+}
+
+const schematicComponentReplace: Handler = async (payload, execution) => {
 	const primitiveId = requireString(payload, 'primitiveId');
 	const lcsc = optionalString(payload, 'lcsc');
 	const explicitUuid = optionalString(payload, 'deviceUuid');
@@ -7587,15 +7647,25 @@ const schematicComponentReplace: Handler = async (payload) => {
 		);
 	}
 
-	const component = await getComponentOrThrow(primitiveId);
-	const snapshot = serializeComponent(component);
+	const stopped = () => execution?.signal.aborted === true || execution?.isPaused?.() === true;
+	const checkActive = () => {
+		execution?.signal.throwIfAborted();
+		if (execution?.isPaused?.()) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Replacement is paused; no further writes executed.');
+	};
+	const identity = await readReplacementNativeIdentity(primitiveId);
+	checkActive();
+	const snapshot = identity.snapshot;
 	const oldName = typeof snapshot.name === 'string' ? snapshot.name : undefined;
 	// Resolve the OLD device's REAL 32-char library identity up front — it is the
 	// rollback target AND the same-device guard; getState_Component() only carries
 	// a 16-char placed-symbol id, so an unresolvable identity aborts here, before
 	// any canvas change.
 	const oldDevice = await resolvePlacedDeviceIdentity(snapshot);
+	checkActive();
 	const oldPins = await readPinSnapshots(primitiveId);
+	checkActive();
+	const manufacturingIdentity = await proveReplacementManufacturingIdentity(identity, oldPins);
+	checkActive();
 
 	// Resolve the NEW device identity.
 	let target: { uuid: string; libraryUuid: string; name?: string };
@@ -7687,57 +7757,131 @@ const schematicComponentReplace: Handler = async (payload) => {
 			: {}),
 	};
 
-	const place = async (dev: DeviceRef, props: Record<string, unknown>): Promise<SchComponent | undefined> => {
+	const errorFacts = (error: unknown, fallback = 'Native operation returned no primitive.') => ({
+		code: error instanceof ActionError ? error.code : ErrorCodes.EDA_CALL_FAILED,
+		message: error === undefined ? fallback : error instanceof Error ? error.message : describeThrown(error),
+		...(error instanceof ActionError && error.detail ? { detail: error.detail } : {}),
+	});
+	let attemptedReplacementId: string | undefined;
+	const observeInstance = async (id: string) => {
+		try {
+			const before = await readResponseContext();
+			if (['projectUuid', 'documentUuid', 'tabId'].some(k => before[k as keyof typeof before] !== identity.proof.target[k as keyof typeof before])) throw new Error('Target changed before failure readback.');
+			const fresh = await readRebindComponent(id), after = await readResponseContext();
+			if (['projectUuid', 'documentUuid', 'tabId'].some(k => before[k as keyof typeof before] !== after[k as keyof typeof after])) throw new Error('Target changed during failure readback.');
+			return { primitiveId: id, present: fresh.present, ...(fresh.component ? { component: serializeComponent(fresh.component) } : {}), ...(fresh.error ? { error: fresh.error } : {}) };
+		} catch (error) { return { primitiveId: id, present: null, error: describeThrown(error) }; }
+	};
+	const failedAfterWrite = async (phase: string, error: unknown, restoreError?: unknown, freshOriginal?: Awaited<ReturnType<typeof observeInstance>>) => {
+		const original = freshOriginal ?? await observeInstance(primitiveId), replacement = attemptedReplacementId ? await observeInstance(attemptedReplacementId) : null;
+		return { result: {
+			ok: false, partial: true, verified: false, phase, cancelled: execution?.signal.aborted === true, paused: execution?.isPaused?.() === true,
+			executionState: original.present === null || replacement?.present === null ? 'unknown' : 'partial',
+			previousPrimitiveId: primitiveId, attemptedReplacementId: attemptedReplacementId ?? null, error: errorFacts(error),
+			identityEvidence: { before: identity.proof, manufacturing: manufacturingIdentity },
+			...(restoreError ? { restoreError: errorFacts(restoreError) } : {}),
+			observations: { original, replacement },
+			rollback: { attempted: false, status: 'not-attempted', verified: false },
+			reason: 'Replacement stopped after a write attempt; use fresh instance observations, never assume unchanged or automatically replay.',
+		} };
+	};
+	const place = async (dev: DeviceRef, props: Record<string, unknown>, onCreatedId?: (id: string) => void, onRestoreError?: (error: unknown) => void): Promise<SchComponent | undefined> => {
+		checkActive();
 		let c = await eda.sch_PrimitiveComponent.create(
 			{ libraryUuid: dev.libraryUuid, uuid: dev.uuid },
 			x, y, undefined, rotation, mirror, addIntoBom, addIntoPcb,
 		);
+		if (c) onCreatedId?.(c.getState_PrimitiveId());
+		checkActive();
 		if (c && Object.keys(props).length) {
 			// Prefer modify's returned primitive: serializing the create-time object
 			// echoes PRE-restore state (live-verified: designator read back "C?"
 			// while the canvas already showed the restored value).
 			try {
+				checkActive();
 				const m = await eda.sch_PrimitiveComponent.modify(c.getState_PrimitiveId(), props);
 				if (m) c = m;
 			}
-			catch { /* best-effort restore */ }
+			catch (error) { onRestoreError?.(error); return c; }
 		}
+		checkActive();
 		// #157: carry the device's real LCSC C-number onto the instance.
-		if (c) c = (await backfillSupplierId(c, dev)).component;
+		if (c) c = (await backfillSupplierId(c, dev, checkActive)).component;
+		checkActive();
 		return c ?? undefined;
 	};
 
 	// Step 3: delete the old instance.
+	const beforeDelete = await readReplacementNativeIdentity(primitiveId, identity.proof.target);
+	if (exactJSON(beforeDelete.snapshot) !== exactJSON(snapshot)) throw new ActionError(ErrorCodes.PRECONDITION_REFUSED,
+		'Source component changed during replacement preparation; no replacement write executed.', rebindFactsDetail({ before: identity.proof, current: beforeDelete.proof }));
+	checkActive();
+	let deleteReturned: boolean | undefined;
 	try {
-		await eda.sch_PrimitiveComponent.delete(primitiveId);
+		deleteReturned = await eda.sch_PrimitiveComponent.delete(primitiveId);
 	}
 	catch (err) {
-		throw edaError(err, `Failed to delete the old instance "${primitiveId}" (canvas unchanged).`);
+		return failedAfterWrite('delete-original', err);
+	}
+	const sourceAfterDelete = await observeInstance(primitiveId);
+	const deletion = { returned: deleteReturned === undefined ? { type: 'void' } : { type: 'boolean', value: deleteReturned }, source: sourceAfterDelete };
+	if (deleteReturned === false || sourceAfterDelete.present !== false) {
+		const failure = await failedAfterWrite('delete-verification', new ActionError(ErrorCodes.EDA_CALL_FAILED,
+			deleteReturned === false ? 'Native deletion explicitly returned false; replacement creation was refused.' : 'Source absence was not confirmed; replacement creation was refused.'), undefined, sourceAfterDelete);
+		return { result: { ...failure.result, deletion } };
 	}
 
 	// Step 4 + 5: place the new device and carry identity over.
 	let created: SchComponent | undefined;
 	let placeError: unknown;
+	let restoreError: unknown;
 	try {
-		created = await place({ libraryUuid: target.libraryUuid, uuid: target.uuid }, carryProps);
+		created = await place({ libraryUuid: target.libraryUuid, uuid: target.uuid }, carryProps, id => { attemptedReplacementId = id; }, error => { restoreError = error; });
+		checkActive();
 	}
 	catch (err) { placeError = err; }
+	if (stopped()) return failedAfterWrite('replacement-placement', placeError, restoreError);
 	if (!created) {
-		// Roll back: re-create the ORIGINAL device with its full state.
-		let restored = false;
-		try { restored = Boolean(await place(oldDevice, rollbackProps)); }
-		catch { /* fall through to the structured error */ }
-		const rollbackNote = restored
-			? 'rolled back — the original component was re-created (with a NEW primitiveId; verify wires)'
-			: 'ROLLBACK FAILED — the original component is GONE; re-place it manually';
-		if (placeError) throw edaError(placeError, `Failed to place the replacement device (${rollbackNote}).`);
-		throw new ActionError(
-			ErrorCodes.EDA_CALL_FAILED,
-			`Placing the replacement device returned no primitive (${rollbackNote}).`,
-		);
+		// An SDK return proves only an attempted recovery. Confirm publication,
+		// identity, original properties/geometry and device before calling it restored.
+		let rollbackId: string | undefined, rollbackError: unknown, rollbackRestoreError: unknown, readbackError: unknown;
+		let rollbackRead: Awaited<ReturnType<typeof readReplacementNativeIdentity>> | undefined;
+		let rollbackStatus: 'verified' | 'failed' | 'unknown' = 'unknown';
+		const differences: string[] = [];
+		try { await place(oldDevice, rollbackProps, id => { rollbackId = id; }, error => { rollbackRestoreError = error; }); }
+		catch (error) { rollbackError = error; }
+		if (rollbackId) {
+			try {
+				rollbackRead = await readReplacementNativeIdentity(rollbackId, identity.proof.target, primitiveId);
+				differences.push(...rebindInstanceDifferences(snapshot, rollbackRead.snapshot));
+				if (exactJSON(snapshot.name) !== exactJSON(rollbackRead.snapshot.name)) differences.push('name');
+				const device = await resolvePlacedDeviceIdentity(rollbackRead.snapshot);
+				if (!sameDeviceRef(device, oldDevice)) differences.push('device');
+				rollbackStatus = stopped() ? 'unknown' : differences.length ? 'failed' : rollbackError || rollbackRestoreError ? 'unknown' : 'verified';
+			} catch (error) { readbackError = error; }
+		}
+		return { result: { ok: false, partial: true, verified: false, phase: 'replacement-create', executionState: rollbackStatus === 'unknown' ? 'unknown' : 'partial',
+			deletion,
+			previousPrimitiveId: primitiveId, attemptedReplacementId: attemptedReplacementId ?? null,
+			identityEvidence: { before: identity.proof, manufacturing: manufacturingIdentity },
+			cancelled: execution?.signal.aborted === true, paused: execution?.isPaused?.() === true,
+			error: errorFacts(placeError, 'Placing the replacement device returned no primitive.'),
+			rollback: { attempted: true, primitiveId: rollbackId ?? null, status: rollbackStatus, verified: rollbackStatus === 'verified',
+				differences, component: rollbackRead?.snapshot ?? null, identityEvidence: rollbackRead?.proof ?? null,
+				...(rollbackError ? { attemptError: errorFacts(rollbackError) } : {}),
+				...(rollbackRestoreError ? { restoreError: errorFacts(rollbackRestoreError) } : {}),
+				...(readbackError ? { readbackError: errorFacts(readbackError) } : {}) },
+			reason: `Replacement creation failed; rollback ${rollbackStatus}. Inspect actual instance IDs and wires; never replay the replacement.`,
+		} };
 	}
 
 	const newId = created.getState_PrimitiveId();
+	let finalIdentity: Awaited<ReturnType<typeof readReplacementNativeIdentity>> | undefined;
+	let identityError: string | undefined;
+	try {
+		finalIdentity = await readReplacementNativeIdentity(newId, identity.proof.target, primitiveId);
+		if (finalIdentity.proof.rawUniqueId !== identity.proof.rawUniqueId || finalIdentity.proof.designator !== identity.proof.designator) throw new Error('Fresh replacement identity differs from the proven source link/designator.');
+	} catch (error) { identityError = describeThrown(error); }
 	const newPins = await readPinSnapshots(newId);
 	const pinDiff = oldPins && newPins
 		? (() => {
@@ -7772,7 +7916,15 @@ const schematicComponentReplace: Handler = async (payload) => {
 			previousDevice: { uuid: oldDevice.uuid, libraryUuid: oldDevice.libraryUuid, resolvedVia: oldDevice.via, ...(oldName ? { name: oldName } : {}) },
 			device: { uuid: target.uuid, libraryUuid: target.libraryUuid, ...(target.name ? { name: target.name } : {}) },
 			pinDiff,
-			component: serializeComponent(created),
+			deletion,
+			component: finalIdentity?.snapshot ?? serializeComponent(created),
+			componentObservation: finalIdentity ? 'fresh-native-readback' : 'last-write-return-unverified',
+			identityVerified: !identityError,
+			identityEvidence: { before: identity.proof, manufacturing: manufacturingIdentity, beforeDelete: beforeDelete.proof,
+				after: finalIdentity?.proof ?? null, ...(identityError ? { error: identityError } : {}) },
+			...(restoreError ? { restoreError: errorFacts(restoreError) } : {}),
+			...(identityError || restoreError || stopped() ? { partial: true, verified: false, cancelled: execution?.signal.aborted === true, paused: execution?.isPaused?.() === true,
+				reason: 'Replacement has an unverified identity, native restore error, or cancellation after a write; inspect actual facts, never replay.' } : {}),
 		},
 		warnings,
 	};
