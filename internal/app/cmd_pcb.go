@@ -535,6 +535,7 @@ func newPcbCmd(cfg *appConfig, stdout, stderr io.Writer) *cobra.Command {
 	pcb.AddCommand(newPcbNetPathCmd(cfg, &window, stdout, stderr))
 	route := newPcbRouteCmd(stdout, stderr)
 	route.AddCommand(newPcbRouteApplyCmd(cfg, &window, stdout, stderr))
+	route.AddCommand(newPcbRouteReplaceCmd(cfg, &window, stdout, stderr))
 	pcb.AddCommand(route)
 	pcb.AddCommand(newPcbLayoutCmd(stdout, stderr))
 

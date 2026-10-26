@@ -17,7 +17,7 @@ let result;
 try {
   if (input.operation === 'compile_routes') {
     result = await compileRoutes(input);
-  } else if (['prepare', 'prepare_correction', 'summary'].includes(input.operation)) {
+  } else if (['prepare', 'prepare_correction', 'prepare_rewire', 'summary'].includes(input.operation)) {
     result = await planTool(input, new Map());
   } else {
     const catalog = await runEasyeda(['actions']);

@@ -2640,6 +2640,22 @@ test('prim-delete: a fully successful delete carries no partial flag', async () 
 	}
 });
 
+test('prim-delete: required isolated wire refuses missing targets and verifies removal before continuation', async () => {
+	try {
+		(globalThis as any).eda = edaWithUndeletableText([], []);
+		await assert.rejects(runAction('schematic.primitives.delete', {primitiveIds:['w1'],requireDeleted:true}), /Required isolated wire/);
+		const stuck = edaWithUndeletableText([], ['w1']);
+		stuck.sch_PrimitiveWire.delete = async () => false;
+		(globalThis as any).eda = stuck;
+		const failed: any = await runAction('schematic.primitives.delete', {primitiveIds:['w1'],requireDeleted:true});
+		assert.equal(failed.result.partial,true);assert.equal(failed.result.verified,false);
+		(globalThis as any).eda = edaWithUndeletableText([], ['w1']);
+		const success: any = await runAction('schematic.primitives.delete', {primitiveIds:['w1'],requireDeleted:true});
+		assert.equal(success.result.verified,true);assert.equal(success.result.partial,false);
+		assert.deepEqual(success.result.deletedIds.wires,['w1']);
+	} finally {delete (globalThis as any).eda;}
+});
+
 for (const invalid of ['throw', 'undefined', 'null', 'object', 'invalid-id', 'duplicate-id']) {
 	test(`prim-delete: ${invalid} readback is unknown, never deleted or survived`, async t => {
 		const fx = edaWithUndeletableText([], []);

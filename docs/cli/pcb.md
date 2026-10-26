@@ -55,12 +55,22 @@
 | 短线启发式 | `pcb route-short` | 每网 MST、规则感知线宽(按网络角色给宽)、障碍感知 L 朝向、默认跳电源/地(该铺铜) |
 | 离线局部寻路 | `pcb route solve/check --board board.json --from request.json --out report.json` | 公共 Go 包 `pkg/pcbrouting`；TOP/BOTTOM 单层零过孔、直线/45°有界寻路。默认同时输出同名 SVG，显示整板障碍、搜索范围、路径线宽/净距和失败原因；`check` 另传 `--plan plan.json`，按独立需求重验；不连接编辑器、不是整板自动布线 |
 | 候选落铜 | `pcb route apply --board board.json --from request.json --plan report.json --window ID --project UUID --doc UUID --out new-receipt.json` | 单网、TOP/BOTTOM 单层、零新增过孔；工程/文档内核锁覆盖完整执行，进程退出自动释放；快照每次读取均绑定目标，两次读数不一致即停止。禁止切分或替换旧铜，逐段回读真实覆盖并拒绝新增重复铜，partial/unknown 不重试。原生 DRC 与实际落铜分别报告；不显式保存，持久性仍未验证。`--dry-run` 只读检查 |
+| 指定旧线局部替换 | `pcb route replace --board board.json --from request.json --ids ID1,ID2 --project UUID --doc UUID --out preview.json --dry-run`，复核后 `--plan preview.json --window ID --out receipt.json` | 离线预览给出待删原始铜线、替代路径和 SVG；执行前绑定目标和 fresh 几何，只删选中的独立单网、TOP/BOTTOM 单层焊盘到焊盘线链，再逐段加铜、回读。分支、邻接铜、过孔、同网铺铜、锁定或封装内线拒绝；partial/unknown 停止且不自动恢复或重放。不显式保存，原生 DRC 单独报告 |
 | 布局/多网反馈闭环 | `pcb layout solve --board board.json --from request.json --out report.json` | `pkg/pcbsolve` 在每个完整布局投影上共同求解所有需求；先有界回溯路径/排网次序，实际阻挡再驱动完整组平移/声明旋转，总预算耗尽为 incomplete。`check` 从 move 重建候选；`render --from request.json` 核对板/请求来源并显示相同机械禁放区，无 `--from` 的旧调用仍兼容 |
 | 关键网先行 | `pcb route-critical` | P7.0 一条命令:电源按层数走 planes/pour → 差分对双源识别成对布线+skew 实测 → 自动 `track-lock` |
 | 逐焊盘铜路径核查 | `pcb net-path --from REF.PAD [--through REF.PAD] --to REF.PAD [--layer 1]` | 只读按支持的原始 pad shape + track/arc/via 构图；`--layer` 在受限图求路并排除物理过孔，回报 requestedLayer/连续路径/层/线宽/过孔数；未知焊盘几何、缺失 arc 回读或 ordered proof 的重叠铜返回 unknown/error，同网名不等于连通，铺铜/PLANE 明确排除 |
 | 外部自动布线 | `pcb export-dsn` / `import-autoroute` / `pcb autoroute` | Specctra DSN 往返(带禁布区注入),Freerouting 兜底;稠密板默认交编辑器原生自动布线 |
 | 拆线 | `pcb rip-up` | 按网/按范围拆 |
 | 锁定 | `pcb track-lock` | 手布关键线锁死,防被自动布线/pour-rebuild 冲掉 |
+
+局部换线沿用 `route solve` 的 `request.json`（工程师指定网络、层、两端焊盘、线宽和搜索预算，单位 mil）。从 `pcb dump --include-copper` 的 `board.json` 取需要删除的精确 track ID：
+
+```text
+easyeda pcb route replace --board board.json --from request.json --ids OLD_A,OLD_B --project PROJECT_UUID --doc PCB_UUID --out preview.json --dry-run
+easyeda pcb route replace --board board.json --from request.json --plan preview.json --project PROJECT_UUID --doc PCB_UUID --window WINDOW --out receipt.json
+```
+
+先审阅 `preview.json` 的 `remove` 原始记录和 `route.candidate`，以及同名 SVG。执行回执的 `deletedIds` / `remainingDeleteIds` 与 `addition.steps` 分开记录；删除或加铜结果未知时，应重新读取实际板况后由工程师决定下一次局部修改，不能直接重放。互斥锁只协调同机同临时目录、采用相同协议的 route 命令；编辑器或其他命令仍可能并发修改。保存及重开核验由工程师在目标工程执行。
 
 二层请求可在 `layout.groups[]` 中添加 `translationSearch: {"step":10,"maxDistance":80}`（mil）；
 这会按实际冲突动态搜索让位位置，旧 `offsets` 继续兼容。自动移动组的全部外部网络必须由

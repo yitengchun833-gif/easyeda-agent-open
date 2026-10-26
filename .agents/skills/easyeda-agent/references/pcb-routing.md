@@ -52,6 +52,16 @@ RECT/圆角 RECT/OVAL/圆焊盘、直线、实心多边形铜区、禁线区和�
 有限搜索失败与预算耗尽均输出 incomplete 和非零退出码；报告不包含可直接执行的写入队列。
 应用候选后仍须 typed 写入、save → reload → fresh dump → 原生 DRC；整板布线遵守布局确认约定。
 
+工程师要求仅改一段已经画错的线时，可用同包 CLI 的 `pcb route replace`：
+先以 `--board`（完整铜快照）、`--from`（单网单层两焊盘请求）、明确的 `--ids`
+和 `--project/--doc` 运行 `--dry-run --out preview.json`，查看 `remove`、
+`route.candidate` 与 SVG；确认后以同一输入、`--plan preview.json --window WINDOW`
+和新的 `--out receipt.json` 执行。命令只接受独立焊盘到焊盘 track 链，
+删除后 fresh 回读与预期完全一致才复用 route apply 加铜；分支、触碰未选铜/过孔、
+跨层、同网铺铜与封装内线均拒绝。回执分别记录已删 ID 和新铜逐段结果；
+partial/unknown 后读取真实板况再制定修改，不自动重试或恢复。原生 DRC 与几何回读分开，
+不要求 DRC 全零才绘图；不自动保存，保存重开仍需工程验收。
+
 ### 联合逃线与模块联动（offline-verified）
 
 布局候选必须同时预留所选核心四侧逐脚出线、供电和 GND 空间；不能用固定器件间隙、

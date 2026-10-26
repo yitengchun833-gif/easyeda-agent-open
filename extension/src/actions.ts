@@ -3046,6 +3046,7 @@ const schematicPageClear: Handler = async (payload) => {
  * the current selection is deleted (select first via `schematic.select`). No undo.
  */
 const schematicPrimitivesDelete: Handler = async (payload) => {
+	if (payload.requireDeleted !== undefined && payload.requireDeleted !== true) throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'requireDeleted must be true when supplied.');
 	const raw = payload.primitiveIds;
 	let requested: Array<string> | null;
 	if (raw === undefined) {
@@ -3101,6 +3102,11 @@ const schematicPrimitivesDelete: Handler = async (payload) => {
 		const key = index.get(id);
 		if (!key) { (enumerationWarnings.length ? unlocated : notFound).push(id); continue; }
 		(idsByKey[key] ??= []).push(id);
+	}
+	// A prepared pin rewire must not continue to creation after a missing target.
+	// Keep this opt-in contract narrow: one explicit existing wire, never selection.
+	if (payload.requireDeleted === true && (requested === null || targets.length !== 1 || index.get(targets[0]) !== 'wires')) {
+		throw new ActionError(ErrorCodes.PRECONDITION_REFUSED, 'Required isolated wire is unavailable; no primitives deleted.');
 	}
 
 	const warnings: Array<string> = [];
@@ -3163,6 +3169,10 @@ const schematicPrimitivesDelete: Handler = async (payload) => {
 			total,
 			requested: targets.length,
 			deletedIds,
+			...(payload.requireDeleted === true ? {
+				verified: total === targets.length && survivedTotal === 0 && Object.keys(verification.unverified).length === 0 && warnings.length === 0,
+				partial: total !== targets.length || survivedTotal > 0 || Object.keys(verification.unverified).length > 0 || warnings.length > 0,
+			} : {}),
 			...(survivedTotal ? { partial: true, survived, survivedTotal } : {}),
 			...(Object.keys(verification.unverified).length ? { partial: true, verified: false, unverified: verification.unverified } : {}),
 			...(notFound.length ? { notFound } : {}),
@@ -13931,6 +13941,7 @@ const pcbRouteDelete: Handler = async (payload) => {
 	else if (Array.isArray(raw) && raw.every(id => typeof id === 'string') && raw.length > 0) ids = raw as Array<string>;
 	else throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Missing required field "primitiveIds" (string or non-empty string[]).');
 	const kindGuard = optionalString(payload, 'kind'); // 'via' | 'track' — refuse ids of another kind
+	const strictExpected = Object.prototype.hasOwnProperty.call(payload, 'expectedTracks');
 
 	let lines, arcs, vias;
 	try {
@@ -13971,9 +13982,11 @@ const pcbRouteDelete: Handler = async (payload) => {
 	// the next save/reload re-materializes it from the footprint definition.
 	// So refuse UPFRONT — post-delete readback provably cannot catch this.
 	let componentIds: Array<string> = [];
+	let componentReadAvailable = false;
 	try {
 		const comps = await eda.pcb_PrimitiveComponent.getAll();
 		componentIds = (comps ?? []).map(c => c.getState_PrimitiveId()).filter(Boolean);
+		componentReadAvailable = comps != null;
 	}
 	catch { /* best-effort: without component ids the readback below still reports honestly */ }
 	const embeddedParent = (id: string): string | undefined =>
@@ -14000,6 +14013,34 @@ const pcbRouteDelete: Handler = async (payload) => {
 	}
 	if (wrongKind.length) {
 		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, `kind=${kindGuard} refused mismatched ids: ${wrongKind.join('; ')}. Drop the kind guard or fix the id list.`);
+	}
+	if (strictExpected) {
+		const expectedRows = payload.expectedTracks;
+		if (kindGuard !== 'track' || !Array.isArray(expectedRows) || expectedRows.length !== ids.length || !componentReadAvailable) {
+			throw new ActionError(ErrorCodes.EDA_CALL_FAILED, 'Strict track deletion requires kind=track, one expectedTracks record per id, and a complete component inventory. No tracks deleted.');
+		}
+		const expectedById = new Map<string, Record<string, unknown>>();
+		const numericFields = ['layer', 'startX', 'startY', 'endX', 'endY', 'lineWidth'] as const;
+		for (const rawExpected of expectedRows) {
+			if (!rawExpected || typeof rawExpected !== 'object' || Array.isArray(rawExpected)) {
+				throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Invalid expectedTracks record. No tracks deleted.');
+			}
+			const expected = rawExpected as Record<string, unknown>;
+			if (typeof expected.primitiveId !== 'string' || !expected.primitiveId || typeof expected.net !== 'string' || !expected.net || expected.locked !== false || numericFields.some(field => typeof expected[field] !== 'number' || !Number.isFinite(expected[field])) || Number(expected.lineWidth) <= 0 || expectedById.has(expected.primitiveId)) {
+				throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'Invalid or repeated expectedTracks identity/geometry. No tracks deleted.');
+			}
+			expectedById.set(expected.primitiveId, expected);
+		}
+		if (expectedById.size !== ids.length || ids.some(id => !expectedById.has(id) || !byId.has(id))) {
+			throw new ActionError(ErrorCodes.EDA_CALL_FAILED, 'Selected track IDs differ from expectedTracks or the live board. No tracks deleted.');
+		}
+		for (const id of ids) {
+			const entry = byId.get(id)!;
+			const expected = expectedById.get(id)!;
+			if (entry.kind !== 'track' || entry.locked !== false || embeddedParent(id) || entry.before.net !== expected.net || numericFields.some(field => entry.before[field] !== expected[field])) {
+				throw new ActionError(ErrorCodes.EDA_CALL_FAILED, `Selected track ${id} changed, is locked, or belongs to a footprint. No tracks deleted.`);
+			}
+		}
 	}
 	if (!removed.length) {
 		if (notDeletable.length) {

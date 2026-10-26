@@ -288,6 +288,19 @@ func executePCBRouteApply(ctx context.Context, in pcbRouteRequest, before *board
 			receipt.Error = "receipt persistence failed before dispatch: " + err.Error()
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			receipt.Steps[len(receipt.Steps)-1].Status = "not_executed"
+			receipt.Remaining = append([]int{i}, receipt.Remaining...)
+			receipt.Status, receipt.Partial = "not_executed", false
+			if receipt.Applied {
+				receipt.Status, receipt.Partial = "partial", true
+			}
+			receipt.Error = err.Error()
+			if saveErr := persist(); saveErr != nil {
+				return fmt.Errorf("%w; receipt: %v", err, saveErr)
+			}
+			return err
+		}
 		p, q := c.Points[i], c.Points[i+1]
 		res, err := call("pcb.line.create", map[string]any{"net": c.Net, "layer": c.Layer, "lineWidth": c.WidthMil, "startX": p[0], "startY": p[1], "endX": q[0], "endY": q[1]})
 		current := &receipt.Steps[len(receipt.Steps)-1]
