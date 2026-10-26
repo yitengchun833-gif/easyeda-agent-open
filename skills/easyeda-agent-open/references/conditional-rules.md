@@ -1,6 +1,14 @@
 # 按任务启用的条件规则
 
-只读取当前任务涉及的段落；通用执行规则见 [工作规则](working-rules.md)。P01 单件 PCB 补齐快捷路径仍待定。
+只读取当前任务涉及的段落；通用执行规则见 [工作规则](working-rules.md)。PCB来源绑定见下段。
+
+## 原理图到PCB的来源绑定（Connector kb.34起）
+
+首次建立PCB，先核对Board绑定的源原理图UUID。当前许可下官方原生导入可用时，核对实际导入器件/来源后继续；不能只凭importChanges返回true。当前import_changes默认自动确认仍含私有DOM点击，原生接口限定任务不得调用该确认路径；不为此强制重绑旧板。
+
+首次逐件建立或向既有板增量补件，复用`pcb.add_component`，传真实源制造网表的位号、UniqueID、Channel ID、逐脚网络与`schematicUuid`。Channel ID从同一源网表原样复制（可含层级），不由位号/UID推算。typed输入新增`channelId`与`schematicUuid`，成对使用且匹配当前Board；新CLI可用`pcb add-component --channel-id '<真实源值>' --schematic <源原理图UUID>`，旧rc.2 CLI可用原有`call pcb.add_component --payload ...`直传这两个字段，无需更换后台。现场source→PCB的切页按任务边界一次完成，不为每颗件重复导入或全板DRC。
+
+读取回执的`sourceBinding.verified`、`bindingVerified`和`netMapping.verified`，缺字段表示旧Connector未支持；不能把原字段verified当完整来源同步。新Connector合并保留原属性，只补来源Channel ID并独立回读；返回partial保留新primitiveId，先对账，不能盲重建。旧无来源字段的调用继续兼容，明确sourceBinding.requested=false/verified=false，不替调用者补造来源。既有器件修复走定向属性修改，保留真实原属性图与身份，避免删除重放。
 
 ## 仅在 PCB 布局任务启用（P02–P11、P13）
 
@@ -27,7 +35,7 @@ PCB布线收尾须用当前快照重新检查规则绑定、原生DRC及转角�
 - **执行文件准备阶段：**型号、厂商料号、LCSC 号、器件 UUID、封装与逐脚定义分别核对；指定器件按用户设计，重新选型依据数据手册；多符号／器件／封装变体有歧义时不默认选第一个。不为补属性、丝印或禁区重绑正确器件／封装／3D 模型。落图时只核实际库身份与已确认选择一致。（L01–L04）
 - 用户明确要求贴装或成本选型时，核 Basic／Extended、商城可买、JLC 可贴装、价格、时点库存与贴装方式；不同库存池不能互证，不自动换料，只查任务涉及的料。（L05、C08）
 - 连接重建、状态不明或超时后，用实际轻量往返确认编辑器可回答；进程存在不等于请求通路可用，正常连续调用不逐步 ping。（C03）
-- **批量**原理图→PCB 同步诊断时，可只读比较实例 ID 缺件、PCB 独有件及逐焊盘网差异；缺失／不匹配 Unique ID 单列。单件补齐的快捷同步路径 P01 仍待定，本条不代替决策。（C05）
+- **批量**原理图→PCB 同步诊断时，可只读比较实例 ID 缺件、PCB 独有件及逐焊盘网差异；缺失／不匹配 Unique ID 单列。单件补齐复用上文来源绑定路径，批量诊断不替代实际落图回读。（C05）
 - 多步任务中断时沿用现有 PWF／执行状态保存已完成动作与剩余范围，失败／取消证据不当作完成；单件小改不建 checkpoint 或第二状态机。（C07）
 - 明确要求离线生成或编辑 `.eprj3` 时按对应文档类型 schema 与真实记录核对；格式检查不能代替 EDA 打开后的图面、电气验证，不强制安装额外工具。（C09）
 

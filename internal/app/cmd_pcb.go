@@ -881,31 +881,52 @@ forces the library values. Parts without a C-number are skipped and reported.`,
 	// (import-changes no-ops for API-added parts, #20): place footprint + link +
 	// assign pad nets + ratline.
 	{
-		var libraryUUID, deviceUUID, designator, uniqueID, netsJSON string
+		var libraryUUID, deviceUUID, designator, uniqueID, netsJSON, channelID, schematicUUID string
 		var x, y, rotation float64
 		var layer int
 		c := &cobra.Command{
 			Use:   "add-component",
-			Short: "Place + connect ONE footprint on the PCB (the working alternative to import-changes)",
-			Long: `Add a single part to an EXISTING PCB and wire it — the working path, since
-'import-changes' is a no-op for parts added to the schematic via the API (#20).
+			Short: "Place + connect one footprint, optionally verifying its source Channel binding",
+			Long: `Add a single footprint to the active PCB and assign its pad nets.
+For initial PCB population, first establish the Board's schematic/PCB binding.
+Use native import-changes when it works for the source; direct placement is an
+alternative for API-added parts that native import does not populate (#20).
 
 It places the footprint (--library + --uuid, a device), links it to its schematic
 twin (--designator + --unique-id), assigns each pad's net from --nets
 (a JSON padNumber→net map), and recomputes ratlines.
 
-Get --nets and --unique-id from 'sch read' (the netlist is only readable while the
-schematic is active, so you pass them). Workflow:
+Get --nets and --unique-id from the real source manufacturing netlist/readback.
+To verify source Channel binding, also pass --channel-id and --schematic together:
+--channel-id is the exact source manufacturing netlist's 'Channel ID' value;
+--schematic is the Board's source schematic root UUID, not a page UUID.
+Both flags require --designator and --unique-id; all four must be non-empty
+and have no leading or trailing whitespace.
+Never derive a Channel ID from the designator or Unique ID. With neither flag,
+legacy placement remains available but Channel binding is not verified. Workflow:
   1. place + wire the part in the schematic (sch place / connect)
-  2. easyeda sch read   → note the part's pin nets + uniqueId
+  2. read its manufacturing netlist, Unique ID, pin nets and Channel ID
   3. easyeda pcb add-component --library … --uuid … --x … --y … \
-       --designator U2 --unique-id gge9 --nets '{"5":"3V3","3":"GND"}'`,
+       --designator U2 --unique-id <source-uid> --nets '{"5":"3V3","3":"GND"}' \
+       --channel-id '<exact source Channel ID>' --schematic <schematic-root-uuid>`,
 			Args: cobra.NoArgs,
 			Example: `  easyeda pcb add-component --library <lib> --uuid <dev> --x 3500 --y -1900 \
-      --designator U2 --unique-id gge9 --nets '{"5":"3V3","3":"GND"}'`,
+      --designator U2 --unique-id <source-uid> --nets '{"5":"3V3","3":"GND"}' \
+      --channel-id '<exact source Channel ID>' --schematic <schematic-root-uuid>`,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if libraryUUID == "" || deviceUUID == "" {
 					return fmt.Errorf("--library and --uuid are required (a device {libraryUuid, uuid})")
+				}
+				if cmd.Flags().Changed("channel-id") != cmd.Flags().Changed("schematic") {
+					return fmt.Errorf("--channel-id and --schematic must be supplied together using the real source manufacturing netlist and Board binding")
+				}
+				if cmd.Flags().Changed("channel-id") {
+					if channelID == "" || schematicUUID == "" || designator == "" || uniqueID == "" {
+						return fmt.Errorf("source Channel binding requires non-empty --channel-id, --schematic, --designator and --unique-id")
+					}
+					if channelID != strings.TrimSpace(channelID) || schematicUUID != strings.TrimSpace(schematicUUID) || designator != strings.TrimSpace(designator) || uniqueID != strings.TrimSpace(uniqueID) {
+						return fmt.Errorf("source Channel binding values must have no leading or trailing whitespace")
+					}
 				}
 				payload := map[string]any{"libraryUuid": libraryUUID, "uuid": deviceUUID, "x": x, "y": y}
 				if cmd.Flags().Changed("layer") {
@@ -919,6 +940,10 @@ schematic is active, so you pass them). Workflow:
 				}
 				if uniqueID != "" {
 					payload["uniqueId"] = uniqueID
+				}
+				if cmd.Flags().Changed("channel-id") {
+					payload["channelId"] = channelID
+					payload["schematicUuid"] = schematicUUID
 				}
 				if netsJSON != "" {
 					var nets map[string]any
@@ -938,6 +963,8 @@ schematic is active, so you pass them). Workflow:
 		c.Flags().Float64Var(&rotation, "rotation", 0, "rotation (deg)")
 		c.Flags().StringVar(&designator, "designator", "", "designator to set (match the schematic twin, e.g. U2)")
 		c.Flags().StringVar(&uniqueID, "unique-id", "", "schematic twin's uniqueId (sch↔PCB link key; from 'sch read')")
+		c.Flags().StringVar(&channelID, "channel-id", "", "exact non-empty source manufacturing netlist Channel ID (requires --schematic, --designator and --unique-id; never derive from the designator)")
+		c.Flags().StringVar(&schematicUUID, "schematic", "", "Board's source schematic root UUID, not a page UUID (requires --channel-id)")
 		c.Flags().StringVar(&netsJSON, "nets", "", `JSON map padNumber→net, e.g. '{"5":"3V3","3":"GND"}' (from 'sch read')`)
 		pcb.AddCommand(c)
 	}

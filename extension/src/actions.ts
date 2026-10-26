@@ -10907,7 +10907,8 @@ const pcbComponentAttrsBackfill: Handler = async (payload) => {
 // broken eda.pcb_Document.importChanges (which no-ops for API-added parts even
 // when they're in the netlist with a designator + footprint — see #20). Steps:
 //   1. create the footprint on the PCB (pcb_PrimitiveComponent.create)
-//   2. link it to its schematic twin: same uniqueId + designator (modify)
+//   2. link to the schematic twin: uniqueId + designator + source Channel ID
+//      (the caller copies the real Channel ID from its source manufacture netlist)
 //   3. assign each pad's net from the caller-supplied `nets` map (padNumber→net)
 //      via pcb_PrimitivePad.modify — this is what actually wires the part, since
 //      net→pad assignment is otherwise part of the broken import flow
@@ -10928,9 +10929,29 @@ const pcbAddComponent: Handler = async (payload) => {
 	const rotation = optionalNumber(payload, 'rotation');
 	const designator = optionalString(payload, 'designator');
 	const uniqueId = optionalString(payload, 'uniqueId');
+	const channelId = optionalString(payload, 'channelId');
+	const schematicUuid = optionalString(payload, 'schematicUuid');
+	const sourceBindingRequested = Object.prototype.hasOwnProperty.call(payload, 'channelId') || Object.prototype.hasOwnProperty.call(payload, 'schematicUuid');
+	if (sourceBindingRequested && [channelId, schematicUuid, designator, uniqueId].some(v => !v || v.trim() !== v)) {
+		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD,
+			'channelId + schematicUuid require nonempty source-manufacture-netlist values and the matching designator + uniqueId.');
+	}
+	const sourceBinding = {
+		requested: sourceBindingRequested, schematicUuid: schematicUuid ?? null,
+		expectedChannelId: channelId ?? null, actualChannelId: null as string | null, verified: false,
+	};
 	const nets = pcbPadNetAssignments(payload.nets);
 	if (![x, y, rotation ?? 0].every(Number.isFinite)) {
 		throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD, 'PCB placement coordinates and rotation must be finite.');
+	}
+
+	// Reject a mismatched source before creating anything; never rebind a Board here.
+	if (sourceBindingRequested) {
+		const board = await eda.dmt_Board.getCurrentBoardInfo();
+		if (board?.schematic?.uuid !== schematicUuid) {
+			throw new ActionError(ErrorCodes.MISSING_PAYLOAD_FIELD,
+				`Active PCB Board is not bound to source schematic ${schematicUuid}; no component was created.`);
+		}
 	}
 
 	// 1. Create the footprint on the PCB.
@@ -10950,9 +10971,14 @@ const pcbAddComponent: Handler = async (payload) => {
 	const prop: Record<string, unknown> = {};
 	if (designator) prop.designator = designator;
 	if (uniqueId) prop.uniqueId = uniqueId;
+	if (sourceBindingRequested) {
+		// modify replaces the property map. Preserve the footprint's native properties.
+		prop.otherProperty = { ...cleanOtherProperty(comp.getState_OtherProperty()), 'Channel ID': channelId };
+	}
+	let bindingWriteError: string | undefined;
 	if (Object.keys(prop).length) {
 		try { await eda.pcb_PrimitiveComponent.modify(id, prop); }
-		catch { /* link is best-effort — connectivity comes from the pad nets below */ }
+		catch (error) { bindingWriteError = describeThrown(error); }
 	}
 
 	// 3. Assign each pad's net from the supplied map.
@@ -11072,10 +11098,17 @@ const pcbAddComponent: Handler = async (payload) => {
 		if (fresh) {
 			actualDesignator = fresh.getState_Designator() ?? null;
 			actualUniqueId = fresh.getState_UniqueId() ?? null;
-			bindingVerified = (!designator || actualDesignator === designator) && (!uniqueId || actualUniqueId === uniqueId);
+			const actualChannelId = fresh.getState_OtherProperty()?.['Channel ID'];
+			sourceBinding.actualChannelId = typeof actualChannelId === 'string' ? actualChannelId : null;
+			sourceBinding.verified = sourceBindingRequested && sourceBinding.actualChannelId === channelId
+				&& actualDesignator === designator && actualUniqueId === uniqueId;
+			bindingVerified = (!designator || actualDesignator === designator) && (!uniqueId || actualUniqueId === uniqueId)
+				&& (!sourceBindingRequested || sourceBinding.verified);
 		}
 	}
 	catch { /* preserve the placed ID for explicit recovery */ }
+	if (bindingWriteError) warnings.push(`Component binding write failed: ${bindingWriteError}`);
+	if (!sourceBindingRequested) warnings.push('Source Channel ID was not supplied; legacy identity/pad verification does not verify schematic synchronization.');
 	if (!bindingVerified) warnings.push('Placed component identity/link could not be verified; inspect this primitive ID before retrying.');
 	if (!netMapping.verified) warnings.push('Pad net mapping is incomplete or unverified; inspect the returned primitive ID and netMapping before any further placement.');
 
@@ -11085,6 +11118,8 @@ const pcbAddComponent: Handler = async (payload) => {
 			designator: actualDesignator,
 			uniqueId: actualUniqueId,
 			bindingVerified,
+			sourceBinding,
+			...(bindingWriteError ? { bindingWriteError } : {}),
 			verified: bindingVerified && netMapping.verified && padWriteFailures.length === 0,
 			...(!bindingVerified || !netMapping.verified || padWriteFailures.length ? { partial: true } : {}),
 			padCount: (pads ?? []).length,
