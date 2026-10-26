@@ -9,7 +9,9 @@
 源码目录：`cmd/` 与 `internal/` 为 Go CLI/后台；`extension/` 为嘉立创扩展；`mcp/` 为 MCP 适配；`skills/` 为当前 Skill；`api-reference/` 为官方 API 参考。
 Windows 完整包附带 CLI、MCP 运行依赖、Connector、Skill 和源码；公开 Git 仓库不包含本地运行状态、私有工程或账号凭据。
 
-开发时按锁文件准备依赖，提交审查后的源码，再以 `go build -buildvcs=true -ldflags "-X github.com/zhoushoujianwork/easyeda-agent/internal/version.Version=v1.8.1-open.9.6" -o bin/easyeda.exe ./cmd/easyeda` 构建 CLI/后台；`easyeda-pcb-review.exe` 由同一 `cmd/easyeda` 和参数构建。Connector 在 `extension/` 执行 `npm run build`，按真实清单注入版本并打包。
+开发时按锁文件准备依赖并提交审查后的源码；核心版本取 `.codex-plugin/plugin.json` 的 `version`，再以 `go build -trimpath -buildvcs=true -ldflags "-X github.com/zhoushoujianwork/easyeda-agent/internal/version.Version=v<核心版本>" -o bin/easyeda.exe ./cmd/easyeda` 构建 CLI/后台（将占位符替换为清单中的完整版本）。`easyeda-pcb-review.exe` 由同一 `cmd/easyeda` 和参数构建。Connector 在 `extension/` 执行 `npm run build`，按真实清单注入版本并打包。
+
+Go 1.26 的 VCS 根发现可能忽略 linked worktree 的 `.git` 文件，见 [Go #58218](https://github.com/golang/go/issues/58218)。若 `go version -m` 缺少 `vcs.revision`，从同一已审阅提交的本地共享对象稀疏构建检出编译，原开发分支与安装目录不切换；构建检出须有真实 `.git` 目录且干净，产物的 `vcs.revision` 必须等于待打包提交、`vcs.modified=false`。不补写伪造字段或关闭包的来源检查。
 
 打包入口 `python scripts/pack-open.py --go <Go可执行文件>` 不安装、不启动服务。它要求干净 Git 提交、两份 Go 二进制的精确版本及 VCS/平台身份、MCP 与 Connector 锁文件一致、EEXT 清单/UUID/图标和编译 bundle 一致；输出带提交号的 ZIP，内含 `BUILD.json`、逐文件 `SHA256SUMS.json` 与源码，不在磁盘另留一份源码目录，也不会覆盖已有包。主版本相同不代表载荷相同，应一起核对完整提交和哈希。
 

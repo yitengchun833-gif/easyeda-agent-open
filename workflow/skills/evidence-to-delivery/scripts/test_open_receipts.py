@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Public workflow CLI coverage for imported Open stage receipts; no EDA calls."""
+import base64
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -27,6 +29,32 @@ class OpenDependencyTests(unittest.TestCase):
         result['results'][0]['result']['verified'] = False
         self.assertTrue(stage_invalidates_requirement(stage, 'pin_nets', report, target))
         self.assertTrue(stage_invalidates_requirement({'primitiveIds': ['remote'], 'routeFrom': 'measure', 'steps': []}, 'pin_nets', {}, target))
+
+    def test_incremental_prefix_binds_acceptance_scope_and_rejects_changed_hash(self):
+        from types import SimpleNamespace
+        from open_receipts import prefix_binding
+        from workflow import digest
+
+        def require(condition, message):
+            if not condition:
+                raise ValueError(message)
+
+        root = Path.cwd()
+        stage = {"id": "place", "check": "geometry", "steps": []}
+        semantic = {"components": [], "nets": [], "idMap": {"resistor": "r"}}
+        sources = [{"id": "SRC", "path": "source.json", "sha256": "a" * 64}]
+        plan = {"taskKind": "incremental_module", "acceptanceScope": "module", "semanticTarget": semantic,
+                "sources": sources, "stages": [stage], "executionReceipts": {"directory": "receipts"}}
+        packet = {"sources": sources, "binding": {"receiptDirectory": "receipts", "idMap": {"resistor": "r"},
+                  "semanticTargetSha256": digest({k: v for k, v in semantic.items() if k != "idMap"}),
+                  "sourcesSha256": digest(sources), "stageSha256": digest(stage),
+                  "acceptanceSha256": digest({"acceptanceScope": "module", "taskKind": "incremental_module"})}}
+        workflow = SimpleNamespace(require=require, digest=digest, resolve=lambda base, value: (base / value).resolve())
+        expected = prefix_binding(workflow, root, plan, stage, packet)
+        self.assertEqual(expected["acceptanceSha256"], packet["binding"]["acceptanceSha256"])
+        packet["binding"]["acceptanceSha256"] = digest({"acceptanceScope": "page", "taskKind": "incremental_module"})
+        with self.assertRaisesRegex(ValueError, "immutable binding changed"):
+            prefix_binding(workflow, root, plan, stage, packet)
 
 
 class OpenReceiptWorkflowTests(unittest.TestCase):
@@ -152,6 +180,198 @@ class OpenReceiptWorkflowTests(unittest.TestCase):
 
     def imported_check(self, record, check_id):
         return next(check for check in record["checks"] if check["id"] == check_id)
+
+    def native_delivery_fixture(self, scope="page", name="delivery"):
+        """The same file chain emitted by run, finish and verify_delivery; no EDA calls."""
+        from workflow import digest
+
+        requirements = [
+            {"id": "SRC", "sourceId": "SRC-OPEN", "when": "before_write", "method": "checker",
+             "check": "source_binding", "severity": "error", "componentKeys": [], "netNames": []},
+            {"id": "TARGET", "sourceId": "SRC-OPEN", "when": "delivery", "method": "checker",
+             "check": "schematic.target.check", "severity": "error", "componentKeys": [], "netNames": []},
+            {"id": "DRC", "sourceId": "SRC-OPEN", "when": "delivery", "method": "native",
+             "check": "drc", "severity": "error", "componentKeys": [], "netNames": []},
+        ]
+        plan_path, plan = self.open_plan(requirements=requirements, name=name + "-plan.json")
+        directory = self.root / (name + ".execution")
+        directory.mkdir()
+        plan.update(acceptanceScope=scope, confirmation={"status": "confirmed"},
+                    taskKind={"page": "new_module", "module": "incremental_module", "local": "local_edit"}[scope],
+                    executionReceipts={"directory": str(directory)})
+        plan["stages"].append({"id": "final", "check": "final", "steps": []})
+        self.write_json(plan_path.name, plan)
+
+        def native(result, request_id, second):
+            return {"structuredContent": {"ok": True, "id": request_id,
+                    "createdAt": "2026-10-08T00:00:%02dZ" % second,
+                    "context": dict(self.target, documentType="schematic"), "result": result}}
+
+        part = dict(self.part(), componentType="part", netlistAvailable=True, x=1, y=2, rotation=0, mirror=False)
+        inventory = {key: [] for key in ("components", "wires", "buses", "arcs", "circles", "rectangles",
+                                        "polygons", "texts", "attributes", "objects")}
+        inventory["components"] = [copy.deepcopy(part)]
+        snapshot = {"components": [part], "wires": [], "wiresAvailable": True, "pagePrimitives": inventory,
+                    "pagePrimitiveBounds": {}, "readScope": {"complete": True, "concurrentChange": False, "missingIds": []}}
+        target_check = native({"status": "pass", "verified": True, "partial": False}, "target-read", 9)
+        drc_check = native({"countsAvailable": True, "passed": True, "partial": False,
+                           "summary": {"fatal": 0, "error": 0, "unknown": 0, "warn": 0}}, "drc-read", 9)
+        first = self.geometry_packet(plan_path, plan)
+        first["binding"] = {
+            "semanticTargetSha256": digest({key: value for key, value in plan["semanticTarget"].items() if key != "idMap"}),
+            "sourcesSha256": digest(plan["sources"]), "stageSha256": digest(plan["stages"][0]),
+            "requirementsSha256": digest([rule for rule in requirements if rule["when"] == "before_write"]),
+            "acceptanceSha256": digest({"acceptanceScope": scope, "taskKind": plan["taskKind"]}),
+            "receiptDirectory": str(directory), "idMap": copy.deepcopy(plan["semanticTarget"]["idMap"]),
+        }
+        first["receipt"]["structuredContent"]["result"]["execution"]["structuredContent"].update(
+            ok=True, id="write", createdAt="2026-10-08T00:00:00Z", context=self.target)
+        first_path = self.write_json(str(directory.relative_to(self.root) / "stage-01.json"), first)
+        stage = {"id": "final", "check": "final", "completed": True}
+        final_report = {"target": self.target, "sha256": self.digest(plan_path), "stage": stage,
+                        "execution": None,
+                        "targetCheck": native(copy.deepcopy(target_check["structuredContent"]["result"]), "final-target", 2),
+                        "drcCheck": native(copy.deepcopy(drc_check["structuredContent"]["result"]), "final-drc", 2),
+                        "finalReadback": native(copy.deepcopy(snapshot), "final-read", 2),
+                        "predecessors": [{"file": str(first_path), "sha256": self.digest(first_path)}]}
+        final_packet = {"schemaVersion": "easyeda.execution/1", "dryRun": False, "state": "settled",
+                        "startedAt": "2026-10-08T00:00:01Z", "completedAt": "2026-10-08T00:00:03Z",
+                        "planFile": str(plan_path), "sha256": self.digest(plan_path), "revision": plan["revision"],
+                        "target": self.target, "sources": plan["sources"], "stage": stage,
+                        "receipt": self.envelope(final_report, self.target)}
+        final_packet["binding"] = dict(first["binding"], stageSha256=digest(plan["stages"][-1]),
+                                       requirementsSha256=digest(requirements))
+        final_path = self.write_json(str(directory.relative_to(self.root) / "stage-02.json"), final_packet)
+        image = directory / "review.png"
+        image.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jQ1kAAAAASUVORK5CYII="))
+        run = {"structuredContent": {"ok": True, "partial": False, "remainingStages": [],
+               "completedStages": [s["id"] for s in plan["stages"]], "planFile": str(plan_path),
+               "sha256": self.digest(plan_path), "target": self.target,
+               "review": {"imagePath": str(image), "imageSha256": self.digest(image), "saved": False,
+                          "visualReview": {"window": "fixture-window", "operation": "visual_review", "source": "ai",
+                                           "requestId": "write", "generation": 1, "screenshotRequestId": "image"},
+                          "finish": {"window": "fixture-window", "operation": "finish", "requestId": "write"}}}}
+        run_path = self.write_json(str(directory.relative_to(self.root) / "run.json"), run)
+        checker = {"ok": True, "result": {"status": "synced", "coverage": {"drawingCompared": True}}}
+        native_hash = hashlib.sha256(json.dumps(dict(snapshot, **self.target), separators=(",", ":")).encode()).hexdigest()
+        diff = {"status": "synced", "checker": checker, "inputSha256": [native_hash, native_hash]}
+        delivery = {"schemaVersion": "easyeda.delivery/1", "state": "settled", "planFile": str(plan_path),
+                    "sha256": self.digest(plan_path), "target": self.target, "runResultFile": str(run_path),
+                    "runResultSha256": self.digest(run_path), "imagePath": str(image), "imageSha256": self.digest(image),
+                    "startedAt": "2026-10-08T00:00:04Z", "completedAt": "2026-10-08T00:00:06Z",
+                    "receipt": {"ok": True, "partial": False, "saved": True, "acceptanceScope": scope,
+                                "planFile": str(plan_path), "target": self.target, "sha256": self.digest(plan_path),
+                                "visualReviewReceipt": {"structuredContent": {"ok": True}},
+                                "finishReceipt": native({"saved": True}, "save", 5),
+                                "preSaveReadback": native(copy.deepcopy(snapshot), "pre-save-read", 4),
+                                "preSaveDiff": copy.deepcopy(diff), "persistence": {"status": "unverified"},
+                                "wholePageComplete": False, "engineeringAccepted": False}}
+        delivery_path = self.write_json(str(directory.relative_to(self.root) / "delivery.json"), delivery)
+        verification = {"schemaVersion": "easyeda.delivery-verification/1", "derivedOnly": True, "readOnly": True,
+                        "ok": True, "target": self.target, "acceptanceScope": scope,
+                        "deliveryFile": str(delivery_path), "deliverySha256": self.digest(delivery_path),
+                        "verifiedAt": "2026-10-08T00:00:10Z", "persistence": {"status": "verified",
+                            "requestIds": {"save": "save", "close": "close", "open": "open", "readback": "reopen-read"},
+                            "generation": 1, "instance": "fixture-daemon"},
+                        "designDiff": copy.deepcopy(diff), "targetCheck": target_check, "drcCheck": drc_check,
+                        "postReopenRequirements": {"blocking": False, "items": []},
+                        "readback": native(copy.deepcopy(snapshot), "reopen-read", 9), "visualAccepted": True,
+                        "wholePageComplete": scope == "page", "moduleComplete": scope == "module",
+                        "localComplete": scope == "local", "engineeringAccepted": False,
+                        "stages": [{"file": str(p), "sha256": self.digest(p)} for p in (first_path, final_path)]}
+        verification_path = self.write_json(name + "-verification.json", verification)
+        item = self.schematic_item(plan_path, required=False)
+        item["required_checks"] = ["open_stage_receipt", "open_requirements", "open_target_check", "visual_review", "persistence"]
+        item_id = "SCH-" + name.upper()
+        self.add_item(item_id, item, change="C-" + name.upper())
+        operation = {"op": "result", "item": item_id, "revision": 1, "status": "verified",
+                     "note": "native saved/reopened evidence", "artifact": "fixture document", "saved": True,
+                     "checks_passed": True, "open_receipt": str(final_path), "open_persistence": str(verification_path)}
+        return operation, {"plan": plan_path, "source": Path(plan["sources"][0]["path"]), "stage": first_path,
+                           "final": final_path, "image": image, "run": run_path, "delivery": delivery_path,
+                           "verification": verification_path}
+
+    def test_native_delivery_verification_closes_page_module_and_local_workflow(self):
+        for scope in ("page", "module", "local"):
+            with self.subTest(scope=scope):
+                operation, files = self.native_delivery_fixture(scope, name=scope)
+                originals = {key: files[key].read_bytes() for key in ("stage", "final", "delivery")}
+                self.apply(operation)
+                record = self.state()["results"][-1]
+                self.assertEqual(record["status"], "verified")
+                for check in ("open_stage_receipt", "open_requirements", "open_target_check", "visual_review", "persistence"):
+                    self.assertEqual(self.imported_check(record, check)["status"], "pass")
+                imported = record["open_persistence_import"]
+                self.assertEqual(imported["stageReceipt"], str(files["final"]))
+                self.assertEqual(imported["acceptanceScope"], scope)
+                self.assertEqual(imported["wholePageComplete"], scope == "page")
+                self.assertEqual(imported["moduleComplete"], scope == "module")
+                self.assertEqual(imported["localComplete"], scope == "local")
+                self.assertFalse(imported["engineeringAccepted"])
+                for key, original in originals.items():
+                    self.assertEqual(files[key].read_bytes(), original)
+
+    def test_native_delivery_rejects_changed_hash_chain(self):
+        for key in ("plan", "source", "stage", "final", "run", "delivery", "image"):
+            with self.subTest(file=key):
+                operation, files = self.native_delivery_fixture(name="drift-" + key)
+                original = files[key].read_bytes()
+                try:
+                    files[key].write_bytes(original + b"\n")
+                    before = self.state()
+                    self.apply_error(operation)
+                    self.assertEqual(self.state()["generation"], before["generation"])
+                    self.assertEqual(self.state()["results"], before["results"])
+                finally:
+                    files[key].write_bytes(original)
+
+    def test_native_delivery_accepts_final_only_run_with_complete_original_stage_chain(self):
+        operation, files = self.native_delivery_fixture(name="final-only")
+        run = json.loads(files["run"].read_text(encoding="utf-8"))
+        run["structuredContent"]["completedStages"] = ["final"]
+        files["run"].write_text(json.dumps(run), encoding="utf-8")
+        delivery = json.loads(files["delivery"].read_text(encoding="utf-8"))
+        delivery["runResultSha256"] = self.digest(files["run"])
+        files["delivery"].write_text(json.dumps(delivery), encoding="utf-8")
+        verification = json.loads(files["verification"].read_text(encoding="utf-8"))
+        verification["deliverySha256"] = self.digest(files["delivery"])
+        files["verification"].write_text(json.dumps(verification), encoding="utf-8")
+        self.apply(operation)
+        record = self.state()["results"][-1]
+        self.assertEqual(record["status"], "verified")
+        self.assertEqual(self.imported_check(record, "persistence")["status"], "pass")
+
+    def test_native_delivery_rejects_same_target_readback_not_bound_to_design_diff(self):
+        operation, files = self.native_delivery_fixture(name="mixed-readback")
+        verification = json.loads(files["verification"].read_text(encoding="utf-8"))
+        verification["readback"]["structuredContent"]["result"]["components"][0]["x"] += 1
+        files["verification"].write_text(json.dumps(verification), encoding="utf-8")
+        before = self.state()
+        self.apply_error(operation)
+        self.assertEqual(self.state()["generation"], before["generation"])
+        self.assertEqual(self.state()["results"], before["results"])
+
+    def test_native_delivery_rejects_unknown_save_reopen_drc_and_design_diff(self):
+        mutations = {
+            "save": lambda delivery, verification: delivery["receipt"].update(saved=None),
+            "reopen": lambda delivery, verification: verification["persistence"]["requestIds"].pop("open"),
+            "reused-id": lambda delivery, verification: verification["persistence"]["requestIds"].update(open="close"),
+            "drc": lambda delivery, verification: verification["drcCheck"]["structuredContent"]["result"]["summary"].update(unknown=1),
+            "diff": lambda delivery, verification: verification["designDiff"].update(status="different"),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(failure=name):
+                operation, files = self.native_delivery_fixture(name="invalid-" + name)
+                delivery = json.loads(files["delivery"].read_text(encoding="utf-8"))
+                verification = json.loads(files["verification"].read_text(encoding="utf-8"))
+                mutate(delivery, verification)
+                files["delivery"].write_text(json.dumps(delivery), encoding="utf-8")
+                verification["deliverySha256"] = self.digest(files["delivery"])
+                files["verification"].write_text(json.dumps(verification), encoding="utf-8")
+                before = self.state()
+                self.apply_error(operation)
+                self.assertEqual(self.state()["generation"], before["generation"])
+                self.assertEqual(self.state()["results"], before["results"])
 
     def test_geometry_receipt_binds_plan_source_target_and_generates_unknown_on_missing_geometry(self):
         plan_path, plan = self.open_plan()

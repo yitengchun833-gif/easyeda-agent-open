@@ -137,14 +137,17 @@ func dispatchTimed(cfg *appConfig, action, window string, payload any, timeout t
 		return errors.Join(errActionFailed, &actionError{Action: action, Code: parsed.Error.Code,
 			Message: parsed.Error.Message, Detail: parsed.Error.Detail})
 	}
-	if action == "pcb.silk.align" {
+	if action == "pcb.silk.align" || action == "pcb.components.move" || action == "pcb.components.arrange" || action == "pcb.add_component" {
 		var envelope struct {
 			Result map[string]any `json:"result"`
 		}
 		if err := json.Unmarshal(respBody, &envelope); err != nil {
 			return errActionFailed
 		}
-		return silkAlignmentError(action, envelope.Result)
+		if err := silkAlignmentError(action, envelope.Result); err != nil {
+			return err
+		}
+		return pcbComponentPlacementError(action, envelope.Result)
 	}
 	switch action {
 	case "pcb.import_changes":
@@ -159,7 +162,7 @@ func dispatchTimed(cfg *appConfig, action, window string, payload any, timeout t
 			parsed.Result.Verified == nil || !*parsed.Result.Verified {
 			return fmt.Errorf("%s: page rename not verified; preserve this response and read the current page name before any retry", action)
 		}
-	case "schematic.netflag.create", "schematic.power.connect_pin", "pcb.region.create", "pcb.add_component",
+	case "schematic.netflag.create", "schematic.power.connect_pin", "pcb.region.create",
 		"schematic.primitives.delete", "schematic.component.delete", "schematic.pin.disconnect":
 		if parsed.Result.Partial || (parsed.Result.Verified != nil && !*parsed.Result.Verified) {
 			return fmt.Errorf("%s: write not fully verified; inspect returned IDs and fresh state before retrying", action)
@@ -222,6 +225,52 @@ func silkAlignmentError(action string, result map[string]any) error {
 		count, ok := result[key].(float64)
 		if !ok || count != 0 {
 			return &unverifiedSilkAlignmentError{}
+		}
+	}
+	return nil
+}
+
+type unverifiedPCBComponentPlacementError struct {
+	action string
+	result map[string]any
+}
+
+func (e *unverifiedPCBComponentPlacementError) Error() string {
+	return fmt.Sprintf("%s: component placement not verified; preserve returned identities and verification evidence, read fresh state before recomputing; do not repeat the placement", e.action)
+}
+
+func pcbComponentPlacementError(action string, result map[string]any) error {
+	if action == "pcb.add_component" {
+		if result["partial"] == true || result["verified"] == false {
+			return &unverifiedPCBComponentPlacementError{action: action, result: result}
+		}
+		return nil
+	}
+	if action != "pcb.components.move" && action != "pcb.components.arrange" {
+		return nil
+	}
+	unverified := &unverifiedPCBComponentPlacementError{action: action, result: result}
+	if result["verified"] != true || result["partial"] != false || result["executionState"] == "unknown" {
+		return unverified
+	}
+	for _, key := range []string{"skipped", "notApplied", "unverified", "remaining"} {
+		items, ok := result[key].([]any)
+		if !ok || len(items) != 0 {
+			return unverified
+		}
+	}
+	moved, movedOK := result["moved"].([]any)
+	attempted, attemptedOK := result["attempted"].([]any)
+	count, countOK := result["count"].(float64)
+	requested, requestedOK := result["requestedCount"].(float64)
+	if !movedOK || !attemptedOK || !countOK || !requestedOK || requested <= 0 ||
+		count != requested || count != float64(len(moved)) || count != float64(len(attempted)) {
+		return unverified
+	}
+	for _, item := range moved {
+		component, ok := item.(map[string]any)
+		if !ok || component["verified"] != true || asString(component["primitiveId"]) == "" {
+			return unverified
 		}
 	}
 	return nil
@@ -412,6 +461,9 @@ func requestActionOnce(cfg *appConfig, action, window string, payload any, timeo
 	if err := silkAlignmentError(action, res.Result); err != nil {
 		return res, err
 	}
+	if err := pcbComponentPlacementError(action, res.Result); err != nil {
+		return res, err
+	}
 	return res, pcbImportResultError(action, res.Result)
 }
 
@@ -466,6 +518,9 @@ func dispatchCapture(cfg *appConfig, action, window string, payload any, stdout 
 	}
 	res := &actionResult{OK: parsed.OK, Result: parsed.Result, Artifacts: parsed.Artifacts}
 	if err := silkAlignmentError(action, res.Result); err != nil {
+		return res, err
+	}
+	if err := pcbComponentPlacementError(action, res.Result); err != nil {
 		return res, err
 	}
 	return res, pcbImportResultError(action, res.Result)
